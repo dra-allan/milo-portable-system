@@ -154,6 +154,51 @@ This system features intelligent two-way synchronization with GitHub:
 - **macOS** (should work, tested on Linux/Windows)
 
 ## 🧠 Features
+## 💬 Chatting with Milo on Telegram
+
+Once your Milo bot is running, you can chat with it directly in Telegram just like you would with a human assistant or an AI chatbot. Here's how it works:
+
+### 💡 How It Works Under the Hood
+When you send a message to Milo on Telegram:
+- Your message is processed by the Milo Telegram bot
+- The bot forwards your request to the **Opencode CLI** using the `miley` agent configuration
+- Opencode generates a response based on its capabilities and your conversation context
+- The bot sends that response back to you in Telegram
+
+This means you're effectively interacting with **Opencode** through a Telegram interface, but with Milo's personality and abilities.
+
+### 📱 How to Chat with Milo
+1. **Open Telegram** and search for your bot (you created it with @BotFather)
+2. **Start a conversation** by pressing "Start" or sending any message
+3. **Talk naturally** - just say hello, ask questions, or give commands
+4. **Use special commands** (optional):
+   - `/help` - See all available commands
+   - `/milo <message>` - Explicitly invoke Milo mode (same as normal chat)
+   - `/opencode <prompt>` - Get detailed Opencode output (shows code, timing, etc.)
+   - `/mem save <title> | <content>` - Save a note to your persistent memory
+   - `/mem list` - View your recent memories
+   - `/recall <query>` - Search your memories
+   - `/vault <path>` - Read files from your Obsidian vault
+   - `/ping` - Check system status
+
+### 🔄 Example Conversation
+**You:** Hey Milo, can you explain quantum entanglement in simple terms?
+**Milo:** *(thinks for a moment, then responds)* Sure! Quantum entanglement is like having two magic coins that always land on opposite sides, no matter how far apart they are. If you flip one and see heads, you instantly know the other is tails - even if it's on the other side of the galaxy!
+
+**You:** /opencode "Write a Python function to calculate factorial"
+**Milo:** *(returns detailed output showing the code, execution time, etc.)*
+
+### ⚙️ Customization
+You can adjust how Milo behaves by:
+- Modifying the `miley` agent in your Opencode configuration (`~/.opencode/agents/miley/`)
+- Changing the `OPENCODE_WORKDIR` in `.env` to point to your projects folder
+- Adjusting the `OPENCODE_TIMEOUT_SEC` for longer/shorter responses
+
+### 🔒 Privacy & Security
+- Your conversations with Milo are processed locally by Opencode (no data sent to external AI services unless you configure Opencode to do so)
+- Your personal data (memories, vault access) stays on your machine
+- Only anonymized usage statistics (if any) are collected per your Opencode setup
+
 
 - **Persistent Memory**: SQLite-based memory system that survives restarts
 - **Cross-Device Awareness**: Knows which device you're using

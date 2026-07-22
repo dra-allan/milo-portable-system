@@ -415,8 +415,15 @@ def main() -> None:
             webhook_url=env("WEBHOOK_URL", f"http://localhost:{args.port}/milo"),
         )
     else:
+        # Ensure an event loop is set for the current thread
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            # No event loop in current thread, create and set one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
         app.run_polling(stop_signals=None)
-
 
 if __name__ == "__main__":
     main()
