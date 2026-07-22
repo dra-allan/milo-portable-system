@@ -33,7 +33,7 @@ else
   },
   "dependencies": {
     "@grinev/opencode-telegram-bot": "^1.0.0",
-    "better-sqlite3": "^8.0.0",
+    "sqlite3": "^5.1.7",
     "chokidar": "^3.5.0",
     "uuid": "^9.0.0",
     "@modelcontextprotocol/sdk": "^0.1.0"
