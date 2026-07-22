@@ -1,0 +1,16 @@
+{
+  "name": "agentmemory-mcp",
+  "version": "1.0.0",
+  "description": "AgentMemory MCP Server for Milo",
+  "main": "index.ts",
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.0.0"
+  }
+}

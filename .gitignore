@@ -1,0 +1,61 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+.idea/
+.vscode/
+*.log
+
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Telegram bot specific (keep the template but not the actual .env with secrets)
+telegram-data/.env
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Compiled addons
+*.so
+
+# Profiling
+*.profile
+
+# Build outputs
+/dist
+/build
+
+# Environment variables (keep example but not actual values)
+.env
