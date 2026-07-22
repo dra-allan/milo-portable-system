@@ -1,12 +1,7 @@
 const https = require('https');
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '8101147332';
-
-if (!BOT_TOKEN) {
-  console.error('TELEGRAM_BOT_TOKEN is not set. Set it before running this script.');
-  process.exit(1);
-}
+const BOT_TOKEN = '8844481759:AAFAiNWl2BOtsUbdTD66JWTS10kh3ItvVIA';
+const CHAT_ID = '8101147332';
 
 const videos = [
   { id: 'DJP5hjPPT1E', title: 'How To Produce a Riddim! (Dancehall, Reggae, Reggaeton, Soca, Afro Beat, Zouk) Production Tutorial', channel: 'Paul Hauss', views: '18,998', desc: 'How to build a dancehall riddim from scratch. Contact Paul Hauss for production services.' },
