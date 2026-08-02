@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -610,18 +611,48 @@ def _grace(r: Routine) -> float:
     return 4 * 3600.0  # a daily/weekly slot is stale after four hours
 
 
+def milo_argv(rest: Optional[List[str]] = None) -> List[str]:
+    """The most reliable way to invoke Milo again from a child process.
+
+    Order matters. A console script sitting next to this interpreter is the
+    best answer because it works regardless of cwd. A bare ``milo`` on PATH is
+    next. The ``-m`` form is last, and only ever with ``PYTHONPATH`` pointing
+    at the package parent — otherwise a routine run from a git checkout dies
+    with ``No module named 'miloctl'`` the moment cron changes directory.
+    """
+    rest = list(rest or [])
+    exe = "milo.exe" if os.name == "nt" else "milo"
+    beside = Path(sys.executable).parent / exe
+    if beside.is_file():
+        return [str(beside), *rest]
+    found = shutil.which("milo") or shutil.which("mylo")
+    if found:
+        return [found, *rest]
+    return [sys.executable, "-m", "miloctl.cli", *rest]
+
+
 def _run_command(command: str, *, timeout: int = 900) -> Tuple[int, str]:
     """Run a shell command, preferring this interpreter's own console scripts.
 
     A routine that says ``milo backup`` must still work when cron runs it with
-    a bare PATH, so ``milo``/``mylo`` are rewritten to ``<python> -m miloctl.cli``.
+    a bare PATH and an unrelated cwd, so ``milo``/``mylo`` are resolved through
+    :func:`milo_argv` rather than trusted to PATH.
     """
     argv = shlex.split(command, posix=(os.name != "nt"))
-    if argv and argv[0] in ("milo", "mylo"):
-        argv = [sys.executable, "-m", "miloctl.cli", *argv[1:]]
+    if argv and argv[0].lower() in ("milo", "mylo"):
+        argv = milo_argv(argv[1:])
+
+    # Make the ``-m`` fallback importable from anywhere, and keep the child out
+    # of any virtualenv confusion by pinning the package parent explicitly.
+    env = dict(os.environ)
+    pkg_parent = str(Path(__file__).resolve().parent.parent)
+    if pkg_parent not in (env.get("PYTHONPATH") or "").split(os.pathsep):
+        env["PYTHONPATH"] = os.pathsep.join(
+            [p for p in (pkg_parent, env.get("PYTHONPATH", "")) if p])
+
     try:
         p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                           cwd=str(paths.milo_home()))
+                           cwd=str(paths.milo_home()), env=env)
     except FileNotFoundError:
         return 127, f"command not found: {argv[0] if argv else command}"
     except subprocess.TimeoutExpired:

@@ -691,6 +691,42 @@ def register(sub) -> None:
     s = sub.add_parser("harness", help="which agent tools are installed and synced")
     s.set_defaults(func=cmd_harness)
 
+    # ``routines`` is one parser with a free-form action rather than a nest of
+    # sub-subparsers, because ``milo routines run backup`` reads the way people
+    # already talk about it, and the fuzzy matcher can then fix typos in the
+    # action the same way it does for top-level commands.
+    s = sub.add_parser("routines", aliases=["routine", "cron"],
+                       help="scheduled work Milo does on its own")
+    s.add_argument("action", nargs="?", default="list",
+                   choices=["list", "init", "add", "remove", "delete",
+                            "enable", "disable", "schedule", "run", "tick",
+                            "watch", "show", "logs", "install", "uninstall",
+                            "status"])
+    s.add_argument("name", nargs="?", default="")
+    s.add_argument("--prompt", nargs="*", default=[],
+                   help="what to ask the agent when this fires")
+    # dest is NOT 'command': the top-level subparser already owns that dest,
+    # and a flag defaulting to "" would blank it out and make every
+    # 'milo routines ...' call fall through to the help text.
+    s.add_argument("--command", "--shell", default="", dest="shell_command",
+                   help="shell command to run instead of prompting a model")
+    s.add_argument("--every", default="",
+                   help='"every 30m" | "daily at 07:30" | "weekly on mon at 9" | "cron ..."')
+    s.add_argument("--output", default="log",
+                   choices=["log", "vault", "memory", "telegram", "none"])
+    s.add_argument("--with-harness", default="", dest="with_harness")
+    s.add_argument("--model", default="")
+    s.add_argument("-t", "--tags", nargs="*")
+    s.add_argument("--skip-missed", action="store_true", dest="skip_missed",
+                   help="a run missed while the machine was off is dropped, not caught up")
+    s.add_argument("--dry-run", action="store_true", dest="dry_run")
+    s.add_argument("--force", action="store_true", help="overwrite an existing routine")
+    s.add_argument("--backend", default="",
+                   help="systemd | crontab | launchd | schtasks | termux | loop")
+    s.add_argument("--interval", type=int, default=300, help="seconds, for 'watch'")
+    s.add_argument("-n", "--limit", type=int, default=40, help="log lines to show")
+    s.set_defaults(func=cmd_routines)
+
 
 # ── routines ──────────────────────────────────────────────────────────────────
 
@@ -744,7 +780,7 @@ def cmd_routines(args: argparse.Namespace) -> int:
             r = st.add(
                 name,
                 prompt=_joined(args.prompt),
-                command=args.command or "",
+                command=args.shell_command or "",
                 schedule=args.every or "manual",
                 output=args.output or "log",
                 harness=args.with_harness or "",
