@@ -1094,6 +1094,33 @@ def _bar(pct: int, width: int = 16) -> str:
 # ── packs (third-party skill / agent libraries) ───────────────────────────────
 
 
+def _resync_after_pack_change(action: str) -> None:
+    """Re-sync harnesses so an enabled agent actually exists in the tool.
+
+    Without this, `milo packs enable code-reviewer` reports success and the
+    subagent does not appear until the user happens to run `milo sync`. They
+    would reasonably conclude the feature is broken, and the failure gives them
+    nothing to act on. Sync is cheap and idempotent, so doing it here is
+    strictly better than making them remember.
+
+    Failures are reported but not fatal: the enable already succeeded and is
+    recorded, so exiting non-zero would misrepresent what happened.
+    """
+    from . import harness
+    try:
+        results = harness.sync_all()
+    except Exception as exc:                      # noqa: BLE001 - never block
+        ui.warn(f"enabled, but syncing tools failed: {exc}")
+        ui.say(ui.dim("  retry with: milo sync"))
+        return
+    touched = [r for r in results if r.written]
+    bad = [r for r in results if not r.ok]
+    if touched:
+        ui.say(ui.dim(f"  synced to {', '.join(r.harness for r in touched)}"))
+    for r in bad:
+        ui.warn(f"{r.harness}: {r.error}")
+
+
 def cmd_packs(args: argparse.Namespace) -> int:
     """Borrow whole libraries of skills and agents from other people."""
     from . import packs
@@ -1147,6 +1174,7 @@ def cmd_packs(args: argparse.Namespace) -> int:
         # plainly. Explaining the why here is cheaper than a support round-trip.
         if res.enabled:
             ui.ok(f"{len(res.enabled)} added to the prompt index")
+            _resync_after_pack_change("enable")
         else:
             ui.say(ui.dim("  Nothing was added to the system prompt — "
                           f"{res.total} entries would cost real tokens"))
@@ -1163,6 +1191,10 @@ def cmd_packs(args: argparse.Namespace) -> int:
         if not packs.remove(name):
             return _fail(f"no pack {name!r} — see: milo packs list")
         ui.ok(f"removed {name}")
+        # Re-sync so anything this pack had exported is reaped from the tools.
+        # Leaving a subagent behind whose pack is gone is worse than never
+        # having exported it: nothing on disk explains where it came from.
+        _resync_after_pack_change("remove")
         return 0
 
     if action == "update":
@@ -1222,6 +1254,7 @@ def cmd_packs(args: argparse.Namespace) -> int:
             from .skills import SkillRegistry
             size = len(SkillRegistry().index()) // 4
             ui.say(ui.dim(f"  prompt index is now ~{size} tokens"))
+        _resync_after_pack_change(action)
         return 0
 
     if action == "show":
