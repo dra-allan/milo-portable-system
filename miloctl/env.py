@@ -36,15 +36,8 @@ FIELDS: List[Tuple[str, str, bool, bool]] = [
     ("TELEGRAM_BOT_TOKEN", "Telegram bot token (@BotFather)", False, True),
     ("TELEGRAM_CHAT_ID", "Your Telegram chat id (@userinfobot)", False, False),
     ("ALLOWED_USER_IDS", "Allowed Telegram user ids (comma separated)", False, False),
-    ("TELEGRAM_ALLOW_BOTS", "Let other bots talk to Milo (rarely wanted)", False, False),
     ("DISCORD_BOT_TOKEN", "Discord bot token", False, True),
-    ("DISCORD_WEBHOOK_URL", "Discord webhook URL (outbound messages)", False, True),
     ("SLACK_BOT_TOKEN", "Slack bot token", False, True),
-    ("SLACK_WEBHOOK_URL", "Slack incoming webhook URL", False, True),
-    ("NTFY_TOPIC", "ntfy topic for phone push (any name you pick)", False, False),
-    ("NTFY_SERVER", "ntfy server (blank = https://ntfy.sh)", False, False),
-    ("NTFY_TOKEN", "ntfy access token (only for protected topics)", False, True),
-    ("MILO_WEBHOOK_URL", "Generic webhook URL for outbound messages", False, True),
     # Storage / sync
     ("GITHUB_PAT", "GitHub personal access token (repo scope)", True, True),
     ("GITHUB_USER", "GitHub username", False, False),
@@ -56,18 +49,6 @@ FIELDS: List[Tuple[str, str, bool, bool]] = [
     ("ENGRAM_API_KEY", "Engram API key", False, True),
     ("BRAVE_API_KEY", "Brave Search API key", False, True),
     ("ELEVENLABS_API_KEY", "ElevenLabs API key", False, True),
-    ("COMPOSIO_API_KEY", "Composio API key (app.composio.dev)", False, True),
-    # Voice (STT / streaming TTS / wake word)
-    ("GEMINI_API_KEYS", "Gemini API key(s), comma-separated", False, True),
-    ("GEMINI_API_KEY", "Gemini API key (single)", False, True),
-    ("GOOGLE_API_KEY", "Google API key (Gemini fallback)", False, True),
-    ("GROQ_API_KEY", "Groq API key (free STT)", False, True),
-    ("XAI_API_KEY", "xAI API key (STT/TTS)", False, True),
-    ("MILO_STT_PROVIDER", "STT provider (local|openai|groq|xai)", False, False),
-    ("MILO_STT_LANGUAGE", "STT language hint (default: auto)", False, False),
-    ("MILO_TTS_PROVIDER", "TTS provider (gemini|openai|elevenlabs)", False, False),
-    ("MILO_IDENTITY_PASSPHRASE", "Voice identity-check passphrase", False, True),
-    ("MILO_FFMPEG", "Path to ffmpeg.exe (audio capture/playback fallback)", False, False),
     ("GOOGLE_CLIENT_ID", "Google OAuth client id", False, False),
     ("GOOGLE_CLIENT_SECRET", "Google OAuth client secret", False, True),
     ("GOOGLE_REFRESH_TOKEN", "Google OAuth refresh token", False, True),
@@ -135,7 +116,6 @@ def load(path: Optional[Path] = None, include_os: bool = True) -> Dict[str, str]
 
 
 def _quote(value: str) -> str:
-    value = "" if value is None else str(value)
     if value == "" or re.search(r"[\s#\"']", value):
         return '"' + value.replace('"', '\\"') + '"'
     return value
@@ -157,10 +137,7 @@ def save(data: Dict[str, str], path: Optional[Path] = None) -> Path:
         ]),
         ("Channels", [
             "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "ALLOWED_USER_IDS",
-            "TELEGRAM_ALLOW_BOTS",
-            "DISCORD_BOT_TOKEN", "DISCORD_WEBHOOK_URL",
-            "SLACK_BOT_TOKEN", "SLACK_WEBHOOK_URL",
-            "NTFY_TOPIC", "NTFY_SERVER", "NTFY_TOKEN", "MILO_WEBHOOK_URL",
+            "DISCORD_BOT_TOKEN", "SLACK_BOT_TOKEN",
         ]),
         ("Storage & sync", [
             "GITHUB_PAT", "GITHUB_USER", "SUPABASE_URL",
@@ -169,12 +146,6 @@ def save(data: Dict[str, str], path: Optional[Path] = None) -> Path:
         ("Tools", [
             "STITCH_API_KEY", "ENGRAM_API_KEY", "BRAVE_API_KEY", "ELEVENLABS_API_KEY",
             "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN",
-        ]),
-        ("Voice", [
-            "GEMINI_API_KEYS", "GEMINI_API_KEY", "GOOGLE_API_KEY",
-            "GROQ_API_KEY", "XAI_API_KEY",
-            "MILO_STT_PROVIDER", "MILO_STT_LANGUAGE", "MILO_TTS_PROVIDER",
-            "MILO_IDENTITY_PASSPHRASE", "MILO_FFMPEG",
         ]),
         ("Paths", ["MILO_VAULT_DIR", "MILO_ENGRAM_DIR", "MILO_WORKSPACE"]),
     ]
@@ -209,7 +180,7 @@ def save(data: Dict[str, str], path: Optional[Path] = None) -> Path:
 
 def update(changes: Dict[str, str], path: Optional[Path] = None) -> Path:
     data = load(path, include_os=False)
-    data.update({k: str(v) for k, v in changes.items() if v is not None})
+    data.update({k: v for k, v in changes.items() if v is not None})
     return save(data, path)
 
 

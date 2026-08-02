@@ -13,7 +13,7 @@ no service to babysit, and nothing to reinstall after a reboot.
 
 All of them run exactly one command::
 
-    milo --quiet routines tick
+    milo routines tick --quiet
 
 Everything about *what* runs and *when* lives in ``state/cron.json``, which
 travels in the backup. The OS entry is a dumb five-minute heartbeat, so it
@@ -27,13 +27,11 @@ scheduler you can't remove is worse than one you never installed.
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import subprocess
 import sys
 import textwrap
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -44,12 +42,6 @@ from . import paths
 TICK_MINUTES = 5
 
 TASK_NAME = "MiloRoutines"
-
-#: schtasks' CLI cannot express battery settings, and its defaults
-#: (DisallowStartIfOnBatteries/StopIfGoingOnBatteries = true) silently kill
-#: the tick on any laptop running on battery. The XML export of a task is
-#: the only reliable way to set them, so install via XML.
-_WINDOWS_NEVER_RAN = re.compile(r"Last (Run Time|Result):\s*(11/30/1999|267011)")
 
 
 @dataclass
@@ -76,12 +68,8 @@ def tick_command() -> List[str]:
     assumption inside cron, launchd or Task Scheduler, all of which run with a
     minimal environment — and 'it worked in my shell' is how scheduled jobs
     silently stop running.
-
-    ``--quiet`` must come *before* the subcommand: it is a top-level flag, so
-    argparse rejects ``routines tick --quiet`` and the scheduled run would
-    exit 2 every time — a registered-but-failing heartbeat.
     """
-    return [sys.executable, "-m", "miloctl.cli", "--quiet", "routines", "tick"]
+    return [sys.executable, "-m", "miloctl.cli", "routines", "tick", "--quiet"]
 
 
 def tick_command_string() -> str:
@@ -111,90 +99,15 @@ def _run(argv: List[str], timeout: int = 30) -> Tuple[int, str]:
 # ── Windows: Task Scheduler ───────────────────────────────────────────────────
 
 
-def _windows_task_xml() -> str:
-    """Task XML with laptop-safe settings.
-
-    The schtasks CLI can't express these, and its defaults block the task on
-    battery power — a silent failure on any laptop. ``DisallowStartIfOnBatteries
-    false`` + ``StopIfGoingOnBatteries false`` mean the heartbeat survives
-    being unplugged; ``StartWhenAvailable`` catches up after sleep/hibernate.
-    """
-    start = (datetime.now() + timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%S")
-    argv = tick_command()
-    command, *rest = argv
-    arguments = " ".join(f'"{a}"' if " " in a else a for a in rest)
-    return textwrap.dedent(f"""\
-        <?xml version="1.0" encoding="UTF-16"?>
-        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-          <RegistrationInfo>
-            <Date>{start}</Date>
-            <Author>{os.environ.get("USERNAME", "milo")}</Author>
-            <URI>\\{TASK_NAME}</URI>
-          </RegistrationInfo>
-          <Triggers>
-            <TimeTrigger>
-              <StartBoundary>{start}</StartBoundary>
-              <Enabled>true</Enabled>
-              <Repetition>
-                <Interval>PT{TICK_MINUTES}M</Interval>
-                <StopAtDurationEnd>false</StopAtDurationEnd>
-              </Repetition>
-            </TimeTrigger>
-          </Triggers>
-          <Principals>
-            <Principal id="Author">
-              <LogonType>InteractiveToken</LogonType>
-              <RunLevel>LeastPrivilege</RunLevel>
-            </Principal>
-          </Principals>
-          <Settings>
-            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-            <AllowHardTerminate>true</AllowHardTerminate>
-            <StartWhenAvailable>true</StartWhenAvailable>
-            <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-            <IdleSettings>
-              <StopOnIdleEnd>true</StopOnIdleEnd>
-              <RestartOnIdle>false</RestartOnIdle>
-            </IdleSettings>
-            <AllowStartOnDemand>true</AllowStartOnDemand>
-            <Enabled>true</Enabled>
-            <Hidden>false</Hidden>
-            <RunOnlyIfIdle>false</RunOnlyIfIdle>
-            <WakeToRun>false</WakeToRun>
-            <ExecutionTimeLimit>PT30M</ExecutionTimeLimit>
-            <Priority>7</Priority>
-          </Settings>
-          <Actions Context="Author">
-            <Exec>
-              <Command>{command}</Command>
-              <Arguments>{arguments}</Arguments>
-            </Exec>
-          </Actions>
-        </Task>
-        """)
-
-
 def _windows_install() -> SchedulerResult:
-    xml = _windows_task_xml()
-    tmp = paths.state_dir() / f"{TASK_NAME}.xml"
-    try:
-        paths.ensure(paths.state_dir())
-        tmp.write_text(xml, encoding="utf-16")
-        code, out = _run([
-            "schtasks", "/Create", "/TN", TASK_NAME,
-            "/XML", str(tmp), "/F",
-        ])
-    except OSError as exc:
-        return SchedulerResult("Task Scheduler", False, str(exc))
-    finally:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
-    return SchedulerResult("Task Scheduler", code == 0, out[:300],
-                           tick_command_string())
+    cmd = tick_command_string()
+    code, out = _run([
+        "schtasks", "/Create", "/TN", TASK_NAME,
+        "/TR", cmd,
+        "/SC", "MINUTE", "/MO", str(TICK_MINUTES),
+        "/F",  # replace an existing task instead of erroring
+    ])
+    return SchedulerResult("Task Scheduler", code == 0, out[:300], cmd)
 
 
 def _windows_uninstall() -> SchedulerResult:
@@ -204,29 +117,8 @@ def _windows_uninstall() -> SchedulerResult:
 
 def _windows_status() -> SchedulerResult:
     code, out = _run(["schtasks", "/Query", "/TN", TASK_NAME])
-    if code != 0:
-        return SchedulerResult("Task Scheduler", False, "not registered")
-    return SchedulerResult("Task Scheduler", True, "registered")
-
-
-def _windows_healthy() -> SchedulerResult:
-    """Registered AND actually executing.
-
-    "Last Result: 267011" / "Last Run Time: 11/30/1999" = the task has
-    never executed once. A registered-but-dead heartbeat is the silent
-    failure that kills backups; this is the check that catches it.
-    """
-    code, out = _run(["schtasks", "/Query", "/TN", TASK_NAME, "/FO", "LIST", "/V"])
-    if code != 0:
-        return SchedulerResult("Task Scheduler", False, "not registered")
-    if _WINDOWS_NEVER_RAN.search(out):
-        return SchedulerResult(
-            "Task Scheduler", False,
-            "registered but never fired — battery/power settings likely block it; "
-            "run: milo routines install")
-    m = re.search(r"Last Run Time:\s*(.+)", out)
-    return SchedulerResult("Task Scheduler", True,
-                           "firing" + (f", last ran {m.group(1).strip()}" if m else ""))
+    return SchedulerResult("Task Scheduler", code == 0,
+                           "registered" if code == 0 else "not registered")
 
 
 # ── systemd user timer ────────────────────────────────────────────────────────
@@ -604,14 +496,6 @@ _STATUS = {
     "termux": _termux_status, "loop": _loop_status,
 }
 
-#: Firing checks, one per backend that can tell "registered" from "running".
-#: Backends without a real health probe fall back to their status check.
-_HEALTH = {
-    "schtasks": _windows_healthy, "systemd": _systemd_status,
-    "crontab": _cron_status, "launchd": _launchd_status,
-    "termux": _termux_status, "loop": _loop_status,
-}
-
 
 def install(backend: str = "") -> SchedulerResult:
     """Register the tick. Falls through the candidate list until one sticks."""
@@ -647,25 +531,6 @@ def status() -> List[SchedulerResult]:
     out = []
     for name in backends():
         fn = _STATUS.get(name)
-        if fn:
-            try:
-                out.append(fn())
-            except Exception as exc:
-                out.append(SchedulerResult(name, False, str(exc)))
-    return out
-
-
-def healthy() -> List[SchedulerResult]:
-    """Per-backend "is it actually firing" checks.
-
-    Registration is not health: a task that is registered but never
-    executes (battery settings, wrong logon type, systemd without a user
-    bus) silently loses every backup. ``healthy`` exists for doctor-style
-    checks; ``status`` keeps answering "is it registered".
-    """
-    out = []
-    for name in backends():
-        fn = _HEALTH.get(name)
         if fn:
             try:
                 out.append(fn())

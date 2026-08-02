@@ -46,7 +46,7 @@ MAX_DESCRIPTION = 60
 USAGE_FILE = "usage.json"
 
 LIFECYCLES = ("active", "stale", "archived")
-ORIGINS = ("bundled", "user", "agent", "pack", "learned")
+ORIGINS = ("bundled", "user", "agent", "pack")
 
 
 # ── Frontmatter ───────────────────────────────────────────────────────────────
@@ -581,7 +581,6 @@ class SkillRegistry:
             "bundled": sum(1 for s in skills if s.origin == "bundled"),
             "user": sum(1 for s in skills if s.origin == "user"),
             "agent": sum(1 for s in skills if s.origin == "agent"),
-            "learned": sum(1 for s in skills if s.origin == "learned"),
             "used": len(usage),
             "user_dir": str(self.user_dir),
             "bundled_dir": str(self.bundled_dir),

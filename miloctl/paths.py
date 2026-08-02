@@ -20,7 +20,7 @@ Platform defaults
 Location           Default
 =================  ==========================================================
 MILO_HOME          Windows ``%LOCALAPPDATA%\\milo`` · else ``~/.milo``
-VAULT_DIR          Windows ``~/Desktop/dra-brains`` · Termux ``~/storage/shared/vault``
+VAULT_DIR          Windows ``~/Desktop/DRA BRAINS`` · Termux ``~/storage/shared/vault``
                    · else ``~/vault``
 ENGRAM_DIR         ``~/.engram``
 WORKSPACE          ``~/milo-workspace``
@@ -172,12 +172,12 @@ def _resolve(key: str, default: Path) -> Path:
 
 def _default_vault() -> Path:
     if IS_WINDOWS:
-        return HOME / "Desktop" / "dra-brains"
+        return HOME / "Desktop" / "DRA BRAINS"
     if IS_TERMUX:
         shared = HOME / "storage" / "shared" / "vault"
         return shared if shared.parent.exists() else HOME / "vault"
     if IS_MACOS:
-        return HOME / "Documents" / "dra-brains"
+        return HOME / "Documents" / "DRA BRAINS"
     return HOME / "vault"
 
 

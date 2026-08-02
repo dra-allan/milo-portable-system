@@ -1,15 +1,30 @@
-artisan/youtube-shorts-pipeline/data/clip_plans/
+# reference clones (not part of the repo)
+.refs/
 
-# Ranking shorts pipeline: machine-local working data + outputs (same policy
-# as the shorts pipeline above). plan JSONs, rendered mp4s and the SQLite
-# tracking DB are state, not source. Per-channel OAuth tokens: never commit.
-artisan/ranking-shorts-pipeline/data/
-artisan/ranking-shorts-pipeline/output/
-artisan/ranking-shorts-pipeline/config/youtube_token_*.json
-
-# Browser cookie export -- live session credentials, never commit.
-cookies.txt
-
-# Secrets and interpreter noise anywhere in the tree.
-.env
+# python
 __pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# secrets / local state
+.env
+.env.local
+*.local.json
+state/
+logs/
+*.log
+
+# os
+.DS_Store
+Thumbs.db
+
+# Superseded v1 layout. These were replaced by the miloctl package in 2.0
+# and keep reappearing when an old working copy is pushed by hand; ignoring
+# them means a stale checkout can't silently resurrect a second, divergent
+# implementation of the same system.
+/milo/
+/milo.py
+/MANIFEST.json
+/.env.template

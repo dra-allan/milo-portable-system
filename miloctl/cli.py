@@ -43,33 +43,6 @@ def _brain():
     return store()
 
 
-def _stranded_routines() -> List[tuple]:
-    """Enabled routines routed at a channel that cannot actually deliver.
-
-    Returns ``(routine_name, channel_name)`` pairs. This is the check that
-    would have caught the original bug: a routine shipping its output to
-    Telegram on a machine where Telegram was never configured looks perfectly
-    healthy from every other angle.
-    """
-    from . import channels
-
-    out: List[tuple] = []
-    try:
-        from .routines import store as routine_store
-
-        for r in routine_store().all(include_disabled=False):
-            for target in str(getattr(r, "output", "")).replace(",", " ").split():
-                if target in {"log", "vault", "memory", "none", ""}:
-                    continue
-                ch = channels.get(target)
-                if ch is None or not ch.configured():
-                    out.append((r.name, target))
-    except Exception:
-        # Doctor must never crash; a missing routine store is its own check.
-        pass
-    return out
-
-
 def _fail(msg: str) -> int:
     ui.err(msg)
     return 1
@@ -98,12 +71,12 @@ def cmd_install(args: argparse.Namespace) -> int:
         ui.say()
         existing = env.load(include_os=False)
         updates: Dict[str, str] = {}
-        for key, label, _required, secret in env.FIELDS:
+        for key, label, default, secret in env.FIELDS:
             if args.only and key not in args.only:
                 continue
             current = existing.get(key, "")
             shown = env.mask(current) if (secret and current) else current
-            value = ui.ask(label, default=shown or "",
+            value = ui.ask(label, default=shown or default,
                            secret_hint="hidden" if secret else "")
             if value and value != shown:
                 updates[key] = value
@@ -206,8 +179,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     try:
         stats = _brain().stats()
         check("memory db", True,
-              f"{stats.get('live', stats.get('total_rows', 0))} memories, "
-              f"fts={stats.get('fts')}")
+              f"{stats.get('memories', 0)} memories, fts={stats.get('fts')}")
     except Exception as exc:
         check("memory db", False, str(exc), "run: milo install")
 
@@ -234,34 +206,6 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         st = h.status()
         check(f"  {h.name} synced", bool(st["synced"]), st["config_dir"],
               f"run: milo sync {h.name}", level="warn")
-
-    # Channels are checked here because their failure mode is silence: a
-    # routine with output:telegram reports success whether or not anything
-    # was delivered, so nothing else in the system would ever mention it.
-    from . import channels
-
-    ready = [c.name for c in channels.configured_channels() if c.name != "log"]
-    check("channels", bool(ready), ", ".join(ready) or "none — log only",
-          "set up Telegram or ntfy: milo channels", level="warn")
-
-    # A routine pointed at a channel that is not configured delivers nothing,
-    # forever, without complaining. Name the exact routines.
-    stranded = _stranded_routines()
-    check("  routine delivery", not stranded,
-          "all routines can reach their channel" if not stranded
-          else "; ".join(f"{name} → {ch}" for name, ch in stranded),
-          "run: milo channels --test", level="warn")
-
-    # The OS scheduler is the heartbeat that makes every routine real.
-    # Registration is not health — a battery-blocked task never fires, which
-    # is the exact silent failure that loses backups.
-    from . import scheduler
-    healthy = scheduler.healthy()
-    ok_sched = any(h.ok for h in healthy)
-    check("scheduler", ok_sched,
-          "; ".join(f"{h.backend}: {h.detail}" for h in healthy)
-          or "no scheduler backend",
-          "run: milo routines install", level="error")
 
     last = backup.last_backup_time()
     if last:
@@ -293,12 +237,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             warned += 1
             ui.warn(f"{c['name']:<20} {c['detail']}")
             if c["fix"]:
-                ui.say(f"    {ui.dim(ui.SYM['arrow'] + ' ' + c['fix'])}")
+                ui.say(f"    {ui.dim('→ ' + c['fix'])}")
         else:
             failed += 1
             ui.err(f"{c['name']:<20} {c['detail']}")
             if c["fix"]:
-                ui.say(f"    {ui.dim(ui.SYM['arrow'] + ' ' + c['fix'])}")
+                ui.say(f"    {ui.dim('→ ' + c['fix'])}")
     ui.say()
     if failed:
         ui.err(f"{failed} problem(s), {warned} warning(s)")
@@ -418,34 +362,6 @@ def cmd_memory(args: argparse.Namespace) -> int:
         return 0 if brain.pin(args.path or "", True) else _fail("no such memory")
     if args.action == "unpin":
         return 0 if brain.pin(args.path or "", False) else _fail("no such memory")
-    if args.action == "compress":
-        # Optional args: --days, --importance-threshold
-        days = getattr(args, 'days', 30)
-        importance_threshold = getattr(args, 'importance-threshold', 2)
-        result = brain.compress(
-            days=days,
-            importance_threshold=importance_threshold
-        )
-        if _emit(result, args.json):
-            return 0
-        if result.get("compressed_count", 0) > 0:
-            ui.ok(f"Compressed {result['compressed_count']} memories into {result.get('summary_count', 0)} summary memories")
-            if result.get("archived_count", 0) > 0:
-                ui.info(f"Archived {result['archived_count']} original memories")
-        else:
-            ui.info("No memories were compressed (no candidates found)")
-        return 0
-    if args.action == "reflect":
-        # Optional arg: --days (for reflection period)
-        days = getattr(args, 'reflect_days', 7)
-        result = brain.reflect(days=days)
-        if _emit(result, args.json):
-            return 0
-        if result.get("reflections_generated", 0) > 0:
-            ui.ok(f"Generated {result['reflections_generated']} reflections from the last {days} day(s)")
-        else:
-            ui.info("No reflections generated")
-        return 0
     return _fail(f"unknown action {args.action}")
 
 
@@ -629,17 +545,9 @@ common:
 
     s = sub.add_parser("memory", help="memory maintenance")
     s.add_argument("action", choices=["stats", "export", "import", "dedupe",
-                                      "expire", "pin", "unpin", "compress", "reflect"])
+                                      "expire", "pin", "unpin"])
     s.add_argument("path", nargs="?")
     s.add_argument("-o", "--out")
-    # Compression-specific arguments
-    s.add_argument("--days", type=int, default=30,
-                   help="compress memories older than this many days (default: 30)")
-    s.add_argument("--importance-threshold", type=int, default=2,
-                   help="compress memories with importance at or below this level (default: 2)")
-    # Reflection-specific arguments
-    s.add_argument("--reflect-days", dest="reflect_days", type=int, default=7,
-                   help="reflect on memories from the last N days (default: 7)")
     s.set_defaults(func=cmd_memory)
 
     s = sub.add_parser("backup", help="snapshot the brain and push it")
@@ -707,23 +615,7 @@ def _resolve_typo(argv: List[str], parser: argparse.ArgumentParser) -> List[str]
     return argv
 
 
-def _force_utf8_stdio() -> None:
-    """Windows pipes re-create stdout as cp1252/ascii, which crashes on the
-    unicode glyphs the CLI prints (arrows, checkmarks). Pin UTF-8 so those
-    print everywhere — same fix as mcp.py's stdio protocol."""
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            reconfigure = stream.reconfigure
-        except AttributeError:
-            continue
-        try:
-            reconfigure(encoding="utf-8", errors="replace")
-        except (OSError, ValueError):
-            pass
-
-
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    _force_utf8_stdio()
     argv = list(argv if argv is not None else sys.argv[1:])
     parser = build_parser()
     argv = _resolve_typo(argv, parser)

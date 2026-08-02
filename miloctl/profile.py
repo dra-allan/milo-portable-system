@@ -63,7 +63,7 @@ class Trait:
     evidence: List[str] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
-    source: str = "observed"   # observed | stated | inferred | imported | learned
+    source: str = "observed"   # observed | stated | inferred | imported
 
     def reinforce(self, evidence: str = "", weight: float = 0.15) -> None:
         """Seeing the same thing again raises confidence, asymptotic to 1.0."""
@@ -364,7 +364,7 @@ For each item, run:
     milo profile set <key> "<value>" --section <section> --source <source>
 
   section: one of {keys}
-  source:  `stated` if they said it outright, `inferred` if you deduced it, `learned` if learned through experience
+  source:  `stated` if they said it outright, `inferred` if you deduced it
 
 Good:
     milo profile set tone "wants direct answers, no preamble" \\
@@ -377,73 +377,3 @@ Bad (too situational, or a guess dressed as fact):
     milo profile set expertise "probably a senior engineer"
 
 If nothing durable came up, say "nothing new" and stop."""
-
-
-def build_extract_prompt(transcript_excerpt: str = "", *, existing: Optional[Sequence[str]] = None) -> str:
-    """Build the extraction prompt for updating the user model from conversation.
-
-    Similar to build_learn_prompt but for profile extraction.
-    """
-    # Get recent traits to provide context
-    profile = Profile()
-    recent_traits = []
-    for trait in profile.traits.values():
-        if trait.decayed_confidence() > 0.5:  # Only reasonably confident traits
-            recent_traits.append(f"{trait.key}: {trait.value}")
-
-    known = ""
-    if recent_traits:
-        known = (
-            "\nKnown traits (update or contradict these if needed):\n" +
-            "\n".join(f"  - {t}" for t in recent_traits[:10]) + "\n"
-        )
-
-    return f"""[profile] Update your model of the user from this session.
-
-PROVIDED CONTEXT
-----------------
-{extraction_prompt(transcript_excerpt)}
-{known}
-IMPORTANT: When setting traits, use the --source flag appropriately:
-- --source stated: User explicitly stated this fact
-- --source inferred: You deduced this from behavior/context
-- --source learned: Learned through repeated observation/experience
-"""
-
-
-def run_extraction(transcript_excerpt: str = "", *, with_harness: str = "", model: str = "") -> int:
-    """Run profile extraction through the available agent harness.
-
-    Returns exit code from the harness (0 for success).
-    """
-    from . import harness
-    from .cli_extra import _run_through_harness
-
-    prompt = build_extract_prompt(transcript_excerpt)
-
-    if with_harness:
-        h = harness.get_harness(with_harness)
-        if h is None:
-            # Fallback to auto-detect
-            installed = harness.detect_installed()
-            runnable = [x for x in installed if x.which()]
-            if not runnable:
-                print("No agent runtime found — printing extraction prompt instead")
-                print(prompt)
-                return 1
-            h = runnable[0]
-    else:
-        # Auto-detect harness
-        installed = harness.detect_installed()
-        runnable = [x for x in installed if x.which()]
-        if not runnable:
-            print("No agent runtime found — printing extraction prompt instead")
-            print(prompt)
-            return 1
-        # Prefer the same heuristic as _run_through_harness
-        h = runnable[0]
-
-    print(f"Running profile extraction through {h.name}...")
-    code, out = h.run(prompt, model=model or "")
-    print(out)
-    return code

@@ -118,7 +118,7 @@ def test_backup_blocks_a_leaked_credential(milo_home):
     from miloctl.memory import store as brain
     from miloctl import backup, paths
 
-    brain().save("my token is EXAMPLE_GITHUB_TOKEN_FOR_TESTS")
+    brain().save("my token is ghp_abcdefghijklmnopqrstuvwxyz012345")
     res = backup.snapshot(paths.milo_home() / "snap")
 
     assert res.leaks, "the leak scanner did not catch a GitHub PAT"

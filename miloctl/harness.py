@@ -24,6 +24,7 @@ adapter layer knows or cares.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -32,8 +33,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from . import env, paths, persona
-from .naming import agent_name as agent_slug
-from .naming import display_name
+from .naming import agent_name as agent_slug, display_name
 
 __all__ = [
     "Harness",
@@ -118,22 +118,6 @@ def mcp_servers(secrets: Optional[Dict[str, str]] = None) -> Dict[str, dict]:
         }
     }
 
-    # Computer use: drives the already-logged-in Chrome through the OpenCLI
-    # browser bridge. Needs opencli on PATH plus the bridge extension in the
-    # browser; included unconditionally because it needs no credentials and a
-    # missing bridge fails loudly per-tool rather than at boot.
-    if shutil.which("opencli") is not None:
-        out[agent_slug() + "-computer"] = {
-            "type": "local",
-            "command": [py, "-m", "miloctl.computer_mcp"],
-            "enabled": True,
-            "environment": {
-                "MILO_HOME": str(paths.milo_home()),
-                "MILO_COMPUTER_APPROVAL": "{{MILO_COMPUTER_APPROVAL}}",
-                "MILO_BROWSER_SESSION": "{{MILO_BROWSER_SESSION}}",
-            },
-        }
-
     if s.get("GITHUB_PAT"):
         out["github"] = {
             "type": "local",
@@ -159,25 +143,6 @@ def mcp_servers(secrets: Optional[Dict[str, str]] = None) -> Dict[str, dict]:
             "enabled": True,
             "environment": {"BRAVE_API_KEY": "{{BRAVE_API_KEY}}"},
         }
-    # Composio: 500+ app integrations with OAuth connections managed in one
-    # dashboard (composio.dev). Connections are bound to the account behind the
-    # API key, not the machine, so the same Gmail/Maps/etc. accounts follow the
-    # key to any box. Exposed over a hosted per-session Tool Router MCP
-    # endpoint resolved from the ``composio`` SDK; requires ``COMPOSIO_API_KEY``
-    # in ``.env`` and the ``composio`` python package installed.
-    if s.get("COMPOSIO_API_KEY"):
-        try:
-            from .composio_mcp import resolve as _composio_resolve
-            endpoint = _composio_resolve(s.get("COMPOSIO_API_KEY"))
-        except Exception:
-            endpoint = None
-        if endpoint:
-            out["composio"] = {
-                "type": "remote",
-                "url": endpoint[0],
-                "headers": endpoint[1],
-                "enabled": True,
-            }
     # Filesystem access to the vault, scoped — no key needed.
     if paths.vault_dir().is_dir():
         out["vault"] = {
@@ -423,24 +388,16 @@ class Harness:
         argv = self.invoke(prompt, model=model)
         if not argv:
             return 1, f"{self.label} does not support one-shot invocation"
-        # Windows: CreateProcess only finds .exe/.bat on PATH, never .CMD. The
-        # npm/pip shims live as *.CMD, so resolve the first binary to its full
-        # path when subprocess would otherwise miss it.
-        resolved = self.which()
-        if resolved and argv and not Path(argv[0]).is_absolute():
-            argv = [resolved, *argv[1:]]
         try:
             p = subprocess.run(
                 argv, capture_output=True, text=True, timeout=timeout,
-                encoding="utf-8", errors="replace",
                 cwd=str(paths.workspace_dir()) if paths.workspace_dir().is_dir() else None,
             )
         except FileNotFoundError:
             return 127, f"{self.binaries[0] if self.binaries else self.name} not found on PATH"
         except subprocess.TimeoutExpired:
             return 124, f"{self.label} timed out after {timeout}s"
-        text = (p.stdout or p.stderr).strip()
-        return p.returncode, _strip_ansi(text)
+        return p.returncode, (p.stdout or p.stderr).strip()
 
     def status(self) -> Dict[str, object]:
         return {
@@ -451,11 +408,6 @@ class Harness:
             "config_dir": str(self.config_dir()),
             "synced": (self.config_dir() / self.persona_filename).is_file(),
         }
-
-
-def _strip_ansi(text: str) -> str:
-    """Remove ANSI/VT escape sequences (opencode paints its output)."""
-    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*(\x07|\x1b\\)", "", text)
 
 
 # ── JSON helpers ──────────────────────────────────────────────────────────────
@@ -539,14 +491,11 @@ class OpenCodeHarness(Harness):
                 config["model"] = model
             rendered = env.render(json.dumps(config, indent=2), secrets)
             target = cfg_dir / "opencode.json"
-            existing = json.loads(_strip_jsonc(target.read_text(encoding="utf-8"))) \
-                if target.is_file() else {}
-            merged = _deep_merge(existing, json.loads(rendered))
-            # Servers the generator emits are owned wholesale: a changed server
-            # shape must replace the old entry (e.g. composio went from a local
-            # npx process to a remote URL) instead of leaving stale keys behind.
-            for name, value in config.get("mcp", {}).items():
-                merged.setdefault("mcp", {})[name] = value
+            merged = _deep_merge(
+                json.loads(_strip_jsonc(target.read_text(encoding="utf-8")))
+                if target.is_file() else {},
+                json.loads(rendered),
+            )
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
             res.written.append(target)
@@ -614,30 +563,6 @@ class ClaudeCodeHarness(Harness):
             }
             rendered = json.loads(env.render(json.dumps({"mcpServers": servers}), secrets))
             res.written.append(self._write_json(cfg.parent / ".claude.json", rendered))
-
-            # SessionStart hook: inject fresh boot context (memory, handoff,
-            # priorities, recent sessions) so Claude boots the way OpenCode
-            # does — with today's state, not a static persona snapshot.
-            res.written.append(
-                self._write_json(
-                    cfg / "settings.json",
-                    {
-                        "hooks": {
-                            "SessionStart": [
-                                {
-                                    "matcher": "",
-                                    "hooks": [
-                                        {
-                                            "type": "command",
-                                            "command": "milo context --hook",
-                                        }
-                                    ],
-                                }
-                            ]
-                        }
-                    },
-                )
-            )
 
             # Subagent definition so `@milo` works inside Claude Code.
             for alias in (agent_slug(), "mylo"):

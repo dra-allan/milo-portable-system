@@ -60,7 +60,6 @@ Frontmatter:
   osascript => macos, pkg/termux-api => termux). Prefer making it portable
   first; omit the field for portable skills.
 - tags: a few lowercase, relevant tags.
-- origin: ``bundled``, ``user``, ``agent``, or ``learned`` (use ``learned`` for skills created from experience)
 
 Body section order (omit a section only if it genuinely has no content):
 1. `# <Human Title>` then 2-3 sentences: what it does, what it does NOT do,
@@ -129,8 +128,6 @@ Save it by writing the file to `$MILO_HOME/skills/<name>/SKILL.md`
     milo skill lint <name>
 Fix every error it reports. Warnings are judgement calls; fix them unless you
 can justify keeping them.
-IMPORTANT: In the frontmatter, set `origin: "learned"` to indicate this skill
-was created from experience.
 
 STEP 5 — REPORT
 Reply with: the skill name, its description, the file path, and one sentence
@@ -391,19 +388,6 @@ class NudgeEngine:
             )
         return None
 
-    def check_profile_extraction(self, turn_count: int, saves_this_session: int) -> Optional[Nudge]:
-        """Suggest running profile extraction after sufficient interaction."""
-        # Suggest extraction after every 10 turns with at least 2 memory saves
-        if turn_count >= 10 and saves_this_session >= 2:
-            return Nudge(
-                "profile",
-                f"Had {turn_count} turns and {saves_this_session} memories saved this session.",
-                "Run profile extraction to update your user model: "
-                "`milo profile extract`",
-                priority=2,
-            )
-        return None
-
     def check_curator_due(self) -> Optional[Nudge]:
         curator = Curator(self.reg)
         if curator.due():
@@ -439,7 +423,6 @@ class NudgeEngine:
         candidates = [
             self.check_unsaved_decisions(turn_count, saves_this_session),
             self.check_skill_worthy(tool_calls, distinct_tools, had_error),
-            self.check_profile_extraction(turn_count, saves_this_session),
             self.check_backup_due(),
             self.check_curator_due(),
             self.check_stale_memory(),

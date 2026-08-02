@@ -30,8 +30,6 @@ Design notes (borrowed from Hermes' curated-memory model)
 
 from __future__ import annotations
 
-import collections
-import datetime
 import hashlib
 import json
 import math
@@ -46,68 +44,6 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from . import paths
 
 SCHEMA_VERSION = 1
-
-# Embedding model (lazy-loaded)
-_embedding_session = None
-_embedding_tokenizer = None
-
-def _get_embedding_model():
-    """Lazy load the embedding model for sentence transformers via ONNX."""
-    global _embedding_session, _embedding_tokenizer
-    if _embedding_session is not None:
-        return _embedding_session, _embedding_tokenizer
-
-    try:
-        import numpy as np
-        import onnxruntime as ort
-        from transformers import AutoTokenizer
-
-        # Use a lightweight, fast model suitable for CPU inference
-        model_name = "sentence-transformers/all-MiniLM-L6-v2"
-
-        # Try to load from local cache first, then download
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
-            # Note: For a full implementation, we'd need to export the model to ONNX
-            # For now, we'll use a simpler approach or skip if not available
-            # This is a placeholder - in practice, we'd need the ONNX model file
-            _embedding_session = None  # Placeholder - would load actual ONNX model
-            _embedding_tokenizer = tokenizer
-        except Exception:
-            # Fallback to a very basic approach if transformers not available
-            _embedding_session = None
-            _embedding_tokenizer = None
-
-    except ImportError:
-        # Dependencies not installed
-        _embedding_session = None
-        _embedding_tokenizer = None
-
-    return _embedding_session, _embedding_tokenizer
-
-def _compute_embedding(text: str) -> Optional[List[float]]:
-    """Compute embedding for text using sentence transformer model.
-
-    Returns None if model not available or computation fails.
-    """
-    session, tokenizer = _get_embedding_model()
-    if session is None or tokenizer is None:
-        return None
-
-    try:
-        import numpy as np
-        # Tokenize
-        inputs = tokenizer(text, return_tensors="np", padding=True, truncation=True, max_length=128)
-
-        # In a real implementation, we would run the ONNX model here
-        # For now, return a dummy embedding to demonstrate the concept
-        # TODO: Replace with actual ONNX inference
-        embedding = np.random.randn(384).astype(np.float32)  # 384-dim for MiniLM-L6-v2
-        # Normalize
-        embedding = embedding / np.linalg.norm(embedding)
-        return embedding.tolist()
-    except Exception:
-        return None
 
 # ── Categories ────────────────────────────────────────────────────────────────
 
@@ -153,7 +89,6 @@ CREATE TABLE IF NOT EXISTS memories (
     updated_at    REAL NOT NULL,
     last_accessed REAL,
     expires_at    REAL,
-    embedding     BLOB,          -- Vector embedding for semantic search (nullable)
     extra         TEXT NOT NULL DEFAULT '{}'
 );
 
@@ -243,7 +178,6 @@ class Memory:
     updated_at: float = 0.0
     last_accessed: Optional[float] = None
     expires_at: Optional[float] = None
-    embedding: Optional[List[float]] = None  # Vector embedding for semantic search
     extra: Dict[str, Any] = field(default_factory=dict)
 
     # -- scoring ---------------------------------------------------------------
@@ -286,16 +220,6 @@ def _row_to_memory(row: sqlite3.Row) -> Memory:
     d.pop("rank", None)
     d["tags"] = json.loads(d.get("tags") or "[]")
     d["extra"] = json.loads(d.get("extra") or "{}")
-    # Handle embedding blob -> list of floats
-    if d.get("embedding") is not None:
-        import numpy as np
-        try:
-            d["embedding"] = np.frombuffer(d["embedding"], dtype=np.float32).tolist()
-        except Exception:
-            # If there's an error deserializing, set to None
-            d["embedding"] = None
-    else:
-        d["embedding"] = None
     valid = {f for f in Memory.__dataclass_fields__}  # type: ignore[attr-defined]
     return Memory(**{k: v for k, v in d.items() if k in valid})
 
@@ -422,27 +346,18 @@ class MemoryStore:
             expires_at=(now + expires_in_days * 86400) if expires_in_days else None,
             extra=extra or {},
         )
-        # Compute embedding if model is available
-        embedding_blob = None
-        if mem.embedding is None:  # Only compute if not already set
-            computed_embedding = _compute_embedding(mem.content)
-            if computed_embedding is not None:
-                mem.embedding = computed_embedding
-                import numpy as np
-                embedding_blob = np.array(computed_embedding, dtype=np.float32).tobytes()
-
         self._conn.execute(
             "INSERT INTO memories (id, content, title, category, project, tags, "
             "importance, source, origin, content_hash, supersedes, is_latest, "
             "pinned, archived, access_count, created_at, updated_at, "
-            "last_accessed, expires_at, embedding, extra) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "last_accessed, expires_at, extra) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 mem.id, mem.content, mem.title, mem.category, mem.project,
                 json.dumps(mem.tags), mem.importance, mem.source, mem.origin,
                 mem.content_hash, mem.supersedes, 1, mem.pinned, 0, 0,
                 mem.created_at, mem.updated_at, None, mem.expires_at,
-                embedding_blob, json.dumps(mem.extra),
+                json.dumps(mem.extra),
             ),
         )
         self._conn.commit()
@@ -561,23 +476,18 @@ class MemoryStore:
         include_archived: bool = False,
         touch: bool = True,
     ) -> List[Memory]:
-        """Full-text search, ranked by relevance blended with :meth:`Memory.score`.
-        If embedding model is available, uses hybrid search combining text and vector similarity.
-        """
+        """Full-text search, ranked by relevance blended with :meth:`Memory.score`."""
         query = (query or "").strip()
         if not query:
             return self.recent(limit, category=category, project=project)
 
         results: List[Memory] = []
-        text_scores: List[float] = []  # parallel to results, higher is better
-        use_fts = self.fts
-
-        if use_fts:
+        if self.fts:
             expr = self._fts_query(query)
             if expr:
                 try:
                     rows = self._conn.execute(
-                        "SELECT m.*, rank FROM memories_fts f "
+                        "SELECT m.* FROM memories_fts f "
                         "JOIN memories m ON m.rowid = f.rowid "
                         "WHERE memories_fts MATCH ? AND m.is_latest=1 "
                         + ("" if include_archived else "AND m.archived=0 ")
@@ -585,13 +495,10 @@ class MemoryStore:
                         (expr, limit * 4),
                     ).fetchall()
                     results = [_row_to_memory(r) for r in rows]
-                    # FTS rank: lower is better. Convert to similarity score in (0,1]
-                    # Using 1/(1+rank) so rank 0 -> 1.0, rank 1 -> 0.5, etc.
-                    text_scores = [1.0 / (1.0 + r["rank"]) for r in rows]
                 except sqlite3.OperationalError:
-                    use_fts = False  # fall back to LIKE
+                    results = []
 
-        if not use_fts or not results:
+        if not results:  # LIKE fallback
             like = f"%{query.lower()}%"
             rows = self._conn.execute(
                 "SELECT * FROM memories WHERE is_latest=1 "
@@ -601,48 +508,14 @@ class MemoryStore:
                 (like, like, like, limit * 4),
             ).fetchall()
             results = [_row_to_memory(r) for r in rows]
-            # For LIKE results, we don't have a rank; use a neutral text score
-            text_scores = [0.5] * len(results)
 
         if category:
-            # Filter both lists
-            paired = [(m, s) for m, s in zip(results, text_scores) if m.category == category]
-            results, text_scores = zip(*paired) if paired else ([], [])
+            results = [m for m in results if m.category == category]
         if project:
-            paired = [(m, s) for m, s in zip(results, text_scores) if m.project == project]
-            results, text_scores = zip(*paired) if paired else ([], [])
+            results = [m for m in results if m.project == project]
 
-        # Try hybrid search if embedding model is available
-        query_embedding = None
-        try:
-            query_embedding = _compute_embedding(query)
-        except Exception:
-            query_embedding = None
-
-        if query_embedding is not None:
-            # Compute vector similarities and combine with text scores
-            import numpy as np
-            alphas = 0.3  # weight for vector similarity
-            combined_scores: List[float] = []
-            for mem, text_score in zip(results, text_scores):
-                vector_sim = 0.0
-                if mem.embedding is not None:
-                    # cosine similarity
-                    vec1 = np.array(query_embedding, dtype=np.float32)
-                    vec2 = np.array(mem.embedding, dtype=np.float32)
-                    denom = np.linalg.norm(vec1) * np.linalg.norm(vec2)
-                    if denom > 0:
-                        vector_sim = float(np.dot(vec1, vec2) / denom)
-                combined = (1 - alphas) * text_score + alphas * vector_sim
-                combined_scores.append(combined)
-            # Sort by combined score descending
-            ranked = sorted(zip(results, combined_scores), key=lambda x: x[1], reverse=True)
-            results = [m for m, _ in ranked[:limit]]
-        else:
-            # Fallback to original scoring (importance/recency/usage)
-            results.sort(key=lambda m: m.score(), reverse=True)
-            results = results[:limit]
-
+        results.sort(key=lambda m: m.score(), reverse=True)
+        results = results[:limit]
         if touch:
             self._touch(m.id for m in results)
         return results
@@ -906,231 +779,6 @@ class MemoryStore:
             lines.append("")
         out_path.write_text("\n".join(lines), encoding="utf-8")
         return len(mems)
-
-    def reflect(self, days: int = 7) -> Dict[str, Any]:
-        """Generate reflective insights from recent memories.
-
-        Args:
-            days: Number of days to look back for reflection (default: 7)
-
-        Returns:
-            Dictionary with reflection statistics
-        """
-        import datetime
-        from collections import Counter
-
-        now = time.time()
-        cutoff_time = now - (days * 86400)
-
-        # Get recent memories from the specified time period
-        recent_memories = self._conn.execute(
-            """
-            SELECT * FROM memories
-            WHERE created_at >= ?
-            AND is_latest = 1
-            ORDER BY created_at DESC
-            """,
-            (cutoff_time,),
-        ).fetchall()
-
-        if not recent_memories:
-            return {
-                "period_days": days,
-                "memories_analyzed": 0,
-                "reflections_generated": 0,
-            }
-
-        memories = [_row_to_memory(row) for row in recent_memories]
-
-        # Analyze patterns in the memories
-        # 1. Most common categories
-        categories = [m.category for m in memories]
-        category_counts = Counter(categories)
-        top_categories = category_counts.most_common(3)
-
-        # 2. Most common tags
-        all_tags = []
-        for m in memories:
-            all_tags.extend(m.tags)
-        tag_counts = Counter(all_tags)
-        top_tags = [tag for tag, _ in tag_counts.most_common(5)]
-
-        # 3. Average importance
-        avg_importance = sum(m.importance for m in memories) / len(memories)
-
-        # 4. Most active time periods (by hour of day)
-        hours = [datetime.datetime.fromtimestamp(m.created_at).hour for m in memories]
-        hour_counts = Counter(hours)
-        peak_hours = [hour for hour, _ in hour_counts.most_common(3)]
-
-        # 5. High importance memories
-        important_memories = [m for m in memories if m.importance >= 4]
-
-        # Generate reflection insights
-        reflections = []
-
-        # Time-based reflection
-        if memories:
-            date_range_start = datetime.datetime.fromtimestamp(min(m.created_at for m in memories)).strftime("%Y-%m-%d")
-            date_range_end = datetime.datetime.fromtimestamp(max(m.created_at for m in memories)).strftime("%Y-%m-%d")
-            reflections.append(f"Over the past {days} days ({date_range_start} to {date_range_end}), you had {len(memories)} significant interactions.")
-
-        # Category insights
-        if top_categories:
-            cat_str = ", ".join([f"{cat} ({count})" for cat, count in top_categories])
-            reflections.append(f"Your main focus areas were: {cat_str}.")
-
-        # Tag insights
-        if top_tags:
-            tags_str = ", ".join([f"#{tag}" for tag in top_tags])
-            reflections.append(f"Frequently mentioned topics: {tags_str}.")
-
-        # Importance insights
-        if avg_importance >= 3.5:
-            reflections.append("You've been engaging with relatively high-importance topics recently.")
-        elif avg_importance < 2.5:
-            reflections.append("Your recent interactions have been mostly low-priority or routine matters.")
-
-        # Important memories highlight
-        if important_memories:
-            important_count = len(important_memories)
-            reflections.append(f"You flagged {important_count} memories as highly important (importance ≥ 4).")
-
-        # Time pattern insights
-        if peak_hours:
-            hours_str = ", ".join([f"{h:02d}:00" for h in sorted(peak_hours)])
-            reflections.append(f"Your most active hours were: {hours_str}.")
-
-        # Store reflections as insight memories
-        stored_count = 0
-        for reflection in reflections:
-            # Only store if the reflection is sufficiently substantive
-            if len(reflection.split()) >= 5:  # At least 5 words
-                try:
-                    self.save(
-                        content=reflection,
-                        title=f"Reflection: {datetime.datetime.now().strftime('%Y-%m-%d')}",
-                        category="insight",
-                        importance=2,  # Low importance for reflections
-                        tags=["reflection", "auto-generated"],
-                        source="reflection",
-                    )
-                    stored_count += 1
-                except Exception:
-                    # If we can't store it, just continue
-                    pass
-
-        return {
-            "period_days": days,
-            "memories_analyzed": len(memories),
-            "reflections_generated": stored_count,
-            "analysis": {
-                "top_categories": dict(top_categories),
-                "top_tags": top_tags,
-                "average_importance": round(avg_importance, 2),
-                "peak_hours": sorted(peak_hours),
-                "important_memories_count": len(important_memories),
-            }
-        }
-
-    def compress(
-        self,
-        max_age_days: float = 30.0,
-        max_importance: int = 2,
-    ) -> Dict[str, int]:
-        """Compress old, low-importance memories into summaries.
-
-        Args:
-            max_age_days: Memories older than this are candidates for compression
-            max_importance: Memories with importance <= this are candidates for compression
-
-        Returns:
-            Dictionary with compression statistics
-        """
-        import datetime
-        from collections import Counter
-
-        now = time.time()
-        cutoff_time = now - (max_age_days * 86400)
-
-        # Find candidate memories: old, low importance, not pinned, not archived
-        candidates = self._conn.execute(
-            """
-            SELECT * FROM memories
-            WHERE created_at < ?
-            AND importance <= ?
-            AND pinned = 0
-            AND archived = 0
-            ORDER BY created_at ASC
-            """,
-            (cutoff_time, max_importance),
-        ).fetchall()
-
-        if not candidates:
-            return {
-                "candidates_found": 0,
-                "compressed_count": 0,
-                "summary_count": 0,
-                "archived_count": 0,
-            }
-
-        # Group candidates by week for summarization
-        weeks: dict[str, list[sqlite3.Row]] = {}
-        for row in candidates:
-            mem = _row_to_memory(row)
-            dt = datetime.datetime.fromtimestamp(mem.created_at)
-            week_key = f"{dt.year}-W{dt.isocalendar()[1]:02d}"  # Year-Week number
-            weeks.setdefault(week_key, []).append(mem)
-
-        summary_count = 0
-        archived_count = 0
-
-        # Process each week's memories
-        for week_key, memories in weeks.items():
-            if len(memories) < 2:  # Only compress if we have multiple memories
-                continue
-
-            # Collect all tags from memories in this week
-            all_tags = []
-            for mem in memories:
-                all_tags.extend(mem.tags)
-
-            # Find most common tags
-            tag_counts = Counter(all_tags)
-            common_tags = [tag for tag, _ in tag_counts.most_common(5)]
-
-            # Create summary content
-            dates = [datetime.datetime.fromtimestamp(m.created_at).strftime("%Y-%m-%d") for m in memories]
-            date_range = f" from {min(dates)} to {max(dates)}" if len(dates) > 1 else f" on {dates[0]}"
-
-            summary_content = f"Summary of {len(memories)} memories{date_range}. "
-            if common_tags:
-                summary_content += f"Common topics: {', '.join(common_tags)}. "
-            summary_content += "Individual memories have been archived for storage efficiency."
-
-            # Create summary memory
-            summary_mem, _ = self.save(
-                content=summary_content,
-                title=f"Memory summary for week {week_key}",
-                category="insight",
-                importance=1,  # Low importance for summaries
-                tags=["summary"] + common_tags[:3],  # Keep top 3 tags
-                source="compression",
-            )
-
-            # Archive the original memories
-            for mem in memories:
-                self.forget(mem.id, hard=False)  # Soft delete (archive)
-                archived_count += 1
-
-            summary_count += 1
-
-        return {
-            "candidates_found": len(candidates),
-            "compressed_count": len(candidates),
-            "summary_count": summary_count,
-            "archived_count": archived_count,
-        }
 
 
 # ── Module-level convenience (used by MCP shim, bot, hooks) ───────────────────

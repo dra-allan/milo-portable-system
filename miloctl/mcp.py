@@ -21,7 +21,6 @@ names deliberately match the old Engram ones (``mem_save``, ``mem_recall``,
 
 from __future__ import annotations
 
-import io
 import json
 import sys
 import traceback
@@ -32,25 +31,6 @@ from .naming import display_name
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "milo-memory"
-
-
-def _force_utf8(stream: Optional[io.TextIOBase]):
-    """Return ``stream`` guaranteed to decode/encode UTF-8.
-
-    On Windows the text-mode ``sys.stdin``/``sys.stdout`` inherit the console
-    codepage (cp1252 for en-US), so a UTF-8 JSON-RPC payload like an em-dash
-    (bytes E2 80 94) is misread as cp1252 mojibake *before* it reaches disk —
-    which is how ``â€"`` ends up in stored memories. Rewrap the underlying
-    binary buffer as UTF-8 so the stdio protocol is UTF-8 end to end no matter
-    the locale. Falls back to the original stream when it has no buffer (mocks).
-    """
-    if stream is None:
-        return None
-    target = getattr(stream, "buffer", None) or stream
-    try:
-        return io.TextIOWrapper(target, encoding="utf-8", newline="")
-    except (TypeError, ValueError, AttributeError):
-        return stream
 
 
 # ── Tool implementations ──────────────────────────────────────────────────────
@@ -419,8 +399,8 @@ def handle(request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 def serve(stdin=None, stdout=None) -> None:
     """Read newline-delimited JSON-RPC from stdin, write responses to stdout."""
-    stdin = _force_utf8(stdin or sys.stdin)
-    stdout = _force_utf8(stdout or sys.stdout)
+    stdin = stdin or sys.stdin
+    stdout = stdout or sys.stdout
     paths.ensure_tree()
     for line in stdin:
         line = line.strip()
