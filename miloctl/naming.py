@@ -118,11 +118,38 @@ def normalise_text(text: str, to: Optional[str] = None) -> str:
     return pattern.sub(_sub, text)
 
 
+def edit_distance(a: str, b: str, cap: int = 4) -> int:
+    """Levenshtein distance, short-circuiting once it exceeds ``cap``.
+
+    Small and dependency-free; ``difflib`` ratios are fuzzier than we want
+    for something that decides which command to run.
+    """
+    if a == b:
+        return 0
+    if abs(len(a) - len(b)) > cap:
+        return cap + 1
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(
+                prev[j] + 1,            # deletion
+                cur[j - 1] + 1,         # insertion
+                prev[j - 1] + (ca != cb),  # substitution
+            ))
+        if min(cur) > cap:
+            return cap + 1
+        prev = cur
+    return prev[-1]
+
+
 def match_command(word: str, candidates: Iterable[str]) -> Optional[str]:
     """Resolve ``word`` against ``candidates`` with Milo-aware fuzziness.
 
-    Order of attempts: exact → folded-exact → unique prefix. Returns the
-    matched candidate or ``None``.
+    Order of attempts: exact → folded-exact → unique prefix → nearest by edit
+    distance. The distance budget scales with word length (1 edit for short
+    words, up to 3 for long ones) and the winner must be strictly closer than
+    the runner-up, so an ambiguous typo asks rather than guesses wrong.
     """
     word = (word or "").strip()
     cands = list(candidates)
@@ -137,7 +164,17 @@ def match_command(word: str, candidates: Iterable[str]) -> Optional[str]:
     prefix = [c for c in cands if _fold(c).startswith(folded)]
     if len(prefix) == 1:
         return prefix[0]
-    return None
+
+    budget = 1 if len(folded) <= 4 else (2 if len(folded) <= 8 else 3)
+    scored = sorted(
+        ((edit_distance(folded, _fold(c), budget), c) for c in cands),
+        key=lambda pair: (pair[0], pair[1]),
+    )
+    if not scored or scored[0][0] > budget:
+        return None
+    if len(scored) > 1 and scored[1][0] == scored[0][0]:
+        return None  # tie — refuse to guess
+    return scored[0][1]
 
 
 def agent_name(name: Optional[str] = None) -> str:
