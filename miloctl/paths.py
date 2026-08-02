@@ -135,12 +135,34 @@ def env_file() -> Path:
     return milo_home() / ".env"
 
 
+#: Older/shorter spellings people actually type. Both forms always work, so a
+#: hand-edited ``.env`` never silently fails to take effect.
+_KEY_ALIASES: Dict[str, tuple] = {
+    "MILO_VAULT_DIR": ("VAULT_DIR", "MILO_VAULT", "BRAINS_DIR"),
+    "MILO_ENGRAM_DIR": ("ENGRAM_DIR",),
+    "MILO_WORKSPACE": ("WORKSPACE_DIR", "MILO_WORKSPACE_DIR"),
+    "MILO_REPOS_DIR": ("REPOS_DIR",),
+    "MILO_SKILLS_DIR": ("SKILLS_DIR",),
+}
+
+
 def _cfg(key: str) -> str:
-    """Look a key up in env vars first, then ``$MILO_HOME/.env``."""
-    val = os.environ.get(key, "").strip()
-    if val:
-        return val
-    return _read_env_file(env_file()).get(key, "").strip()
+    """Look a key up in env vars first, then ``$MILO_HOME/.env``.
+
+    Aliases are honoured so ``VAULT_DIR`` and ``MILO_VAULT_DIR`` are the same
+    setting — one less way for a migration to fail quietly.
+    """
+    candidates = (key, *_KEY_ALIASES.get(key, ()))
+    for name in candidates:
+        val = os.environ.get(name, "").strip()
+        if val:
+            return val
+    dotenv = _read_env_file(env_file())
+    for name in candidates:
+        val = dotenv.get(name, "").strip()
+        if val:
+            return val
+    return ""
 
 
 def _resolve(key: str, default: Path) -> Path:
