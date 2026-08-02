@@ -168,6 +168,38 @@ def cmd_skills(args: argparse.Namespace) -> int:
         print(reg.index())
         return 0
 
+    if action == "search":
+        # The prompt index tells the model to run exactly this when it cannot
+        # see a skill it needs, so it has to search everything installed —
+        # including packs that are deliberately kept out of the index.
+        q = _joined(args.query) or name
+        if not q:
+            return _fail('what are you looking for? milo skills search "deploy a bot"')
+        hits = reg.search(q, limit=args.limit)
+        if _emit([s.to_dict() for s in hits], args.json):
+            return 0
+        if not hits:
+            ui.warn(f"nothing matches {q!r}")
+            ui.say(ui.dim("  browse what's installed: milo packs list"))
+            ui.say(ui.dim(f'  or write it: milo learn "{q}"'))
+            return 0
+        ui.banner("search", f"{len(hits)} match{'es' if len(hits) != 1 else ''} for {q!r}")
+        ui.table(
+            [[s.name, s.description[:50], s.origin,
+              ", ".join(t for t in s.tags if not t.startswith("pack:"))[:22]]
+             for s in hits],
+            headers=["skill", "what it does", "from", "tags"],
+        )
+        ui.say()
+        ui.say(ui.dim(f"  read one: milo skills show {hits[0].name}"))
+        # A pack skill that is findable but not in the index is only one step
+        # from being useful; say so rather than making them go looking.
+        off = [s for s in hits if s.origin == "pack"]
+        if off:
+            ui.say(ui.dim("  keep it in the prompt: "
+                          f"milo packs enable {off[0].name}"))
+        return 0
+
     if action == "show":
         if not name:
             return _fail("which skill? milo skills show <name>")
@@ -620,12 +652,14 @@ def register(sub) -> None:
 
     s = sub.add_parser("skills", help="procedural memory — what Milo knows how to do")
     s.add_argument("action", nargs="?", default="list",
-                   choices=["list", "index", "show", "new", "edit", "lint",
-                            "archive", "restore", "remove", "stats", "used"])
+                   choices=["list", "index", "search", "show", "new", "edit",
+                            "lint", "archive", "restore", "remove", "stats",
+                            "used"])
     s.add_argument("name", nargs="?")
     s.add_argument("-d", "--description", default="")
     s.add_argument("-t", "--tags", nargs="*")
     s.add_argument("-q", "--query", nargs="*")
+    s.add_argument("-n", "--limit", type=int, default=20)
     s.add_argument("--all", action="store_true", help="include archived")
     s.add_argument("--no-edit", action="store_true")
     s.add_argument("--outcome", default="", help="used | success | failure")
