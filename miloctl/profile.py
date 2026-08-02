@@ -129,16 +129,52 @@ class Profile:
                 continue
         return self
 
-    def save(self) -> Path:
-        paths.ensure(self.path.parent)
-        payload = {
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialisable form. Deterministic order so git diffs stay readable."""
+        return {
             "meta": {**self.meta, "updated_at": time.time()},
             "traits": [asdict(t) for t in sorted(
                 self.traits.values(), key=lambda t: (t.section, t.key)
             )],
         }
+
+    def merge_dict(self, data: Dict[str, Any]) -> "Profile":
+        """Merge a serialised profile in — used by ``milo restore``.
+
+        Conflicts resolve by *evidence*, not recency: the trait observed more
+        times wins, and confidences combine rather than overwrite. Restoring an
+        older snapshot therefore cannot wipe out what this machine has learned
+        since.
+        """
+        fields = Trait.__dataclass_fields__  # type: ignore[attr-defined]
+        for raw in data.get("traits", []):
+            try:
+                incoming = Trait(**{k: v for k, v in raw.items() if k in fields})
+            except TypeError:
+                continue
+            current = self.traits.get(incoming.key)
+            if current is None:
+                self.traits[incoming.key] = incoming
+                continue
+            if incoming.observations > current.observations:
+                incoming.observations += current.observations
+                incoming.confidence = max(incoming.confidence, current.confidence)
+                self.traits[incoming.key] = incoming
+            else:
+                current.observations += incoming.observations
+                current.confidence = max(current.confidence, incoming.confidence)
+        meta = data.get("meta", {})
+        self.meta["sessions"] = max(
+            int(self.meta.get("sessions", 0) or 0),
+            int(meta.get("sessions", 0) or 0),
+        )
+        self.meta.setdefault("created_at", meta.get("created_at", time.time()))
+        return self
+
+    def save(self) -> Path:
+        paths.ensure(self.path.parent)
         self.path.write_text(
-            json.dumps(payload, indent=2, sort_keys=False, ensure_ascii=False),
+            json.dumps(self.to_dict(), indent=2, sort_keys=False, ensure_ascii=False),
             encoding="utf-8",
         )
         return self.path
