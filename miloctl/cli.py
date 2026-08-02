@@ -439,7 +439,22 @@ def cmd_migrate(args: argparse.Namespace) -> int:
 def cmd_path(args: argparse.Namespace) -> int:
     table = paths.describe()
     if args.name:
-        key = args.name.replace("-", "_")
+        # 'milo path home', 'milo path MILO_HOME' and 'milo path hoem' all work.
+        aliases = {
+            "home": "MILO_HOME", "milo_home": "MILO_HOME", "root": "MILO_HOME",
+            "env": "env_file", "dotenv": "env_file",
+            "memory": "memory_db", "brain": "memory_db", "db": "memory_db",
+            "sessions": "sessions_db",
+            "brains": "vault", "dra_brains": "vault", "obsidian": "vault",
+            "opencode": "opencode_config", "claude": "claude_config",
+        }
+        raw = args.name.strip().replace("-", "_")
+        key = aliases.get(raw.lower(), raw)
+        if key not in table:
+            # Fuzzy against real keys *and* alias names, so 'sessons' finds
+            # the 'sessions' alias which then resolves to sessions_db.
+            hit = naming.match_command(raw, [*table, *aliases])
+            key = aliases.get(hit, hit) if hit else ""
         if key not in table:
             return _fail(f"unknown path {args.name!r}. "
                          f"Known: {', '.join(sorted(table))}")
