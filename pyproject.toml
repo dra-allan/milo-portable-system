@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "miloctl"
+version = "2.0.0"
+description = "Milo — a portable, self-improving personal agent. One repo, one CLI, one brain."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Allan", email = "allan@dra.local" }]
+keywords = ["agent", "assistant", "opencode", "claude-code", "mcp", "memory", "skills"]
+
+# Deliberately empty. Milo's whole promise is that it installs on a fresh
+# machine — including a Termux phone with no compiler — so the core runs on
+# the Python standard library alone. Anything that needs a wheel is optional.
+dependencies = []
+
+[project.optional-dependencies]
+# Telegram channel. Only needed if you actually run the bot.
+bot = ["python-telegram-bot>=20.0"]
+# Nicer terminal output. The CLI degrades gracefully without it.
+pretty = ["rich>=13.0"]
+dev = ["pytest>=7.0", "ruff>=0.4"]
+all = ["python-telegram-bot>=20.0", "rich>=13.0"]
+
+[project.urls]
+Homepage = "https://github.com/dra-allan/milo-portable-system"
+Source = "https://github.com/dra-allan/milo-portable-system"
+
+[project.scripts]
+# Both spellings, always. Allan types them interchangeably and neither
+# should ever be the one that doesn't work.
+milo = "miloctl.cli:main"
+mylo = "miloctl.cli:main"
+# Explicit MCP entry point so agent configs can reference a stable command
+# instead of "python -m miloctl.mcp" with a guessed interpreter path.
+milo-mcp = "miloctl.mcp:main"
+
+[tool.setuptools]
+packages = ["miloctl"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+miloctl = ["assets/**/*", "skills/**/*", "templates/**/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
