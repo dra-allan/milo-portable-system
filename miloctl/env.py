@@ -284,3 +284,94 @@ def placeholders(template: str) -> List[str]:
         if m.group(1) not in seen:
             seen.append(m.group(1))
     return seen
+
+
+# ── Leak detection ────────────────────────────────────────────────────────────
+#
+# The safety net that runs before ``milo backup --push``. It is pattern-based
+# as well as value-based, so it catches credentials we were never told about —
+# which is exactly how a live Google refresh token once got committed to the
+# public ``dra-allan/milo`` repo.
+
+_LEAK_PATTERNS: List[Tuple[str, "re.Pattern[str]"]] = [
+    ("github-pat", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{16,}\b")),
+    ("github-fine-grained", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b")),
+    ("telegram-bot-token", re.compile(r"\b\d{8,12}:[A-Za-z0-9_-]{30,}\b")),
+    ("google-oauth-secret", re.compile(r"\bGOCSPX-[A-Za-z0-9_-]{20,}\b")),
+    ("google-refresh-token", re.compile(r"\b1//[A-Za-z0-9_-]{30,}\b")),
+    ("jwt", re.compile(r"\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b")),
+    ("openai-key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b")),
+    ("anthropic-key", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}\b")),
+    ("openrouter-key", re.compile(r"\bsk-or-v1-[A-Za-z0-9]{20,}\b")),
+    ("slack-token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b")),
+    ("aws-access-key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("private-key-block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+]
+
+#: File names/extensions never worth scanning (binary or generated).
+_UNSCANNABLE = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip", ".gz",
+    ".tar", ".db", ".sqlite", ".sqlite3", ".woff", ".woff2", ".ttf", ".mp3",
+    ".mp4", ".wav", ".pyc", ".so", ".dll", ".exe",
+}
+
+
+def scan_text(content: str, extra_values: Optional[Iterable[str]] = None) -> List[Tuple[str, str]]:
+    """Return ``[(kind, masked_sample), ...]`` for anything credential-shaped."""
+    findings: List[Tuple[str, str]] = []
+    for kind, pattern in _LEAK_PATTERNS:
+        for match in pattern.findall(content):
+            text = match if isinstance(match, str) else match[0]
+            findings.append((kind, mask(text)))
+    for value in (extra_values or []):
+        value = str(value or "")
+        if len(value) >= 8 and value in content:
+            findings.append(("known-secret-value", mask(value)))
+    seen: set = set()
+    unique: List[Tuple[str, str]] = []
+    for item in findings:
+        if item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return unique
+
+
+def scan_paths(
+    roots: Iterable[Path],
+    *,
+    extra_values: Optional[Iterable[str]] = None,
+    max_bytes: int = 2_000_000,
+) -> List[Tuple[Path, str, str]]:
+    """Walk files under ``roots`` and report leaks as ``(path, kind, sample)``.
+
+    Skips ``.git``, binaries and anything larger than ``max_bytes``. Known
+    secret values come from the live ``.env`` unless overridden, so this also
+    catches a secret pasted into a markdown file.
+    """
+    known = list(extra_values) if extra_values is not None else [
+        v for k, v in load().items() if is_secret(k) and len(v) >= 8
+    ]
+    out: List[Tuple[Path, str, str]] = []
+    for root in roots:
+        root = Path(root)
+        if root.is_file():
+            candidates = [root]
+        elif root.is_dir():
+            candidates = [
+                p for p in root.rglob("*")
+                if p.is_file()
+                and ".git" not in p.parts
+                and p.suffix.lower() not in _UNSCANNABLE
+            ]
+        else:
+            continue
+        for p in candidates:
+            try:
+                if p.stat().st_size > max_bytes:
+                    continue
+                text = p.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            for kind, sample in scan_text(text, known):
+                out.append((p, kind, sample))
+    return out
