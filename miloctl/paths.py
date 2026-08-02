@@ -282,9 +282,43 @@ def package_root() -> Path:
     return Path(__file__).resolve().parent
 
 
+def _looks_like_checkout(p: Path) -> bool:
+    """A real milo-portable-system working copy, not just any directory."""
+    try:
+        return (p / "pyproject.toml").is_file() and (p / "miloctl").is_dir()
+    except OSError:
+        return False
+
+
 def repo_root() -> Path:
-    """The milo-portable-system checkout (parent of ``miloctl/``)."""
-    return package_root().parent
+    """The milo-portable-system checkout — where the snapshot gets committed.
+
+    Resolution order, and the reason for each step:
+
+    1. ``MILO_REPO_ROOT`` — explicit wins, and makes the whole thing testable.
+    2. The parent of ``miloctl/``, but *only if it actually looks like the
+       checkout*. Under ``pip install milo`` that parent is ``site-packages``,
+       and blindly trusting it means writing the brain into a directory that
+       pip deletes on the next upgrade. Silent, total memory loss on a routine
+       ``pip install -U`` is precisely the failure this project exists to stop.
+    3. ``$MILO_HOME/milo-portable-system`` — the conventional clone location,
+       if it is there.
+    4. ``$MILO_HOME/repo`` as a last resort, so a snapshot always has somewhere
+       durable to live even when Milo was installed from a wheel.
+    """
+    configured = _cfg("MILO_REPO_ROOT")
+    if configured:
+        return _expand(configured)
+
+    parent = package_root().parent
+    if _looks_like_checkout(parent):
+        return parent
+
+    conventional = milo_home() / "milo-portable-system"
+    if _looks_like_checkout(conventional):
+        return conventional
+
+    return milo_home() / "repo"
 
 
 def bundled(*parts: str) -> Path:
