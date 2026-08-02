@@ -367,6 +367,8 @@ def build(
     query: str = "",
     memory_budget: int = 14,
     vault_budget: int = 6000,
+    include_memory: bool = True,
+    include_profile: bool = True,
     include_vault: bool = True,
     include_tools: bool = True,
     signals: Optional[Dict[str, object]] = None,
@@ -375,12 +377,17 @@ def build(
 
     ``query`` biases memory retrieval toward the current task — pass the user's
     first message and the recalled memories become relevant instead of generic.
+
+    The ``include_*`` switches exist because a persona written to a *config
+    file* (``milo sync``) is read once at session start and must not go stale,
+    whereas a persona rendered *per turn* wants everything. Turning memory and
+    vault off gives the durable half: identity, environment, skills, tools.
     """
     return PersonaContext(
         identity=identity_text(),
         environment=_environment_block(),
-        user_model=_profile_block(),
-        memory=_memory_block(query, memory_budget),
+        user_model=_profile_block() if include_profile else "",
+        memory=_memory_block(query, memory_budget) if include_memory else "",
         skills=_skills_block(),
         vault=_vault_block(vault_budget) if include_vault else "",
         tools=_tools_block() if include_tools else "",
