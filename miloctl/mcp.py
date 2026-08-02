@@ -140,11 +140,15 @@ def _t_skill_read(args: Dict[str, Any]) -> str:
     name = str(args.get("name", "")).strip()
     sk = registry().get(name)
     if not sk:
-        return f"No skill named {name!r}."
+        from .skills import registry as _reg
+        near = [s.name for s in _reg().search(name, limit=5)]
+        hint = f" Did you mean: {', '.join(near)}?" if near else ""
+        return f"No skill named {name!r}.{hint}"
     try:
-        return sk.path.read_text(encoding="utf-8")
+        # `path` is the skill DIRECTORY; `skill_file` is the SKILL.md inside it.
+        return sk.skill_file.read_text(encoding="utf-8")
     except OSError as exc:
-        return f"Could not read {sk.path}: {exc}"
+        return f"Could not read {sk.skill_file}: {exc}"
 
 
 def _t_sessions_search(args: Dict[str, Any]) -> str:

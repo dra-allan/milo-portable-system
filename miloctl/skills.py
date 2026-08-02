@@ -335,13 +335,30 @@ class SkillRegistry:
 
     def get(self, name: str) -> Optional[Skill]:
         target = (name or "").strip().lower().replace(" ", "-")
-        for s in self.all(include_archived=True):
+        if not target:
+            return None
+        every = self.all(include_archived=True)
+        for s in every:
             if s.name.lower() == target or s.path.name.lower() == target:
                 return s
         # unique prefix match — `milo skill show obsid` should work
-        hits = [s for s in self.all(include_archived=True)
-                if s.name.lower().startswith(target)]
-        return hits[0] if len(hits) == 1 else None
+        hits = [s for s in every if s.name.lower().startswith(target)]
+        if len(hits) == 1:
+            return hits[0]
+        # Dropped separators: `codereview` -> `code-reviewer`. Models and people
+        # both do this constantly, and failing on it wastes a whole turn.
+        squashed = target.replace("-", "")
+        hits = [s for s in every if s.name.lower().replace("-", "") == squashed]
+        if len(hits) == 1:
+            return hits[0]
+        hits = [s for s in every
+                if s.name.lower().replace("-", "").startswith(squashed)]
+        if len(hits) == 1:
+            return hits[0]
+        # Last resort: nearest by edit distance, refusing to guess on a tie.
+        from .naming import match_command
+        hit = match_command(target, [s.name for s in every])
+        return next((s for s in every if s.name == hit), None) if hit else None
 
     def search(self, query: str, limit: int = 20) -> List[Skill]:
         q = (query or "").strip().lower()
