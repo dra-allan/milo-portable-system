@@ -725,6 +725,21 @@ def register(sub) -> None:
     s = sub.add_parser("harness", help="which agent tools are installed and synced")
     s.set_defaults(func=cmd_harness)
 
+    s = sub.add_parser("packs", aliases=["pack"],
+                       help="skill and agent libraries from other people")
+    s.add_argument("action", nargs="?", default="list",
+                   choices=["list", "ls", "add", "install", "remove", "rm",
+                            "uninstall", "update", "search", "enable",
+                            "disable", "show"])
+    s.add_argument("name", nargs="?", default="")
+    s.add_argument("-q", "--query", nargs="*")
+    s.add_argument("--rename", default="", help="install under a different name")
+    s.add_argument("--enable", nargs="*",
+                   help="names, categories or kinds to put in the prompt index")
+    s.add_argument("-n", "--limit", type=int, default=20)
+    s.add_argument("--yes", action="store_true")
+    s.set_defaults(func=cmd_packs)
+
     s = sub.add_parser("note", aliases=["notes"],
                        help="the small memory Milo carries into every session")
     s.add_argument("action", nargs="?", default="view",
@@ -1072,3 +1087,161 @@ def cmd_note(args: argparse.Namespace) -> int:
 def _bar(pct: int, width: int = 16) -> str:
     filled = max(0, min(width, round(width * pct / 100)))
     return "[" + "#" * filled + "." * (width - filled) + "]"
+
+
+# ── packs (third-party skill / agent libraries) ───────────────────────────────
+
+
+def cmd_packs(args: argparse.Namespace) -> int:
+    """Borrow whole libraries of skills and agents from other people."""
+    from . import packs
+
+    action = args.action
+    name = _joined(getattr(args, "name", "")) or ""
+
+    if action in ("list", "ls"):
+        installed = packs.installed()
+        if _emit({"installed": installed, "available": packs.KNOWN_PACKS},
+                 args.json):
+            return 0
+        if installed:
+            ui.banner("packs", f"{len(installed)} installed")
+            enabled = set(packs.enabled_names())
+            rows = []
+            for pack, entry in sorted(installed.items()):
+                items = entry.get("items", {})
+                on = sum(1 for n in items if n in enabled)
+                bits = ", ".join(f"{v} {k}s" for k, v in
+                                 sorted(entry.get("counts", {}).items()) if v)
+                rows.append([pack, bits, f"{on}/{len(items)}"])
+            ui.table(rows, headers=["pack", "contents", "in prompt"])
+            ui.say()
+        known = {k: v for k, v in packs.KNOWN_PACKS.items() if k not in installed}
+        if known:
+            ui.say(ui.bold("  available"))
+            for k, v in sorted(known.items()):
+                ui.say(f"  {k:<24} {ui.dim(v['summary'])}")
+            ui.say()
+            ui.say(ui.dim(f"  add one: milo packs add {sorted(known)[0]}"))
+        return 0
+
+    if action in ("add", "install"):
+        if not name:
+            return _fail("which pack? milo packs add superpowers "
+                         "| owner/repo | <path>")
+        with ui.Spinner(f"fetching {name}"):
+            res = packs.install(name, name=args.rename,
+                                enable=args.enable or ())
+        if _emit(res.__dict__, args.json):
+            return 0
+        if res.error:
+            return _fail(f"{res.pack}: {res.error}")
+        ui.ok(res.render())
+        if res.renamed and args.verbose:
+            for old, new in sorted(res.renamed.items()):
+                ui.say(ui.dim(f"    {old} → {new}"))
+        ui.say()
+        # Nothing is in the prompt yet, and that surprises people unless said
+        # plainly. Explaining the why here is cheaper than a support round-trip.
+        if res.enabled:
+            ui.ok(f"{len(res.enabled)} added to the prompt index")
+        else:
+            ui.say(ui.dim("  Nothing was added to the system prompt — "
+                          f"{res.total} entries would cost real tokens"))
+            ui.say(ui.dim("  every turn. They are searchable now:"))
+            ui.say(ui.dim('    milo skills search "code review"'))
+            ui.say(ui.dim("    milo packs enable <name>"))
+        return 0
+
+    if action in ("remove", "rm", "uninstall"):
+        if not name:
+            return _fail("which pack? milo packs remove <name>")
+        if not args.yes and not ui.confirm(f"remove pack {name!r}?", False):
+            return 0
+        if not packs.remove(name):
+            return _fail(f"no pack {name!r} — see: milo packs list")
+        ui.ok(f"removed {name}")
+        return 0
+
+    if action == "update":
+        targets = [name] if name else sorted(packs.installed())
+        if not targets:
+            return _fail("nothing installed to update")
+        for t in targets:
+            with ui.Spinner(f"updating {t}"):
+                res = packs.update(t)
+            (ui.err if res.error else ui.ok)(res.render())
+        return 0
+
+    if action == "search":
+        q = _joined(args.query) or name
+        if not q:
+            return _fail('what are you after? milo packs search "database"')
+        hits = packs.search(q, limit=args.limit)
+        if _emit(hits, args.json):
+            return 0
+        if not hits:
+            ui.warn(f"nothing matches {q!r}")
+            return 0
+        ui.banner("packs", f"{len(hits)} match{'es' if len(hits) != 1 else ''}")
+        ui.table(
+            [[h["name"], h.get("description", "")[:46], h["pack"],
+              "yes" if h["enabled"] else ""] for h in hits],
+            headers=["name", "what it does", "pack", "in prompt"],
+        )
+        return 0
+
+    if action in ("enable", "disable"):
+        wanted = [name] + list(getattr(args, "query", None) or [])
+        wanted = [w for w in wanted if w]
+        if not wanted:
+            return _fail(f"which one? milo packs {action} <name>")
+        on = action == "enable"
+        # Accept a pack name or a category as shorthand for "all of these" —
+        # enabling 270 agents one at a time is not a workflow anyone will use.
+        expanded: List[str] = []
+        cat = packs.catalogue()
+        for w in wanted:
+            matches = [c["name"] for c in cat
+                       if c["pack"] == w or c.get("category") == w
+                       or c.get("kind") == w]
+            expanded.extend(matches or [w])
+        known = {c["name"] for c in cat}
+        unknown = [w for w in expanded if w not in known]
+        if unknown:
+            return _fail(f"not installed: {', '.join(sorted(set(unknown))[:5])}"
+                         f"\n  find it first: milo packs search \"{unknown[0]}\"")
+        touched = packs.set_enabled(expanded, on=on)
+        if not touched:
+            ui.say(ui.dim(f"  already {action}d"))
+            return 0
+        ui.ok(f"{len(touched)} {action}d")
+        if on:
+            from .skills import SkillRegistry
+            size = len(SkillRegistry().index()) // 4
+            ui.say(ui.dim(f"  prompt index is now ~{size} tokens"))
+        return 0
+
+    if action == "show":
+        if not name:
+            return _fail("which pack? milo packs show <name>")
+        entry = packs.installed().get(packs.slugify(name))
+        if not entry:
+            return _fail(f"no pack {name!r}")
+        if _emit(entry, args.json):
+            return 0
+        ui.banner(name, entry.get("source", ""))
+        enabled = set(packs.enabled_names())
+        by_cat: Dict[str, List[str]] = {}
+        for n, meta in sorted(entry.get("items", {}).items()):
+            by_cat.setdefault(meta.get("category") or "general", []).append(
+                f"{n}{' *' if n in enabled else ''}")
+        for cat, names in sorted(by_cat.items()):
+            ui.say(ui.bold(f"  {cat}") + ui.dim(f"  ({len(names)})"))
+            ui.say("    " + ", ".join(names[:14]) +
+                   (f" … +{len(names) - 14}" if len(names) > 14 else ""))
+        ui.say()
+        ui.say(ui.dim("  * = in the prompt index"))
+        return 0
+
+    return _fail(f"unknown action {action!r}")
