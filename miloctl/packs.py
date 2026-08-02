@@ -108,12 +108,25 @@ _IGNORE_PARTS = {".git", "node_modules", "tests", "test", "__pycache__",
 # unrepaired description means the entry is *present but unroutable* — the worst
 # outcome, because it costs tokens and returns nothing.
 
+#: A sentence that says *when* to reach for something, not *what it does*.
+#: These are useful to a human reading the full skill and useless in a 60-char
+#: index line, where every character has to help the model choose.
+_TRIGGER_SENTENCE = re.compile(
+    r"^\s*(you\s+must\s+use\s+this\b"
+    r"|use\s+(this\s+)?(skill\s+|agent\s+)?(proactively\b|when\b|before\b|for\b|to\s+\w+)"
+    r"|(call|invoke|trigger|apply|reach\s+for)\s+(this|it)\b"
+    r"|this\s+(skill|agent)\s+(is\s+for|should\s+be\s+used)\b"
+    r"|(should\s+be\s+used|to\s+be\s+used)\b"
+    r"|(before|when|whenever|after|during)\s+(you|the|a|an|any)\b"
+    r"|any\s+time\b|examples?\s*:)",
+    re.IGNORECASE,
+)
+
+#: Leading filler that adds nothing once the name is already on the line.
 _LEAD_NOISE = re.compile(
-    r"^(you\s+must\s+use\s+this\s+(skill\s+)?(before|when|for)\s*"
-    r"|use\s+this\s+(skill\s+)?(proactively\s+)?(before|when|for|to)\s*"
-    r"|this\s+skill\s+(is\s+for|should\s+be\s+used|helps?)\s*"
-    r"|expert\s+(at|in)\s+|specialist\s+(at|in)\s+"
-    r"|use\s+proactively\s*(when|for|to)?\s*)",
+    r"^(expert\s+(at|in)\s+|specialist\s+(at|in)\s+"
+    r"|(a|an|the)\s+(skill|agent|tool|helper)\s+(that|which|for|to)\s+"
+    r"|this\s+(skill|agent)\s+(helps?|does|will)\s+)",
     re.IGNORECASE,
 )
 _MARKETING = re.compile(
@@ -122,27 +135,46 @@ _MARKETING = re.compile(
     re.IGNORECASE,
 )
 
+#: Sentence boundary that survives "Node.js", "e.g." and "v1.2" — a naive split
+#: on ". " chops those and produces nonsense fragments.
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z(])|\s+[—–]\s+|\s*;\s*")
+
+
+def _sentences(text: str) -> List[str]:
+    return [s.strip() for s in _SENTENCE_SPLIT.split(text) if s and s.strip()]
+
 
 def tidy_description(text: str, fallback_name: str = "") -> str:
     """Turn an imported description into something that can actually route.
 
-    Keeps the first sentence, strips the "You MUST use this before..." framing
-    that reads as an instruction rather than a label, drops marketing adjectives
-    that waste the 60-character budget, and only then truncates — at a word
-    boundary, because a line cut mid-word looks broken and reads worse.
+    The hard case is not length, it is *shape*. Many descriptions lead with a
+    trigger clause and bury the actual capability behind it::
+
+        "You MUST use this before any creative work - creating features,
+         building components... Explores user intent and design."
+
+    Stripping the "You MUST use this before" prefix and keeping what follows
+    yields "Any creative work - creating features, building…" — which is the
+    *trigger*, truncated, with the real description ("Explores user intent and
+    design") thrown away. The entry then costs tokens on every turn and tells
+    the model nothing it can route on.
+
+    So this works sentence-by-sentence: drop the sentences that only say *when*
+    to use the thing, keep the first that says *what it does*, and fall back to
+    the trigger only if that is genuinely all there is.
     """
     text = " ".join((text or "").split())
     if not text:
         return f"{fallback_name.replace('-', ' ').capitalize()}." if fallback_name else ""
 
+    parts = _sentences(text)
+    descriptive = [s for s in parts if not _TRIGGER_SENTENCE.match(s)]
+    # A "descriptive" sentence under ~20 chars is usually a stub like "Use it."
+    # and is worse than the trigger it displaced.
+    candidates = [s for s in descriptive if len(s) >= 20] or descriptive or parts
+    text = candidates[0] if candidates else text
+
     text = _LEAD_NOISE.sub("", text).strip()
-    # First sentence only — imported descriptions often run to a paragraph.
-    for sep in (" — ", ". ", "; "):
-        if sep in text:
-            head = text.split(sep, 1)[0].strip()
-            if len(head) >= 20:       # a too-short head means the split was noise
-                text = head
-                break
     text = _MARKETING.sub("", text)
     text = " ".join(text.split()).strip(" ,;:—-")
     if not text:
