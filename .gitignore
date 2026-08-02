@@ -1,0 +1,21 @@
+# reference clones (not part of the repo)
+.refs/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# secrets / local state
+.env
+.env.local
+*.local.json
+state/
+logs/
+*.log
+
+# os
+.DS_Store
+Thumbs.db
