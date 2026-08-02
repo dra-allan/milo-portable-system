@@ -371,6 +371,10 @@ class Harness:
             res.written.append(
                 self._write(self.config_dir() / self.persona_filename, ctx.render())
             )
+            # Any harness that declares a slash directory should get the
+            # commands in it. Only OpenCode and Claude Code called this, so
+            # Codex advertised a prompts dir it never filled.
+            self._write_slash_commands(res.written)
             self._export_packs(res.written)
         except OSError as exc:
             res.error = str(exc)
