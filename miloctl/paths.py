@@ -322,8 +322,24 @@ def repo_root() -> Path:
 
 
 def bundled(*parts: str) -> Path:
-    """Path to a file shipped inside the repo (skills, templates, agents)."""
-    return repo_root().joinpath(*parts)
+    """Path to an asset shipped *with the code* (skills, templates, agents).
+
+    Looks inside the package first and only then at the checkout root. The
+    order matters: under a wheel install there is no checkout, so assets
+    resolved from ``repo_root()`` would silently not exist and Milo would boot
+    with an empty skill library — technically working, quietly useless.
+
+    Keeping the real copy in ``miloctl/bundled/`` means it is packaged as
+    package-data and travels with the install everywhere.
+    """
+    inside = package_root() / "bundled"
+    candidate = inside.joinpath(*parts)
+    if candidate.exists():
+        return candidate
+    fallback = repo_root().joinpath(*parts)
+    if fallback.exists():
+        return fallback
+    return candidate
 
 
 # ── Third-party tool locations ────────────────────────────────────────────────
