@@ -245,6 +245,16 @@ def profile_file() -> Path:
     return state_dir() / "profile.json"
 
 
+def memories_dir() -> Path:
+    """MEMORY.md / USER.md — the bounded, human-editable curated tier.
+
+    Deliberately *not* under ``state/``: these two files are meant to be opened
+    and corrected by hand, so they sit at the top of ``$MILO_HOME`` where they
+    are easy to find, not buried with the databases.
+    """
+    return _resolve("MILO_MEMORIES_DIR", milo_home() / "memories")
+
+
 # -- skills / agents / cron -----------------------------------------------------
 
 def skills_dir() -> Path:
@@ -332,6 +342,7 @@ def ensure_tree() -> None:
         repos_dir(),
         skills_dir(),
         agents_dir(),
+        memories_dir(),
     )
 
 
@@ -356,6 +367,7 @@ def describe() -> Dict[str, str]:
         "repos": str(repos_dir()),
         "skills": str(skills_dir()),
         "agents": str(agents_dir()),
+        "memories": str(memories_dir()),
         "vault": str(vault_dir()),
         "engram": str(engram_dir()),
         "workspace": str(workspace_dir()),
