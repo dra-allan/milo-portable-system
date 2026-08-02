@@ -707,3 +707,62 @@ def search(query: str, limit: int = 20) -> List[Dict[str, Any]]:
         scored.append((hits + exact, item))
     scored.sort(key=lambda p: (-p[0], p[1]["name"]))
     return [i for _, i in scored[:limit]]
+
+
+# ── native export ─────────────────────────────────────────────────────────────
+# Normalising everything to Milo's skill format is what makes a Claude-Code-only
+# library readable in five tools. But a *skill* is passive — the model has to
+# choose to open it. An agent the user enabled should show up as a real subagent
+# in whatever they are running, and a command as a real slash command, because
+# that is the affordance the pack author designed for and the one users expect.
+
+
+@dataclass
+class Export:
+    """One enabled pack item, ready to be written in a tool's native format."""
+
+    name: str
+    pack: str
+    kind: str
+    category: str
+    description: str
+    body: str
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+
+def _item_file(pack: str, category: str, name: str) -> Path:
+    return pack_dir(pack) / "skills" / (category or "") / name / "SKILL.md"
+
+
+def exportable(kinds: Iterable[str] = ("agent", "command")) -> List[Export]:
+    """Enabled pack items of the given kinds, with their bodies loaded.
+
+    Only *enabled* items are returned. Exporting everything installed would put
+    270 subagents in front of the model, which is the same drowning problem the
+    index split exists to prevent — just moved into a different menu.
+    """
+    kinds = set(kinds)
+    reg = _load_registry()
+    enabled = set(reg["enabled"])
+    out: List[Export] = []
+    for pack, entry in sorted(reg["packs"].items()):
+        for name, meta in sorted(entry.get("items", {}).items()):
+            if name not in enabled or meta.get("kind") not in kinds:
+                continue
+            path = _item_file(pack, meta.get("category", ""), name)
+            try:
+                fm, body = parse_frontmatter(path.read_text(encoding="utf-8"))
+            except OSError:
+                # Registry and disk disagree — skip rather than abort the whole
+                # sync for one item, and let `milo packs update` repair it.
+                continue
+            out.append(Export(
+                name=name,
+                pack=pack,
+                kind=meta.get("kind", "skill"),
+                category=meta.get("category", ""),
+                description=meta.get("description") or str(fm.get("description", "")),
+                body=body.strip(),
+                meta=fm,
+            ))
+    return out
