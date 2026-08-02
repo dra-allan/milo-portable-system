@@ -186,6 +186,8 @@ class Harness:
     binaries: Tuple[str, ...] = ()
     #: Filename the tool reads its persona from.
     persona_filename: str = "AGENTS.md"
+    #: Extension for exported agents/commands. Cursor insists on .mdc.
+    export_suffix: str = ".md"
 
     # -- detection -------------------------------------------------------------
 
@@ -259,6 +261,107 @@ class Harness:
                 )
             )
 
+    # -- pack export -----------------------------------------------------------
+    # An enabled pack agent should be a real subagent in the tool the user is
+    # actually running, and a pack command a real slash command. Leaving them as
+    # index entries only would mean importing `agency-agents` gave you 270 things
+    # the model can read about and none it can delegate to.
+
+    def _agent_dir(self) -> Optional[Path]:
+        """Where this tool looks for extra subagents. None = no such concept."""
+        return None
+
+    def _agent_frontmatter(self, name: str, desc: str,
+                           meta: Dict[str, object]) -> Dict[str, object]:
+        """Frontmatter keys for a subagent. Tools disagree; subclasses adjust."""
+        return {"name": name, "description": desc}
+
+    def _command_frontmatter(self, name: str, desc: str,
+                             meta: Dict[str, object]) -> Dict[str, object]:
+        return {"description": desc}
+
+    @staticmethod
+    def _fm(data: Dict[str, object]) -> str:
+        lines = ["---"]
+        for k, v in data.items():
+            if v in ("", None, [], {}):
+                continue
+            if isinstance(v, list):
+                v = ", ".join(str(x) for x in v)
+            # Descriptions routinely contain a colon, which turns a scalar into
+            # a broken mapping and makes the tool ignore the whole file.
+            s = str(v).replace("\n", " ").strip()
+            if any(c in s for c in ':#"') and not s.startswith('"'):
+                s = '"' + s.replace('"', "'") + '"'
+            lines.append(f"{k}: {s}")
+        return "\n".join(lines) + "\n---\n"
+
+    def _export_packs(self, out: List[Path]) -> None:
+        """Write enabled pack agents/commands in this tool's native format.
+
+        Also removes what a previous sync wrote and this one did not, so that
+        `milo packs disable x` actually makes `x` disappear from the tool. The
+        list of previously written files is tracked explicitly rather than by
+        globbing the directory: these folders hold the user's own agents too,
+        and deleting one of those would be unforgivable.
+        """
+        from . import packs
+
+        agent_dir, slash_dir = self._agent_dir(), self._slash_dir()
+        if agent_dir is None and slash_dir is None:
+            return
+
+        reserved = set(SLASH_COMMANDS) | set(SLASH_ALIASES) | {agent_slug(), "mylo"}
+        written: List[str] = []
+        try:
+            items = packs.exportable(kinds=("agent", "command"))
+        except Exception:                       # a broken registry must not
+            items = []                          # take the whole sync down
+
+        for item in items:
+            to_agent = item.kind == "agent" and agent_dir is not None
+            target_dir = agent_dir if to_agent else slash_dir
+            if target_dir is None:
+                continue
+            # Never shadow Milo's own commands or persona agent — a pack called
+            # `learn` would otherwise silently replace /learn.
+            fname = f"{item.pack}-{item.name}" if item.name in reserved else item.name
+            fm = (self._agent_frontmatter if to_agent else self._command_frontmatter)(
+                fname, item.description, item.meta
+            )
+            text = self._fm(fm) + "\n" + item.body.strip() + "\n"
+            try:
+                p = self._write(target_dir / f"{fname}{self.export_suffix}", text)
+            except OSError:
+                continue
+            out.append(p)
+            written.append(str(p))
+
+        self._reap_exports(written)
+
+    def _exports_manifest(self) -> Path:
+        return paths.milo_home() / "harness" / "exports.json"
+
+    def _reap_exports(self, written: List[str]) -> None:
+        """Delete files a previous export wrote that this one no longer wants."""
+        mf = self._exports_manifest()
+        try:
+            state = json.loads(mf.read_text(encoding="utf-8")) if mf.is_file() else {}
+        except (OSError, json.JSONDecodeError):
+            state = {}
+        for old in state.get(self.name, []):
+            if old not in written:
+                try:
+                    Path(old).unlink()
+                except OSError:
+                    pass
+        state[self.name] = sorted(written)
+        try:
+            mf.parent.mkdir(parents=True, exist_ok=True)
+            mf.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+        except OSError:
+            pass
+
     # -- api -------------------------------------------------------------------
 
     def sync(self, ctx: Optional[persona.PersonaContext] = None) -> SyncResult:
@@ -268,6 +371,7 @@ class Harness:
             res.written.append(
                 self._write(self.config_dir() / self.persona_filename, ctx.render())
             )
+            self._export_packs(res.written)
         except OSError as exc:
             res.error = str(exc)
         return res
@@ -339,6 +443,18 @@ class OpenCodeHarness(Harness):
     def _slash_dir(self) -> Optional[Path]:
         return self.config_dir() / "command"
 
+    def _agent_dir(self) -> Optional[Path]:
+        return self.config_dir() / "agent"
+
+    def _agent_frontmatter(self, name, desc, meta):
+        # OpenCode keys the agent off the filename and needs an explicit mode;
+        # without `subagent` it would be offered as a top-level persona and
+        # compete with Milo itself.
+        fm = {"description": desc, "mode": "subagent"}
+        if meta.get("model"):
+            fm["model"] = meta["model"]
+        return fm
+
     def sync(self, ctx: Optional[persona.PersonaContext] = None) -> SyncResult:
         ctx = ctx or persona.build()
         res = SyncResult(self.name)
@@ -380,8 +496,9 @@ class OpenCodeHarness(Harness):
             target.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
             res.written.append(target)
 
-            # 4. Slash commands.
+            # 4. Slash commands, then anything enabled from a pack.
             self._write_slash_commands(res.written)
+            self._export_packs(res.written)
         except (OSError, json.JSONDecodeError) as exc:
             res.error = str(exc)
         return res
@@ -409,6 +526,19 @@ class ClaudeCodeHarness(Harness):
 
     def _slash_dir(self) -> Optional[Path]:
         return self.config_dir() / "commands"
+
+    def _agent_dir(self) -> Optional[Path]:
+        return self.config_dir() / "agents"
+
+    def _agent_frontmatter(self, name, desc, meta):
+        fm = {"name": name, "description": desc}
+        # Claude Code honours a tool allowlist on subagents. Most pack authors
+        # wrote these for Claude Code, so the value is already in the right
+        # vocabulary — passing it through preserves their intent.
+        for key in ("tools", "model"):
+            if meta.get(key):
+                fm[key] = meta[key]
+        return fm
 
     def sync(self, ctx: Optional[persona.PersonaContext] = None) -> SyncResult:
         ctx = ctx or persona.build()
@@ -441,6 +571,7 @@ class ClaudeCodeHarness(Harness):
                     )
                 )
             self._write_slash_commands(res.written)
+            self._export_packs(res.written)
         except (OSError, json.JSONDecodeError) as exc:
             res.error = str(exc)
         return res
@@ -484,10 +615,27 @@ class CursorHarness(Harness):
     label = "Cursor"
     binaries = ("cursor",)
     persona_filename = "milo.mdc"
+    export_suffix = ".mdc"
 
     @classmethod
     def config_dir(cls) -> Path:
         return paths.cursor_rules_dir()
+
+    # Cursor has no subagents or slash commands, only rules — so both kinds
+    # land in the rules directory. That is a real mapping rather than a
+    # consolation prize: a rule with a description and alwaysApply off is
+    # attached by relevance, which is close to how a subagent gets picked.
+    def _agent_dir(self) -> Optional[Path]:
+        return self.config_dir()
+
+    def _slash_dir(self) -> Optional[Path]:
+        return self.config_dir()
+
+    def _agent_frontmatter(self, name, desc, meta):
+        return {"description": desc, "alwaysApply": "false"}
+
+    def _command_frontmatter(self, name, desc, meta):
+        return {"description": desc, "alwaysApply": "false"}
 
     def sync(self, ctx: Optional[persona.PersonaContext] = None) -> SyncResult:
         ctx = ctx or persona.build()
@@ -500,6 +648,7 @@ class CursorHarness(Harness):
             res.written.append(
                 self._write(self.config_dir() / "milo.mdc", header + ctx.render())
             )
+            self._export_packs(res.written)
         except OSError as exc:
             res.error = str(exc)
         return res
@@ -542,6 +691,14 @@ class GenericHarness(Harness):
     @classmethod
     def config_dir(cls) -> Path:
         return paths.milo_home() / "persona"
+
+    # Nothing consumes these automatically, which is the point: a tool Milo has
+    # never heard of can still be pointed at a folder of plain markdown.
+    def _agent_dir(self) -> Optional[Path]:
+        return self.config_dir() / "agents"
+
+    def _slash_dir(self) -> Optional[Path]:
+        return self.config_dir() / "commands"
 
     def sync(self, ctx: Optional[persona.PersonaContext] = None) -> SyncResult:
         ctx = ctx or persona.build()
