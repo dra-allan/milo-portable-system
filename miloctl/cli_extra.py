@@ -84,7 +84,9 @@ def cmd_sync(args: argparse.Namespace) -> int:
     ctx = persona.build(include_memory=not args.lean,
                         include_vault=not args.lean)
     only = [n for n in (args.harness or []) if n]
-    results = harness.sync_all(only or None)
+    # Pass ctx through: sync_all builds its own default otherwise, which
+    # silently discarded --lean while the banner still reported the lean size.
+    results = harness.sync_all(only or None, ctx=ctx)
 
     if not results:
         ui.warn("no agent tools detected on this machine")
