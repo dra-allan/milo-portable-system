@@ -19,3 +19,12 @@ logs/
 # os
 .DS_Store
 Thumbs.db
+
+# Superseded v1 layout. These were replaced by the miloctl package in 2.0
+# and keep reappearing when an old working copy is pushed by hand; ignoring
+# them means a stale checkout can't silently resurrect a second, divergent
+# implementation of the same system.
+/milo/
+/milo.py
+/MANIFEST.json
+/.env.template
