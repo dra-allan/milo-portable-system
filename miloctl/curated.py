@@ -75,6 +75,11 @@ class WriteResult:
     used: int = 0
     limit: int = 0
     entries: int = 0
+    #: Did anything on disk actually change? A deduped ``add`` is a success
+    #: (``ok=True``) that changed nothing, and callers such as ``milo restore``
+    #: need to tell those apart to report honest counts. Sniffing the message
+    #: string for "already present" would work until someone reworded it.
+    changed: bool = True
 
     def as_text(self) -> str:
         if not self.ok:
@@ -166,7 +171,7 @@ class CuratedMemory:
         if not text:
             return WriteResult(False, "empty entry")
         if any(text == existing for existing in self.entries[target]):
-            return self._result(target, "already present (no change)")
+            return self._result(target, "already present (no change)", changed=False)
 
         sep = len(DELIMITER) if self.entries[target] else 0
         projected = self.used(target) + len(text) + sep
@@ -239,12 +244,14 @@ class CuratedMemory:
             return []
         return [i for i, e in enumerate(self.entries[target]) if needle in e.lower()]
 
-    def _result(self, target: str, message: str) -> WriteResult:
+    def _result(self, target: str, message: str,
+                changed: bool = True) -> WriteResult:
         return WriteResult(
             True, message,
             used=self.used(target),
             limit=self.limit(target),
             entries=len(self.entries[target]),
+            changed=changed,
         )
 
     # -- rendering -------------------------------------------------------

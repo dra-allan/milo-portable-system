@@ -152,6 +152,24 @@ def _copy_skills(dest: Path) -> int:
     return len(list(dest.rglob("SKILL.md")))
 
 
+def _copy_curated(dest: Path) -> int:
+    """Copy MEMORY.md / USER.md into the snapshot. Returns entries carried."""
+    try:
+        from .curated import CuratedMemory, FILENAMES
+    except Exception:
+        return 0
+    mem = CuratedMemory()
+    carried = 0
+    dest.mkdir(parents=True, exist_ok=True)
+    for target, filename in FILENAMES.items():
+        src = mem.path_for(target)
+        if not src.is_file():
+            continue
+        shutil.copy2(src, dest / filename)
+        carried += mem.count(target)
+    return carried
+
+
 def _write_env_template(dest: Path) -> int:
     """Record which keys exist, never their values."""
     data = env.load(include_os=False)
@@ -204,6 +222,17 @@ def snapshot(
             res.counts["traits"] = 0
 
         res.counts["skills"] = _copy_skills(dest / "skills")
+
+        # The curated tier (MEMORY.md / USER.md). Copied verbatim rather than
+        # re-serialised: they are hand-editable markdown, and a round-trip
+        # through a parser would quietly reformat what someone wrote by hand.
+        # These are the highest-value bytes in the whole snapshot — they are
+        # what makes a fresh machine feel like the old one on turn one — so
+        # they are NOT wrapped in a try/except that would let them go missing
+        # silently.
+        res.counts["notes"] = _copy_curated(dest / "memories")
+        if res.counts["notes"]:
+            res.files.append(dest / "memories")
 
         ident = paths.milo_home() / "identity.md"
         if ident.is_file():
@@ -429,6 +458,12 @@ def restore(
         else:
             res.missing.append("skills/")
 
+        notes_src = src / "memories"
+        if notes_src.is_dir():
+            res.counts["notes"] = _restore_curated(notes_src, merge=merge)
+        else:
+            res.missing.append("memories/")
+
         ident = src / "identity.md"
         if ident.is_file():
             shutil.copy2(ident, paths.milo_home() / "identity.md")
@@ -442,6 +477,40 @@ def restore(
     except Exception as exc:
         res.error = f"{type(exc).__name__}: {exc}"
     return res
+
+
+def _restore_curated(src: Path, *, merge: bool = True) -> int:
+    """Merge snapshot MEMORY.md / USER.md into this machine's copies.
+
+    Entry-by-entry, never a file copy. Two machines both edit these files, so
+    a copy would silently destroy whatever this machine learned since the
+    snapshot — the one failure mode that makes people stop trusting restore.
+
+    Entries that no longer fit the char budget are reported, not force-fed:
+    the cap is the mechanism that keeps this tier small, and quietly breaking
+    it during restore would let it grow without bound across migrations.
+    """
+    try:
+        from .curated import CuratedMemory, FILENAMES
+    except Exception:
+        return 0
+    mem = CuratedMemory()
+    added = 0
+    for target, filename in FILENAMES.items():
+        f = src / filename
+        if not f.is_file():
+            continue
+        if not merge:
+            shutil.copy2(f, mem.path_for(target))
+            mem.load()
+            added += mem.count(target)
+            continue
+        for entry in CuratedMemory._read(f):
+            # add() is already idempotent and budget-aware, so a re-run of
+            # restore is a no-op and an overflow degrades to "skipped".
+            if mem.add(target, entry).changed:
+                added += 1
+    return added
 
 
 # ── Offline transfer ──────────────────────────────────────────────────────────
