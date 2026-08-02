@@ -521,15 +521,22 @@ def _write_item(item: Item, dest_root: Path, pack: str,
         "lifecycle": "active",
         "pinned": False,
     }
+    # A tool allowlist and a model pin are *operational* settings, not prose.
+    # Keep them as frontmatter so exporting back out to Claude Code or OpenCode
+    # can honour them; buried in the body they are just decoration, and the
+    # author's decision to deny an agent Bash access would be silently lost.
+    for key in ("tools", "model"):
+        val = item.meta.get(key)
+        if val:
+            fm[key] = ", ".join(str(v) for v in val) if isinstance(val, list) \
+                else str(val)
+
     # Carry the original text through untouched. The repaired description is
     # for routing; the full one is context once the skill is actually opened,
     # and throwing it away would lose real information.
     extras = []
     if item.description and item.description != fm["description"]:
         extras.append(f"> {' '.join(item.description.split())}")
-    for key in ("tools", "model"):
-        if item.meta.get(key):
-            extras.append(f"> **{key}**: {item.meta[key]}")
     header = "\n".join(extras)
 
     provenance = (
