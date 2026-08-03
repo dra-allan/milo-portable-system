@@ -43,6 +43,33 @@ def _brain():
     return store()
 
 
+def _stranded_routines() -> List[tuple]:
+    """Enabled routines routed at a channel that cannot actually deliver.
+
+    Returns ``(routine_name, channel_name)`` pairs. This is the check that
+    would have caught the original bug: a routine shipping its output to
+    Telegram on a machine where Telegram was never configured looks perfectly
+    healthy from every other angle.
+    """
+    from . import channels
+
+    out: List[tuple] = []
+    try:
+        from .routines import store as routine_store
+
+        for r in routine_store().all(include_disabled=False):
+            for target in str(getattr(r, "output", "")).replace(",", " ").split():
+                if target in {"log", "vault", "memory", "none", ""}:
+                    continue
+                ch = channels.get(target)
+                if ch is None or not ch.configured():
+                    out.append((r.name, target))
+    except Exception:
+        # Doctor must never crash; a missing routine store is its own check.
+        pass
+    return out
+
+
 def _fail(msg: str) -> int:
     ui.err(msg)
     return 1
@@ -206,6 +233,23 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         st = h.status()
         check(f"  {h.name} synced", bool(st["synced"]), st["config_dir"],
               f"run: milo sync {h.name}", level="warn")
+
+    # Channels are checked here because their failure mode is silence: a
+    # routine with output:telegram reports success whether or not anything
+    # was delivered, so nothing else in the system would ever mention it.
+    from . import channels
+
+    ready = [c.name for c in channels.configured_channels() if c.name != "log"]
+    check("channels", bool(ready), ", ".join(ready) or "none — log only",
+          "set up Telegram or ntfy: milo channels", level="warn")
+
+    # A routine pointed at a channel that is not configured delivers nothing,
+    # forever, without complaining. Name the exact routines.
+    stranded = _stranded_routines()
+    check("  routine delivery", not stranded,
+          "all routines can reach their channel" if not stranded
+          else "; ".join(f"{name} → {ch}" for name, ch in stranded),
+          "run: milo channels --test", level="warn")
 
     last = backup.last_backup_time()
     if last:
