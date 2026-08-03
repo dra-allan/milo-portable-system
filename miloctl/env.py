@@ -36,8 +36,15 @@ FIELDS: List[Tuple[str, str, bool, bool]] = [
     ("TELEGRAM_BOT_TOKEN", "Telegram bot token (@BotFather)", False, True),
     ("TELEGRAM_CHAT_ID", "Your Telegram chat id (@userinfobot)", False, False),
     ("ALLOWED_USER_IDS", "Allowed Telegram user ids (comma separated)", False, False),
+    ("TELEGRAM_ALLOW_BOTS", "Let other bots talk to Milo (rarely wanted)", False, False),
     ("DISCORD_BOT_TOKEN", "Discord bot token", False, True),
+    ("DISCORD_WEBHOOK_URL", "Discord webhook URL (outbound messages)", False, True),
     ("SLACK_BOT_TOKEN", "Slack bot token", False, True),
+    ("SLACK_WEBHOOK_URL", "Slack incoming webhook URL", False, True),
+    ("NTFY_TOPIC", "ntfy topic for phone push (any name you pick)", False, False),
+    ("NTFY_SERVER", "ntfy server (blank = https://ntfy.sh)", False, False),
+    ("NTFY_TOKEN", "ntfy access token (only for protected topics)", False, True),
+    ("MILO_WEBHOOK_URL", "Generic webhook URL for outbound messages", False, True),
     # Storage / sync
     ("GITHUB_PAT", "GitHub personal access token (repo scope)", True, True),
     ("GITHUB_USER", "GitHub username", False, False),
@@ -137,7 +144,10 @@ def save(data: Dict[str, str], path: Optional[Path] = None) -> Path:
         ]),
         ("Channels", [
             "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "ALLOWED_USER_IDS",
-            "DISCORD_BOT_TOKEN", "SLACK_BOT_TOKEN",
+            "TELEGRAM_ALLOW_BOTS",
+            "DISCORD_BOT_TOKEN", "DISCORD_WEBHOOK_URL",
+            "SLACK_BOT_TOKEN", "SLACK_WEBHOOK_URL",
+            "NTFY_TOPIC", "NTFY_SERVER", "NTFY_TOKEN", "MILO_WEBHOOK_URL",
         ]),
         ("Storage & sync", [
             "GITHUB_PAT", "GITHUB_USER", "SUPABASE_URL",
