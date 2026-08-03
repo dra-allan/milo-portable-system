@@ -1,0 +1,25 @@
+{
+    "sections":  [
+                     "hero",
+                     "feature",
+                     "pricing",
+                     "footer",
+                     "stats",
+                     "faq",
+                     "testimonial",
+                     "team",
+                     "about",
+                     "blog",
+                     "experience"
+                 ],
+    "name":  "ui-layouts",
+    "source":  "https://github.com/ui-layouts/uilayouts.git",
+    "purpose":  "Design variety for website-flip pipeline - prevent visual repetition across sites",
+    "total_components":  89,
+    "npm_deps":  [
+                     "motion",
+                     "clsx",
+                     "tailwind-merge"
+                 ],
+    "format":  "React/Shadcn/Tailwind components"
+}
