@@ -33,6 +33,11 @@ _STATEFUL = (
     "miloctl.routines",
     "miloctl.vault",
     "miloctl.backup",
+    # packs resolves its registry under MILO_HOME, and harness caches nothing
+    # but imports packs — both must be reloaded or a second "machine" would
+    # quietly share the first one's installed packs.
+    "miloctl.packs",
+    "miloctl.harness",
 )
 
 
