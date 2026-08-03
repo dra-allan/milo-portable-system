@@ -690,3 +690,214 @@ def register(sub) -> None:
 
     s = sub.add_parser("harness", help="which agent tools are installed and synced")
     s.set_defaults(func=cmd_harness)
+
+
+# ── routines ──────────────────────────────────────────────────────────────────
+
+
+def cmd_routines(args: argparse.Namespace) -> int:
+    from .routines import RoutineStore, ScheduleError, describe_schedule
+
+    st = RoutineStore()
+    action = args.action
+    name = _joined(getattr(args, "name", ""))
+
+    if action == "list":
+        rows = st.all()
+        if _emit([r.to_dict() for r in rows], args.json):
+            return 0
+        if not rows:
+            ui.warn("no routines yet")
+            ui.say(ui.dim("  add the maintenance set: milo routines init"))
+            return 0
+        ui.banner("routines", f"{sum(1 for r in rows if r.enabled)} enabled")
+        from datetime import datetime
+        ui.table(
+            [[r.name,
+              r.schedule_label,
+              "on" if r.enabled else "off",
+              (datetime.fromtimestamp(r.next_run).strftime("%a %H:%M")
+               if r.next_run else "-"),
+              r.last_status or "-",
+              str(r.runs)] for r in rows],
+            headers=["routine", "schedule", "", "next", "last", "runs"],
+        )
+        return 0
+
+    if action == "init":
+        added = st.install_builtins(overwrite=args.force)
+        if added:
+            ui.ok(f"added {len(added)} routine(s): {', '.join(added)}")
+        else:
+            ui.say(ui.dim("  built-ins already present (use --force to reset)"))
+        from . import scheduler
+        if not scheduler.is_registered():
+            ui.say()
+            ui.warn("nothing is running these yet")
+            ui.say(ui.dim("  wire them to the OS: milo routines install"))
+        return 0
+
+    if action == "add":
+        if not name:
+            return _fail('milo routines add <name> --prompt "..." --every "daily at 7"')
+        try:
+            r = st.add(
+                name,
+                prompt=_joined(args.prompt),
+                command=args.command or "",
+                schedule=args.every or "manual",
+                output=args.output or "log",
+                harness=args.with_harness or "",
+                model=args.model or "",
+                tags=args.tags or [],
+                skip_missed=args.skip_missed,
+                overwrite=args.force,
+            )
+        except (ScheduleError, ValueError) as exc:
+            return _fail(str(exc))
+        ui.ok(f"{r.name} — {r.schedule_label}")
+        return 0
+
+    if action in ("remove", "delete"):
+        if not name:
+            return _fail("which routine? milo routines remove <name>")
+        return 0 if st.remove(name) else _fail(f"no routine {name!r}")
+
+    if action in ("enable", "disable"):
+        if not name:
+            return _fail(f"which routine? milo routines {action} <name>")
+        r = st.set_enabled(name, action == "enable")
+        if not r:
+            return _fail(f"no routine {name!r}")
+        ui.ok(f"{r.name} {action}d")
+        return 0
+
+    if action == "schedule":
+        if not name or not args.every:
+            return _fail('milo routines schedule <name> --every "daily at 07:30"')
+        try:
+            r = st.set_schedule(name, args.every)
+        except ScheduleError as exc:
+            return _fail(str(exc))
+        if not r:
+            return _fail(f"no routine {name!r}")
+        ui.ok(f"{r.name} — {r.schedule_label}")
+        return 0
+
+    if action == "run":
+        if not name:
+            return _fail("which routine? milo routines run <name>")
+        res = st.run(name, dry_run=args.dry_run)
+        if _emit(res, args.json):
+            return 0
+        (ui.ok if res["status"] in ("ok", "dry-run") else ui.err)(
+            f"{res['routine']}: {res['status']}")
+        if res.get("output"):
+            ui.say(res["output"][:2000])
+        return 0 if res["status"] in ("ok", "dry-run") else 1
+
+    if action == "tick":
+        results = st.tick(dry_run=args.dry_run)
+        if _emit(results, args.json):
+            return 0
+        if not results:
+            ui.say(ui.dim("  nothing due"))
+            return 0
+        for res in results:
+            (ui.ok if res["status"] in ("ok", "skipped", "dry-run") else ui.err)(
+                f"{res['routine']}: {res['status']}")
+        return 0
+
+    if action == "watch":
+        return _watch(st, args.interval)
+
+    if action == "show":
+        if not name:
+            return _fail("which routine? milo routines show <name>")
+        r = st.get(name)
+        if not r:
+            return _fail(f"no routine {name!r}")
+        if _emit(r.to_dict(), args.json):
+            return 0
+        for k, v in r.to_dict().items():
+            if k in ("prompt", "last_output"):
+                continue
+            ui.kv(k, describe_schedule(v) if k == "schedule" else v, width=14)
+        if r.prompt:
+            ui.say()
+            ui.say(ui.bold("  prompt"))
+            ui.say("  " + r.prompt[:1500].replace("\n", "\n  "))
+        return 0
+
+    if action == "logs":
+        log = paths.logs_dir() / "routines" / f"{name}.log"
+        if not name:
+            return _fail("which routine? milo routines logs <name>")
+        if not log.is_file():
+            ui.warn(f"no log yet for {name}")
+            return 0
+        text = log.read_text(encoding="utf-8", errors="ignore")
+        print("\n".join(text.splitlines()[-args.limit:]))
+        return 0
+
+    if action == "install":
+        from . import scheduler
+        res = scheduler.install(args.backend or "")
+        if _emit(res.__dict__, args.json):
+            return 0
+        if res.ok:
+            ui.ok(res.render("installed"))
+            ui.say(ui.dim(f"  ticks every {scheduler.TICK_MINUTES} minutes"))
+            return 0
+        ui.err(res.render("installed"))
+        ui.say(ui.dim("  run it yourself any time: milo routines tick"))
+        return 1
+
+    if action == "uninstall":
+        from . import scheduler
+        for res in scheduler.uninstall(args.backend or ""):
+            if res.ok and "not " not in res.detail and "nothing" not in res.detail:
+                ui.ok(res.render("removed"))
+        return 0
+
+    if action == "status":
+        from . import scheduler
+        rows = [r.__dict__ for r in scheduler.status()]
+        if _emit({"scheduler": rows, "routines": st.stats()}, args.json):
+            return 0
+        ui.banner("routines", st.stats().get("file", ""))
+        for k, v in st.stats().items():
+            if k != "file":
+                ui.kv(k, v, width=12)
+        ui.say()
+        ui.say("  os scheduler:")
+        for r in scheduler.status():
+            (ui.ok if r.ok else ui.warn)("  " + r.render("registered"))
+        if not scheduler.is_registered():
+            ui.say(ui.dim("  nothing registered: milo routines install"))
+        return 0
+
+    return _fail(f"unknown action {action!r}")
+
+
+def _watch(st, interval: int) -> int:
+    """Foreground tick loop. The fallback when the OS offers no scheduler."""
+    import time as _time
+
+    interval = max(30, int(interval or 300))
+    ui.info(f"watching — tick every {interval}s, Ctrl-C to stop")
+    try:
+        while True:
+            try:
+                for res in st.tick():
+                    ui.say(f"  {res['routine']}: {res['status']}")
+            except Exception as exc:
+                # One bad routine must never end the loop; that would silently
+                # stop every other routine on the machine.
+                ui.err(f"tick failed: {type(exc).__name__}: {exc}")
+            _time.sleep(interval)
+            st.load()   # pick up routines added while we were sleeping
+    except KeyboardInterrupt:
+        ui.say()
+        ui.info("stopped")
+        return 0
