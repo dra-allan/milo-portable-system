@@ -1487,7 +1487,7 @@ def cmd_packs(args: argparse.Namespace) -> int:
             matches = [c["name"] for c in cat
                        if c["pack"] == w or c.get("category") == w
                        or c.get("kind") == w]
-            extended.extend(matches or [w])
+            expanded.extend(matches or [w])
         known = {c["name"] for c in cat}
         unknown = [w for w in expanded if w not in known]
         if unknown:
