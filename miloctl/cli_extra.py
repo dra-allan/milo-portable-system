@@ -42,7 +42,6 @@ from . import naming, paths, ui
 
 # ── shared helpers ────────────────────────────────────────────────────────────
 
-
 def _emit(data: Any, as_json: bool) -> bool:
     if not as_json:
         return False
@@ -128,7 +127,7 @@ def cmd_prompt(args: argparse.Namespace) -> int:
             mark = "•" if body.strip() else "·"
             ui.say(f"  {mark} {name:<12} {len(body):>6} chars")
         ui.say()
-        ui.say(ui.dim(f"  ~{ctx.approx_tokens()} tokens total"))
+        ui.say(ui.dim(f"~{ctx.approx_tokens()} tokens total"))
         return 0
     only = args.only.split(",") if args.only else None
     print(ctx.render(include=only))
@@ -624,8 +623,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 # ── channels ──────────────────────────────────────────────────────────────────
 
 
-def cmd_channels(args: argparse.Namespace) -> int:
-    """Which ways Milo can reach Allan, and which are actually wired up."""
+def cmd_channels_list(args: argparse.Namespace) -> int:
+    """List all channels and their configuration status."""
     from . import channels
 
     rows = [{"channel": c.name, "label": c.label,
@@ -633,13 +632,6 @@ def cmd_channels(args: argparse.Namespace) -> int:
              "hint": c.hint}
             for c in channels.all_channels()]
     if _emit(rows, args.json):
-        return 0
-
-    if args.test:
-        ui.banner("channels", "test message")
-        text = f"Test from {naming.display_name()} — if you can read this, the channel works."
-        for res in channels.send(text, args.test if isinstance(args.test, list) else None):
-            (ui.ok if res.ok else (ui.info if res.skipped else ui.err))("  " + res.render())
         return 0
 
     ui.banner("channels")
@@ -655,7 +647,44 @@ def cmd_channels(args: argparse.Namespace) -> int:
             if r["hint"]:
                 ui.say(ui.dim(f"  {r['channel']}: {r['hint']}"))
     ui.say()
-    ui.say(ui.dim("  test them:  milo channels --test"))
+    ui.say(ui.dim("  test them:  milo channels test"))
+    ui.say(ui.dim("  configure them:  milo channels setup"))
+    return 0
+
+
+def cmd_channels_setup(args: argparse.Namespace) -> int:
+    """Set up one or more channels interactively."""
+    from . import channels
+
+    if args.name:
+        # Set up specific channels
+        success = True
+        for name in args.name:
+            if not channels.setup_channel(name):
+                success = False
+        return 0 if success else 1
+    else:
+        # Set up all unconfigured channels
+        channels.setup_all_channels()
+        return 0
+
+
+def cmd_channels_test(args: argparse.Namespace) -> int:
+    """Send a test message through one or more channels."""
+    from . import channels
+    from . import naming
+
+    text = f"Test from {naming.display_name()} — if you can read this, the channel works."
+    if args.message:
+        text = " ".join(args.message)
+
+    for res in channels.send(text, args.to if hasattr(args, 'to') and args.to else None):
+        (ui.ok if res.ok else (ui.info if res.skipped else ui.err))("  " + res.render())
+
+    # Return non-zero if any configured channel failed
+    results = list(channels.send(text, args.to if hasattr(args, 'to') and args.to else None))
+    if any(not r.skipped and not r.ok for r in results):
+        return 1
     return 0
 
 
@@ -699,6 +728,100 @@ def cmd_harness(args: argparse.Namespace) -> int:
         headers=["tool", "installed", "synced", "config"],
     )
     return 0
+
+
+# ── tools ──────────────────────────────────────────────────────────────────────
+
+
+def cmd_tools(args: argparse.Namespace) -> int:
+    """Manage and run tools."""
+    from .tools import registry, all as all_tools, get as get_tool
+
+    action = args.action
+    name = args.name
+
+    if action == "list":
+        tools = all_tools()
+        if _emit([t().to_dict() for t in tools], args.json):
+            return 0
+        if not tools:
+            ui.warn("no tools yet")
+            ui.say(ui.dim('  tools are discovered from moloctl/tools/'))
+            return 0
+        ui.banner("tools", f"{len(tools)} found")
+        rows = []
+        for tool_class in tools:
+            tool = tool_class()  # Instantiate to get default values
+            rows.append([
+                tool.name,
+                tool.description[:50],
+                ", ".join(tool.get_parameters_schema().get("properties", {}).keys()) or "none",
+            ])
+        ui.table(rows, headers=["tool", "what it does", "parameters"])
+        return 0
+
+    if action == "show":
+        if not name:
+            return _fail("which tool? moloctl tools show <name>")
+        tool_class = get_tool(name)
+        if not tool_class:
+            return _fail(f"no tool {name!r}")
+        if _emit(tool_class().to_dict(), args.json):
+            return 0
+        tool = tool_class()
+        print(f"# {tool.name}")
+        print()
+        print(tool.description)
+        print()
+        print("## Parameters")
+        schema = tool.get_parameters_schema()
+        props = schema.get("properties", {})
+        required = set(schema.get("required", []))
+        if not props:
+            print("  No parameters")
+        else:
+            for param_name, prop in props.items():
+                req = " (required)" if param_name in required else ""
+                print(f"  {param_name}: {prop.get('type', 'unknown')}{req}")
+        return 0
+
+    if action == "run":
+        if not name:
+            return _fail("which tool? moloctl tools run <name> [args...]")
+        tool_class = get_tool(name)
+        if not tool_class:
+            return _fail(f"no tool {name!r}")
+
+        # Parse arguments in key=value format
+        kwargs = {}
+        for arg in args.args:
+            if "=" not in arg:
+                return _fail(f"invalid argument '{arg}'. Use key=value format.")
+            key, value = arg.split("=", 1)
+            # Try to convert to appropriate types
+            if value.lower() == "true":
+                value = True
+            elif value.lower() == "false":
+                value = False
+            elif value.isdigit():
+                value = int(value)
+            elif value.replace(".", "", 1).isdigit() and value.count(".") == 1:
+                value = float(value)
+            # Otherwise keep as string
+            kwargs[key] = value
+
+        try:
+            tool = tool_class()
+            result = tool.run(**kwargs)
+            if _emit(result, args.json):
+                return 0
+            print(result)
+            return 0
+        except Exception as e:
+            ui.err(f"Error running tool {name}: {e}")
+            return 1
+
+    return _fail(f"unknown action {action!r}")
 
 
 # ── registration ──────────────────────────────────────────────────────────────
@@ -766,6 +889,9 @@ def register(sub) -> None:
     s.add_argument("--section", default="")
     s.add_argument("-o", "--out")
     s.set_defaults(func=cmd_profile)
+    s.add_argument("--run", action="store_true", help="execute via the agent now")
+    s.add_argument("--with-harness", default="", dest="with_harness")
+    s.add_argument("--model", default="")
 
     s = sub.add_parser("sessions", help="history, search and usage insights")
     s.add_argument("action", nargs="?", default="list",
@@ -794,9 +920,23 @@ def register(sub) -> None:
 
     s = sub.add_parser("channels", aliases=["channel"],
                        help="how Milo can reach you — Telegram, ntfy, Discord…")
-    s.add_argument("--test", nargs="*", default=None,
-                   help="send a test message (optionally to named channels)")
-    s.set_defaults(func=cmd_channels)
+    s.set_defaults(func=cmd_channels_list)  # default to list when no subcommand given
+    sub_channels = s.add_subparsers(dest="channels_command", help="channel commands")
+
+    # channels list
+    s_list = sub_channels.add_parser("list", help="list channels and their configuration status")
+    s_list.set_defaults(func=cmd_channels_list)
+
+    # channels setup
+    s_setup = sub_channels.add_parser("setup", help="set up channels interactively")
+    s_setup.add_argument("name", nargs="*", help="channel names to set up (default: all unconfigured)")
+    s_setup.set_defaults(func=cmd_channels_setup)
+
+    # channels test
+    s_test = sub_channels.add_parser("test", help="send a test message through channels")
+    s_test.add_argument("message", nargs="*", help="message to send (default: standard test message)")
+    s_test.add_argument("--to", nargs="*", help="send to specific channels (default: all configured)")
+    s_test.set_defaults(func=cmd_channels_test)
 
     s = sub.add_parser("send", help="push a message out through a channel")
     s.add_argument("text", nargs="*")
@@ -813,6 +953,13 @@ def register(sub) -> None:
     s = sub.add_parser("harness", help="which agent tools are installed and synced")
     s.set_defaults(func=cmd_harness)
 
+    s = sub.add_parser("tools", help="manage and run tools")
+    s.add_argument("action", nargs="?", default="list",
+                   choices=["list", "run", "show"])
+    s.add_argument("name", nargs="?", help="tool name (for run/show actions)")
+    s.add_argument("args", nargs="*", help="arguments for the tool (key=value format)")
+    s.set_defaults(func=cmd_tools)
+
     s = sub.add_parser("packs", aliases=["pack"],
                        help="skill and agent libraries from other people")
     s.add_argument("action", nargs="?", default="list",
@@ -827,6 +974,20 @@ def register(sub) -> None:
     s.add_argument("-n", "--limit", type=int, default=20)
     s.add_argument("--yes", action="store_true")
     s.set_defaults(func=cmd_packs)
+
+    s = sub.add_parser("media", help="manage generated media (images, audio, etc.)")
+    s.add_argument("action", nargs="?", default="list",
+                   choices=["list", "show", "add", "remove", "rm", "forget", "edit", "clear", "path", "replace", "generate"])
+    s.add_argument("text", nargs="*")
+    s.add_argument("--match", default="",
+                   help="unique substring of the entry to replace/remove")
+    s.add_argument("--type", choices=["image", "audio", "video", "document"],
+                   help="type of media to filter by")
+    s.add_argument("--user", "--me", dest="target", action="store_const",
+                   const="user", help="operate on USER.md instead of MEMORY.md")
+    s.add_argument("--memory", dest="target", action="store_const", const="memory")
+    s.add_argument("--yes", action="store_true")
+    s.set_defaults(func=cmd_media, target=None)
 
     s = sub.add_parser("note", aliases=["notes"],
                        help="the small memory Milo carries into every session")
@@ -982,7 +1143,7 @@ def cmd_routines(args: argparse.Namespace) -> int:
         (ui.ok if res["status"] in ("ok", "dry-run") else ui.err)(
             f"{res['routine']}: {res['status']}")
         if res.get("output"):
-            ui.say(res["output"][:2000])
+            ui.say(re["output"][:2000])
         return 0 if res["status"] in ("ok", "dry-run") else 1
 
     if action == "tick":
@@ -1002,7 +1163,7 @@ def cmd_routines(args: argparse.Namespace) -> int:
 
     if action == "show":
         if not name:
-            return _fail("which routine? milo routines show <name>")
+            return _fail("which routine? moloctl routines show <name>")
         r = st.get(name)
         if not r:
             return _fail(f"no routine {name!r}")
@@ -1021,7 +1182,7 @@ def cmd_routines(args: argparse.Namespace) -> int:
     if action == "logs":
         log = paths.logs_dir() / "routines" / f"{name}.log"
         if not name:
-            return _fail("which routine? milo routines logs <name>")
+            return _fail("which routine? moloctl routines logs <name>")
         if not log.is_file():
             ui.warn(f"no log yet for {name}")
             return 0
@@ -1039,7 +1200,7 @@ def cmd_routines(args: argparse.Namespace) -> int:
             ui.say(ui.dim(f"  ticks every {scheduler.TICK_MINUTES} minutes"))
             return 0
         ui.err(res.render("installed"))
-        ui.say(ui.dim("  run it yourself any time: milo routines tick"))
+        ui.say(ui.dim("  run it yourself any time: moloctl routines tick"))
         return 1
 
     if action == "uninstall":
@@ -1063,7 +1224,7 @@ def cmd_routines(args: argparse.Namespace) -> int:
         for r in scheduler.status():
             (ui.ok if r.ok else ui.warn)("  " + r.render("registered"))
         if not scheduler.is_registered():
-            ui.say(ui.dim("  nothing registered: milo routines install"))
+            ui.say(ui.dim("  nothing registered: moloctl routines install"))
         return 0
 
     return _fail(f"unknown action {action!r}")
@@ -1110,7 +1271,7 @@ def cmd_note(args: argparse.Namespace) -> int:
         block = mem.render_block()
         if not block:
             ui.warn("both stores are empty")
-            ui.say(ui.dim('  add one: milo note add "..." [--user]'))
+            ui.say(ui.dim('  add one: moloctl note add "..." [--user]'))
             return 0
         ui.say(block)
         ui.say()
@@ -1123,16 +1284,17 @@ def cmd_note(args: argparse.Namespace) -> int:
 
     if action == "add":
         if not text:
-            return _fail('what should Milo remember? milo note add "..." [--user]')
+            return _fail('what should Milo remember? moloctl note add "..." [--user]')
         res = mem.add(target, text)
         (ui.ok if res.ok else ui.err)(res.as_text())
         if not res.ok:
-            ui.say(ui.dim("  see what's in there: milo note view"))
+            ui.say(ui.dim("  see what's in there: moloctl note view"))
+            return 0 if res.ok else 1
         return 0 if res.ok else 1
 
     if action == "replace":
         if not args.match or not text:
-            return _fail('milo note replace --match "<substring>" "<new text>"')
+            return _fail('moloctl note replace --match "<substring>" "<new text>"')
         res = mem.replace(target, args.match, text)
         (ui.ok if res.ok else ui.err)(res.as_text())
         return 0 if res.ok else 1
@@ -1140,7 +1302,7 @@ def cmd_note(args: argparse.Namespace) -> int:
     if action in ("remove", "rm", "forget"):
         needle = args.match or text
         if not needle:
-            return _fail('which entry? milo note remove "<substring>"')
+            return _fail('which entry? moloctl note remove "<substring>"')
         res = mem.remove(target, needle)
         (ui.ok if res.ok else ui.err)(res.as_text())
         return 0 if res.ok else 1
@@ -1183,8 +1345,8 @@ def _bar(pct: int, width: int = 16) -> str:
 def _resync_after_pack_change(action: str) -> None:
     """Re-sync harnesses so an enabled agent actually exists in the tool.
 
-    Without this, `milo packs enable code-reviewer` reports success and the
-    subagent does not appear until the user happens to run `milo sync`. They
+    Without this, `moloctl packs enable code-reviewer` reports success and the
+    subagent does not appear until the user happens to run `moloctl sync`. They
     would reasonably conclude the feature is broken, and the failure gives them
     nothing to act on. Sync is cheap and idempotent, so doing it here is
     strictly better than making them remember.
@@ -1197,7 +1359,7 @@ def _resync_after_pack_change(action: str) -> None:
         results = harness.sync_all()
     except Exception as exc:                      # noqa: BLE001 - never block
         ui.warn(f"enabled, but syncing tools failed: {exc}")
-        ui.say(ui.dim("  retry with: milo sync"))
+        ui.say(ui.dim("  retry with: moloctl sync"))
         return
     touched = [r for r in results if r.written]
     bad = [r for r in results if not r.ok]
@@ -1237,12 +1399,12 @@ def cmd_packs(args: argparse.Namespace) -> int:
             for k, v in sorted(known.items()):
                 ui.say(f"  {k:<24} {ui.dim(v['summary'])}")
             ui.say()
-            ui.say(ui.dim(f"  add one: milo packs add {sorted(known)[0]}"))
+            ui.say(ui.dim(f"  add one: moloctl packs add {sorted(known)[0]}"))
         return 0
 
     if action in ("add", "install"):
         if not name:
-            return _fail("which pack? milo packs add superpowers "
+            return _fail("which pack? moloctl packs add superpowers "
                          "| owner/repo | <path>")
         with ui.Spinner(f"fetching {name}"):
             res = packs.install(name, name=args.rename,
@@ -1265,17 +1427,17 @@ def cmd_packs(args: argparse.Namespace) -> int:
             ui.say(ui.dim("  Nothing was added to the system prompt — "
                           f"{res.total} entries would cost real tokens"))
             ui.say(ui.dim("  every turn. They are searchable now:"))
-            ui.say(ui.dim('    milo skills search "code review"'))
-            ui.say(ui.dim("    milo packs enable <name>"))
+            ui.say(ui.dim('    moloctl skills search "code review"'))
+            ui.say(ui.dim("    moloctl packs enable <name>"))
         return 0
 
     if action in ("remove", "rm", "uninstall"):
         if not name:
-            return _fail("which pack? milo packs remove <name>")
+            return _fail("which pack? moloctl packs remove <name>")
         if not args.yes and not ui.confirm(f"remove pack {name!r}?", False):
             return 0
         if not packs.remove(name):
-            return _fail(f"no pack {name!r} — see: milo packs list")
+            return _fail(f"no pack {name!r} — see: moloctl packs list")
         ui.ok(f"removed {name}")
         # Re-sync so anything this pack had exported is reaped from the tools.
         # Leaving a subagent behind whose pack is gone is worse than never
@@ -1296,7 +1458,7 @@ def cmd_packs(args: argparse.Namespace) -> int:
     if action == "search":
         q = _joined(args.query) or name
         if not q:
-            return _fail('what are you after? milo packs search "database"')
+            return _fail('what are you after? moloctl packs search "database"')
         hits = packs.search(q, limit=args.limit)
         if _emit(hits, args.json):
             return 0
@@ -1315,7 +1477,7 @@ def cmd_packs(args: argparse.Namespace) -> int:
         wanted = [name] + list(getattr(args, "query", None) or [])
         wanted = [w for w in wanted if w]
         if not wanted:
-            return _fail(f"which one? milo packs {action} <name>")
+            return _fail(f"which one? moloctl packs {action} <name>")
         on = action == "enable"
         # Accept a pack name or a category as shorthand for "all of these" —
         # enabling 270 agents one at a time is not a workflow anyone will use.
@@ -1325,12 +1487,12 @@ def cmd_packs(args: argparse.Namespace) -> int:
             matches = [c["name"] for c in cat
                        if c["pack"] == w or c.get("category") == w
                        or c.get("kind") == w]
-            expanded.extend(matches or [w])
+            extended.extend(matches or [w])
         known = {c["name"] for c in cat}
         unknown = [w for w in expanded if w not in known]
         if unknown:
             return _fail(f"not installed: {', '.join(sorted(set(unknown))[:5])}"
-                         f"\n  find it first: milo packs search \"{unknown[0]}\"")
+                         f"\n  find it first: moloctl packs search \"{unknown[0]}\"")
         touched = packs.set_enabled(expanded, on=on)
         if not touched:
             ui.say(ui.dim(f"  already {action}d"))
@@ -1345,7 +1507,7 @@ def cmd_packs(args: argparse.Namespace) -> int:
 
     if action == "show":
         if not name:
-            return _fail("which pack? milo packs show <name>")
+            return _fail("which pack? moloctl packs show <name>")
         entry = packs.installed().get(packs.slugify(name))
         if not entry:
             return _fail(f"no pack {name!r}")
@@ -1364,5 +1526,146 @@ def cmd_packs(args: argparse.Namespace) -> int:
         ui.say()
         ui.say(ui.dim("  * = in the prompt index"))
         return 0
+
+    return _fail(f"unknown action {action!r}")
+
+
+def cmd_media(args: argparse.Namespace) -> int:
+    """Manage generated media (images, audio, etc.)."""
+    from .curated import CuratedMemory, FILENAMES
+
+    mem = CuratedMemory()
+    action = (args.action or "view").lower()
+    target = args.target or ("user" if action in ("me",) else "memory")
+    text = _joined(getattr(args, "text", ""))
+    match_arg = getattr(args, "match", "")
+
+    if action in ("view", "show", "list"):
+        if _emit(mem.stats(), args.json):
+            return 0
+        block = mem.render_block()
+        if not block:
+            ui.warn("both stores are empty")
+            ui.say(ui.dim('  add one: moloctl media add "..." [--user]'))
+            return 0
+        ui.say(block)
+        ui.say()
+        for t in ("memory", "user"):
+            s = mem.stats()[t]  # type: ignore[index]
+            bar = _bar(s["pct"])                     # type: ignore[index]
+            ui.say(f"  {FILENAMES[t]:<10} {bar} "
+                   f"{s['used']}/{s['limit']} chars, {s['entries']} entries")  # type: ignore[index]
+        return 0
+
+    if action == "add":
+        if not text:
+            return _fail('what should Milo remember? moloctl media add "..." [--user]')
+        res = mem.add(target, text)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        if not res.ok:
+            ui.say(ui.dim("  see what's in there: moloctl media view"))
+            return 0 if res.ok else 1
+        return 0 if res.ok else 1
+
+    if action == "replace":
+        if not match_arg or not text:
+            return _fail('moloctl media replace --match "<substring>" "<new text>"')
+        res = mem.replace(target, match_arg, text)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        return 0 if res.ok else 1
+
+    if action in ("remove", "rm", "forget"):
+        needle = match_arg or text
+        if not needle:
+            return _fail('which entry? moloctl media remove "<substring>"')
+        res = mem.remove(target, needle)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        return 0 if res.ok else 1
+
+    if action == "edit":
+        # Hand-editing is a first-class path, not a fallback: these files exist
+        # precisely so a human can correct what the agent believes.
+        path = mem.path_for(target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_text("", encoding="utf-8")
+        if not _open_in_editor(path):
+            ui.say(str(path))
+            return 0
+        after = CuratedMemory()
+        ui.ok(f"{FILENAMES[after._norm(target)]} — {after.summary().splitlines()[0]}")
+        return 0
+
+    if action == "clear":
+        if not args.yes and not ui.confirm(f"clear {FILENAMES[mem._norm(target)]}?", False):
+            return 0
+        ui.ok(mem.clear(target).as_text())
+        return 0
+
+    if action == "path":
+        print(mem.path_for(target))
+        return 0
+
+    # Handle generate action for media generation via tools
+    if action == "generate":
+        if not text:
+            return _fail('which tool? moloctl media generate <tool_name> [key=value ...]')
+        # The first word in text is the tool name
+        parts = text.split()
+        if not parts:
+            return _fail('which tool? moloctl media generate <tool_name> [key=value ...]')
+        tool_name = parts[0]
+        tool_args = parts[1:]
+        # Parse key=value
+        kwargs = {}
+        for arg in tool_args:
+            if '=' not in arg:
+                return _fail(f"invalid argument '{arg}'. Use key=value format.")
+            key, value = arg.split('=', 1)
+            # Try to convert value to appropriate type
+            if value.lower() == "true":
+                value = True
+            elif value.lower() == "false":
+                value = False
+            elif value.isdigit():
+                value = int(value)
+            elif value.replace('.', '', 1).isdigit() and value.count('.') == 1:
+                value = float(value)
+            kwargs[key] = value
+        # Get the tool class
+        from .tools import get_tool
+        tool_class = get_tool(tool_name)
+        if not tool_class:
+            return _fail(f"no tool {tool_name!r}")
+        # Instantiate and run
+        tool = tool_class()
+        try:
+            result = tool.run(**kwargs)
+        except Exception as e:
+            ui.err(f"Error running tool {tool_name}: {e}")
+            return 1
+        # Emit result if json
+        if _emit(result, args.json):
+            return 0
+        # Otherwise, create a media entry from the result
+        # We'll format a string that describes the generated media
+        media_text = f"[{tool_name}] "
+        # Add relevant fields from result
+        if isinstance(result, dict):
+            for key, value in result.items():
+                if key not in ['status']:
+                    media_text += f"{key}: {value} | "
+        else:
+            media_text += str(result)
+        # Remove trailing ' | '
+        if media_text.endswith(' | '):
+            media_text = media_text[:-3]
+        # Now add this media_text to the curated memory
+        res = mem.add(target, media_text)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        if not res.ok:
+            ui.say(ui.dim("  see what's in there: moloctl media view"))
+            return 0 if res.ok else 1
+        return 0 if res.ok else 1
 
     return _fail(f"unknown action {action!r}")

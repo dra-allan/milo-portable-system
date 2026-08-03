@@ -22,6 +22,10 @@ dependencies = []
 bot = ["python-telegram-bot>=20.0"]
 # Nicer terminal output. The CLI degrades gracefully without it.
 pretty = ["rich>=13.0"]
+# Embedding dependencies for semantic search
+embeddings = ["onnxruntime>=1.0", "numpy>=1.20"]
+# Machine learning dependencies (includes embeddings)
+ml = ["onnxruntime>=1.0", "numpy>=1.20", "scipy>=1.0"]
 dev = ["pytest>=7.0", "ruff>=0.4"]
 all = ["python-telegram-bot>=20.0", "rich>=13.0"]
 
