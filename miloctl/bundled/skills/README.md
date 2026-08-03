@@ -27,6 +27,7 @@ copied in where the skills ship them so each is self-contained.
 | `Leonxlnx/taste-skill` | design-taste-frontend (+v1), image-to-code, redesign, minimalist-ui, industrial-brutalist-ui, high-end-visual-design, brandkit, imagegen-frontend-web/mobile, stitch-design-taste, full-output-enforcement, gpt-taste → `design/` |
 | `nextlevelbuilder/ui-ux-pro-max-skill` | ui-ux-pro-max, design, design-system, brand, ui-styling, banner-design, slides → `design/` |
 | `dgreenheck/webgpu-claude-skill` | webgpu-threejs-tsl → `design/` |
+| in-house (Aug 2026, from Certified Electric flip) | website-flip-pipeline → `process/` |
 
 ## Not yet vendored (deferred)
 - `msitarzewski/agency-agents` — agent definitions by domain (engineering/design/
