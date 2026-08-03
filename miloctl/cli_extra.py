@@ -1610,12 +1610,16 @@ def cmd_media(args: argparse.Namespace) -> int:
     if action == "generate":
         if not text:
             return _fail('which tool? moloctl media generate <tool_name> [key=value ...]')
-        # The first word in text is the tool name
-        parts = text.split()
-        if not parts:
+        # Use shlex to split the text respecting quotes
+        import shlex
+        try:
+            tokens = shlex.split(text)
+        except ValueError as e:
+            return _fail(f"invalid arguments: {e}")
+        if not tokens:
             return _fail('which tool? moloctl media generate <tool_name> [key=value ...]')
-        tool_name = parts[0]
-        tool_args = parts[1:]
+        tool_name = tokens[0]
+        tool_args = tokens[1:]
         # Parse key=value
         kwargs = {}
         for arg in tool_args:
@@ -1632,6 +1636,41 @@ def cmd_media(args: argparse.Namespace) -> int:
             elif value.replace('.', '', 1).isdigit() and value.count('.') == 1:
                 value = float(value)
             kwargs[key] = value
+        # Get the tool class
+        from .tools import get_tool
+        tool_class = get_tool(tool_name)
+        if not tool_class:
+            return _fail(f"no tool {tool_name!r}")
+        # Instantiate and run
+        tool = tool_class()
+        try:
+            result = tool.run(**kwargs)
+        except Exception as e:
+            ui.err(f"Error running tool {tool_name}: {e}")
+            return 1
+        # Emit result if json
+        if _emit(result, args.json):
+            return 0
+        # Otherwise, create a media entry from the result
+        # We'll format a string that describes the generated media
+        media_text = f"[{tool_name}] "
+        # Add relevant fields from result
+        if isinstance(result, dict):
+            for key, value in result.items():
+                if key not in ['status']:
+                    media_text += f"{key}: {value} | "
+        else:
+            media_text += str(result)
+        # Remove trailing ' | '
+        if media_text.endswith(' | '):
+            media_text = media_text[:-3]
+        # Now add this media_text to the curated memory
+        res = mem.add(target, media_text)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        if not res.ok:
+            ui.say(ui.dim("  see what's in there: moloctl media view"))
+            return 0 if res.ok else 1
+        return 0 if res.ok else 1
         # Get the tool class
         from .tools import get_tool
         tool_class = get_tool(tool_name)

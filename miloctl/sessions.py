@@ -266,7 +266,42 @@ class SessionStore:
             (len(tools or []), time.time(), session_id),
         )
         self._conn.commit()
+
+        # Trigger profile extraction periodically (every 5 turns)
+        # Check if we should run extraction after this turn
+        session = self.get(session_id)
+        if session and session.turns % 5 == 0 and session.turns > 0:
+            # Run extraction in background to avoid blocking
+            try:
+                self._trigger_profile_extraction(session_id)
+            except Exception:
+                # Don't let extraction errors break the session logging
+                pass
+
         return tid
+
+    def _trigger_profile_extraction(self, session_id: str) -> None:
+        """Trigger profile extraction for a session in the background."""
+        # Get recent transcript for context
+        transcript = self.transcript(session_id, limit=10)
+        if not transcript:
+            return
+
+        # Format transcript excerpt for the extraction prompt
+        transcript_excerpt = "\n".join([
+            f"{t['role']}: {t['content']}"
+            for t in transcript[-5:]  # Last 5 turns for context
+        ])
+
+        # Import here to avoid circular dependencies
+        from . import profile
+
+        # Run extraction and update profile
+        try:
+            profile.run_extraction(transcript_excerpt)
+        except Exception:
+            # Silently fail - don't want to disrupt user experience
+            pass
 
     def record_usage(self, session_id: str, *, input_tokens: int = 0,
                      output_tokens: int = 0, cost_usd: float = 0.0) -> None:
