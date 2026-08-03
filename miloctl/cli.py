@@ -406,6 +406,34 @@ def cmd_memory(args: argparse.Namespace) -> int:
         return 0 if brain.pin(args.path or "", True) else _fail("no such memory")
     if args.action == "unpin":
         return 0 if brain.pin(args.path or "", False) else _fail("no such memory")
+    if args.action == "compress":
+        # Optional args: --days, --importance-threshold
+        days = getattr(args, 'days', 30)
+        importance_threshold = getattr(args, 'importance-threshold', 2)
+        result = brain.compress(
+            days=days,
+            importance_threshold=importance_threshold
+        )
+        if _emit(result, args.json):
+            return 0
+        if result.get("compressed_count", 0) > 0:
+            ui.ok(f"Compressed {result['compressed_count']} memories into {result.get('summary_count', 0)} summary memories")
+            if result.get("archived_count", 0) > 0:
+                ui.info(f"Archived {result['archived_count']} original memories")
+        else:
+            ui.info("No memories were compressed (no candidates found)")
+        return 0
+    if args.action == "reflect":
+        # Optional arg: --days (for reflection period)
+        days = getattr(args, 'reflect_days', 7)
+        result = brain.reflect(days=days)
+        if _emit(result, args.json):
+            return 0
+        if result.get("reflections_generated", 0) > 0:
+            ui.ok(f"Generated {result['reflections_generated']} reflections from the last {days} day(s)")
+        else:
+            ui.info("No reflections generated")
+        return 0
     return _fail(f"unknown action {args.action}")
 
 
@@ -589,9 +617,17 @@ common:
 
     s = sub.add_parser("memory", help="memory maintenance")
     s.add_argument("action", choices=["stats", "export", "import", "dedupe",
-                                      "expire", "pin", "unpin"])
+                                      "expire", "pin", "unpin", "compress", "reflect"])
     s.add_argument("path", nargs="?")
     s.add_argument("-o", "--out")
+    # Compression-specific arguments
+    s.add_argument("--days", type=int, default=30,
+                   help="compress memories older than this many days (default: 30)")
+    s.add_argument("--importance-threshold", type=int, default=2,
+                   help="compress memories with importance at or below this level (default: 2)")
+    # Reflection-specific arguments
+    s.add_argument("--reflect-days", dest="reflect_days", type=int, default=7,
+                   help="reflect on memories from the last N days (default: 7)")
     s.set_defaults(func=cmd_memory)
 
     s = sub.add_parser("backup", help="snapshot the brain and push it")

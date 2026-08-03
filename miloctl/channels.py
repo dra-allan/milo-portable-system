@@ -371,7 +371,7 @@ register(Channel(
 register(Channel(
     name="discord", label="Discord", limit=2000, send_fn=_discord_send,
     requires=("DISCORD_WEBHOOK_URL",),
-    hint="Server Settings → Integrations → Webhooks → New Webhook",
+    hint="Server Settings -> Integrations -> Webhooks -> New Webhook",
 ))
 register(Channel(
     name="slack", label="Slack", limit=3000, send_fn=_slack_send,
@@ -421,3 +421,65 @@ def send_telegram(text: str) -> Delivery:
     """The function ``routines.py`` has been importing all along."""
     ch = get("telegram")
     return ch.deliver(text) if ch else Delivery("telegram", ok=False, detail="no adapter")
+
+
+def setup_channel(name: str) -> bool:
+    """Interactively set up a channel by prompting for required environment variables.
+
+    Args:
+        name: The name of the channel to set up (e.g., 'telegram')
+
+    Returns:
+        True if the channel was successfully configured, False otherwise.
+    """
+    from . import ui
+
+    ch = get(name)
+    if not ch:
+        ui.err(f"Unknown channel: {name}")
+        return False
+
+    if ch.configured():
+        ui.info(f"Channel {name} is already configured.")
+        if not ui.confirm("Reconfigure it?", False):
+            return False
+
+    # We'll collect the values for the required environment variables
+    updates = {}
+    for key in ch.requires:
+        # Find the field info from env.FIELDS to get label and secret flag
+        field_info = next(((k, l, r, s) for k, l, r, s in env.FIELDS if k == key), None)
+        if field_info:
+            _, label, _, secret = field_info
+        else:
+            # Fallback if not found in FIELDS (shouldn't happen for our channels)
+            label = key.replace('_', ' ').title()
+            secret = env.is_secret(key)
+
+        current = env.get(key)
+        shown = env.mask(current) if (secret and current) else current
+        value = ui.ask(label, default=shown, secret_hint="hidden" if secret else "")
+        if value and value != shown:
+            updates[key] = value
+
+    if updates:
+        env.update(updates)
+        ui.ok(f"Updated {len(updates)} setting(s) for {name}")
+        return True
+    else:
+        ui.info(f"No changes made to {name}")
+        return False
+
+
+def setup_all_channels() -> None:
+    """Set up all channels that are not yet configured."""
+    from . import ui
+
+    to_setup = [c.name for c in all_channels() if not c.configured() and c.name != "log"]
+    if not to_setup:
+        ui.info("All channels are already configured.")
+        return
+
+    ui.info(f"Setting up channels: {', '.join(to_setup)}")
+    for name in to_setup:
+        setup_channel(name)
