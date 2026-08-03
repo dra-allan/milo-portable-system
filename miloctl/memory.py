@@ -436,7 +436,7 @@ class MemoryStore:
             "importance, source, origin, content_hash, supersedes, is_latest, "
             "pinned, archived, access_count, created_at, updated_at, "
             "last_accessed, expires_at, embedding, extra) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 mem.id, mem.content, mem.title, mem.category, mem.project,
                 json.dumps(mem.tags), mem.importance, mem.source, mem.origin,
