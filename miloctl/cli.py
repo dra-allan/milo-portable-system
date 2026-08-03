@@ -281,12 +281,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             warned += 1
             ui.warn(f"{c['name']:<20} {c['detail']}")
             if c["fix"]:
-                ui.say(f"    {ui.dim('→ ' + c['fix'])}")
+                ui.say(f"    {ui.dim(ui.SYM['arrow'] + ' ' + c['fix'])}")
         else:
             failed += 1
             ui.err(f"{c['name']:<20} {c['detail']}")
             if c["fix"]:
-                ui.say(f"    {ui.dim('→ ' + c['fix'])}")
+                ui.say(f"    {ui.dim(ui.SYM['arrow'] + ' ' + c['fix'])}")
     ui.say()
     if failed:
         ui.err(f"{failed} problem(s), {warned} warning(s)")
@@ -695,7 +695,23 @@ def _resolve_typo(argv: List[str], parser: argparse.ArgumentParser) -> List[str]
     return argv
 
 
+def _force_utf8_stdio() -> None:
+    """Windows pipes re-create stdout as cp1252/ascii, which crashes on the
+    unicode glyphs the CLI prints (arrows, checkmarks). Pin UTF-8 so those
+    print everywhere — same fix as mcp.py's stdio protocol."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            reconfigure = stream.reconfigure
+        except AttributeError:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    _force_utf8_stdio()
     argv = list(argv if argv is not None else sys.argv[1:])
     parser = build_parser()
     argv = _resolve_typo(argv, parser)
