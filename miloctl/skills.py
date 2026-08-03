@@ -46,7 +46,7 @@ MAX_DESCRIPTION = 60
 USAGE_FILE = "usage.json"
 
 LIFECYCLES = ("active", "stale", "archived")
-ORIGINS = ("bundled", "user", "agent")
+ORIGINS = ("bundled", "user", "agent", "pack")
 
 
 # ── Frontmatter ───────────────────────────────────────────────────────────────
@@ -287,9 +287,42 @@ class SkillRegistry:
                         out.append(s)
         return out
 
+    def _scan_packs(self) -> List[Skill]:
+        """Skills imported from third-party packs.
+
+        Failures here are swallowed on purpose: a malformed pack must not be
+        able to take down `milo skills list`, which is exactly what you would
+        reach for to diagnose the bad pack.
+        """
+        try:
+            from . import packs
+        except Exception:
+            return []
+        out: List[Skill] = []
+        root = packs.packs_dir()
+        if not root.is_dir():
+            return out
+        for pack in sorted(root.iterdir()):
+            skills_root = pack / "skills"
+            if not skills_root.is_dir():
+                continue
+            for skill_md in sorted(skills_root.rglob(SKILL_FILE)):
+                rel = skill_md.parent.relative_to(skills_root)
+                category = rel.parts[0] if len(rel.parts) > 1 else ""
+                s = _load_skill(skill_md.parent, "pack", category=category)
+                if s:
+                    out.append(s)
+        return out
+
     def all(self, include_archived: bool = False) -> List[Skill]:
-        """User skills shadow bundled skills of the same name."""
+        """User skills shadow bundled skills of the same name.
+
+        Pack skills come first so a same-named bundled or user skill wins: what
+        Milo ships, and what Allan wrote, both outrank a third-party import.
+        """
         merged: Dict[str, Skill] = {}
+        for s in self._scan_packs():
+            merged[s.name.lower()] = s
         for s in self._scan_bundled():
             merged[s.name.lower()] = s
         for s in self._scan_user():
@@ -337,9 +370,27 @@ class SkillRegistry:
     # -- system prompt ---------------------------------------------------------
 
     def index(self, platform_id: Optional[str] = None, limit: int = 200) -> str:
-        """Skill index injected into the system prompt every session."""
-        usable = [s for s in self.all()
-                  if s.supports(platform_id) and s.lifecycle == "active"]
+        """Skill index injected into the system prompt every session.
+
+        Pack skills are included **only when explicitly enabled**. This is the
+        single most important line in the file: the three libraries Milo can
+        import total ~18,300 tokens of index. Spending that every turn would
+        not just be expensive, it would make routing *worse* — a 300-line menu
+        is harder to choose from than a 12-line one. So installed-and-findable
+        is the default, and in-the-prompt is opt-in.
+        """
+        try:
+            from . import packs
+            enabled = set(packs.enabled_names())
+            n_installed = len(packs.catalogue())
+        except Exception:
+            enabled, n_installed = set(), 0
+
+        usable = [
+            s for s in self.all()
+            if s.supports(platform_id) and s.lifecycle == "active"
+            and (s.origin != "pack" or s.name in enabled)
+        ]
         if not usable:
             return ""
         lines = [
@@ -350,6 +401,16 @@ class SkillRegistry:
             "",
         ]
         lines += [s.index_line() for s in usable[:limit]]
+
+        hidden = n_installed - len([s for s in usable if s.origin == "pack"])
+        if hidden > 0:
+            lines += [
+                "",
+                f"{hidden} more skills and agents are installed but not listed "
+                "here, to keep this index short. Search them with "
+                "`milo skills search \"<what you need>\"` and read one with "
+                "`milo skills show <name>`.",
+            ]
         return "\n".join(lines)
 
     # -- authoring -------------------------------------------------------------
