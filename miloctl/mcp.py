@@ -162,6 +162,14 @@ def _t_profile(args: Dict[str, Any]) -> str:
     return Profile().prompt_block() or "No user model built yet."
 
 
+def _t_curated(args: Dict[str, Any]) -> str:
+    from .curated import CuratedMemory, dispatch
+    # A fresh instance per call: another surface (the CLI, a routine, Obsidian)
+    # may have edited the files since this server started, and silently writing
+    # over someone's hand edit is worse than a few milliseconds of file read.
+    return dispatch(CuratedMemory(), **args)
+
+
 def _t_whoami(args: Dict[str, Any]) -> str:
     return json.dumps(
         {
@@ -270,6 +278,35 @@ TOOLS: Dict[str, tuple] = {
         {},
         [],
         _t_whoami,
+    ),
+    # The curated tier. Named plain `memory` to match Hermes and Claude Code,
+    # so a model that already knows that tool reaches for it without being told.
+    "memory": (
+        "Curate the two small stores injected into EVERY future session's "
+        "system prompt. target='memory' for environment facts, conventions, "
+        "tool quirks and decisions that stuck; target='user' for who Allan is. "
+        "Both are hard-capped: when full you must remove or condense something "
+        "before adding. Write entries that still make sense with no other "
+        "context. Never store secrets or anything trivially lookup-able.",
+        {
+            "action": {
+                "type": "string",
+                "enum": ["add", "replace", "remove", "view"],
+                "description": "What to do.",
+            },
+            "target": {
+                "type": "string",
+                "enum": ["memory", "user"],
+                "description": "Which store (default: memory).",
+            },
+            "text": {"type": "string", "description": "Entry text for add/replace."},
+            "match": {
+                "type": "string",
+                "description": "Unique substring of the entry to replace/remove.",
+            },
+        },
+        ["action"],
+        _t_curated,
     ),
 }
 

@@ -109,6 +109,7 @@ class PersonaContext:
 
     identity: str = ""
     environment: str = ""
+    curated: str = ""
     user_model: str = ""
     memory: str = ""
     skills: str = ""
@@ -120,9 +121,14 @@ class PersonaContext:
     )
 
     def sections(self) -> List[tuple]:
+        # Order is deliberate. 'curated' sits directly after the environment
+        # and *before* retrieved memory: it is the small, hand-kept, always-true
+        # block, so it should frame everything the retriever dredges up rather
+        # than compete with it further down the prompt.
         return [
             ("identity", self.identity),
             ("environment", self.environment),
+            ("curated", self.curated),
             ("user_model", self.user_model),
             ("memory", self.memory),
             ("skills", self.skills),
@@ -273,6 +279,40 @@ def _skills_block() -> str:
     )
 
 
+def _curated_block() -> str:
+    """MEMORY.md + USER.md, plus the instruction that keeps them curated.
+
+    The reminder is attached here rather than in the identity file because it
+    only makes sense once there is something in the stores — telling a fresh
+    install to 'condense an entry' is noise.
+    """
+    try:
+        from .curated import CuratedMemory
+    except Exception:  # pragma: no cover - defensive
+        return ""
+    try:
+        mem = CuratedMemory()
+    except Exception:
+        return ""
+    block = mem.render_block()
+    if not block:
+        return ""
+    near_full = [
+        t for t in ("memory", "user")
+        if mem.limit(t) and mem.used(t) >= 0.85 * mem.limit(t)
+    ]
+    tail = (
+        "\n\nThese two stores are yours to maintain with the `memory` tool "
+        "(or `milo note`). They are small on purpose."
+    )
+    if near_full:
+        tail += (
+            f" {' and '.join(f'{t.upper()}' for t in near_full)} is nearly full — "
+            "condense or remove before adding."
+        )
+    return block + tail
+
+
 def _profile_block() -> str:
     try:
         from .profile import Profile
@@ -386,6 +426,10 @@ def build(
     return PersonaContext(
         identity=identity_text(),
         environment=_environment_block(),
+        # Curated memory rides with include_memory but is NOT budget-limited:
+        # it is already hard-capped on disk, and it is the half that must
+        # survive into a lean prompt.
+        curated=_curated_block(),
         user_model=_profile_block() if include_profile else "",
         memory=_memory_block(query, memory_budget) if include_memory else "",
         skills=_skills_block(),

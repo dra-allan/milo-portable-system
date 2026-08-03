@@ -691,6 +691,22 @@ def register(sub) -> None:
     s = sub.add_parser("harness", help="which agent tools are installed and synced")
     s.set_defaults(func=cmd_harness)
 
+    s = sub.add_parser("note", aliases=["notes"],
+                       help="the small memory Milo carries into every session")
+    s.add_argument("action", nargs="?", default="view",
+                   choices=["view", "show", "list", "add", "replace", "remove",
+                            "rm", "forget", "edit", "clear", "path"])
+    s.add_argument("text", nargs="*")
+    s.add_argument("--match", default="",
+                   help="unique substring of the entry to replace/remove")
+    # --user / --memory rather than a positional target: the store you mean is
+    # nearly always 'memory', and typing it every time is friction.
+    s.add_argument("--user", "--me", dest="target", action="store_const",
+                   const="user", help="operate on USER.md instead of MEMORY.md")
+    s.add_argument("--memory", dest="target", action="store_const", const="memory")
+    s.add_argument("--yes", action="store_true")
+    s.set_defaults(func=cmd_note, target=None)
+
     # ``routines`` is one parser with a free-form action rather than a nest of
     # sub-subparsers, because ``milo routines run backup`` reads the way people
     # already talk about it, and the fuzzy matcher can then fix typos in the
@@ -937,3 +953,88 @@ def _watch(st, interval: int) -> int:
         ui.say()
         ui.info("stopped")
         return 0
+
+
+# ── curated memory (MEMORY.md / USER.md) ──────────────────────────────────────
+
+
+def cmd_note(args: argparse.Namespace) -> int:
+    """The bounded tier: what Milo carries into every session, unprompted."""
+    from .curated import CuratedMemory, FILENAMES
+
+    mem = CuratedMemory()
+    action = (args.action or "view").lower()
+    target = args.target or ("user" if action in ("me",) else "memory")
+    text = _joined(getattr(args, "text", ""))
+
+    if action in ("view", "show", "list"):
+        if _emit(mem.stats(), args.json):
+            return 0
+        block = mem.render_block()
+        if not block:
+            ui.warn("both stores are empty")
+            ui.say(ui.dim('  add one: milo note add "..." [--user]'))
+            return 0
+        ui.say(block)
+        ui.say()
+        for t in ("memory", "user"):
+            s = mem.stats()[t]  # type: ignore[index]
+            bar = _bar(s["pct"])                     # type: ignore[index]
+            ui.say(f"  {FILENAMES[t]:<10} {bar} "
+                   f"{s['used']}/{s['limit']} chars, {s['entries']} entries")  # type: ignore[index]
+        return 0
+
+    if action == "add":
+        if not text:
+            return _fail('what should Milo remember? milo note add "..." [--user]')
+        res = mem.add(target, text)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        if not res.ok:
+            ui.say(ui.dim("  see what's in there: milo note view"))
+        return 0 if res.ok else 1
+
+    if action == "replace":
+        if not args.match or not text:
+            return _fail('milo note replace --match "<substring>" "<new text>"')
+        res = mem.replace(target, args.match, text)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        return 0 if res.ok else 1
+
+    if action in ("remove", "rm", "forget"):
+        needle = args.match or text
+        if not needle:
+            return _fail('which entry? milo note remove "<substring>"')
+        res = mem.remove(target, needle)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        return 0 if res.ok else 1
+
+    if action == "edit":
+        # Hand-editing is a first-class path, not a fallback: these files exist
+        # precisely so a human can correct what the agent believes.
+        path = mem.path_for(target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_text("", encoding="utf-8")
+        if not _open_in_editor(path):
+            ui.say(str(path))
+            return 0
+        after = CuratedMemory()
+        ui.ok(f"{FILENAMES[after._norm(target)]} — {after.summary().splitlines()[0]}")
+        return 0
+
+    if action == "clear":
+        if not args.yes and not ui.confirm(f"clear {FILENAMES[mem._norm(target)]}?", False):
+            return 0
+        ui.ok(mem.clear(target).as_text())
+        return 0
+
+    if action == "path":
+        print(mem.path_for(target))
+        return 0
+
+    return _fail(f"unknown action {action!r}")
+
+
+def _bar(pct: int, width: int = 16) -> str:
+    filled = max(0, min(width, round(width * pct / 100)))
+    return "[" + "#" * filled + "." * (width - filled) + "]"
