@@ -74,7 +74,7 @@ token pasted into a memory or a note. Remove it and re-run. Do not bypass it.
 `~/vault` on Termux). Say where it is and everything else follows:
 
 ```bash
-milo config set MILO_VAULT_DIR "/path/to/DRA BRAINS"
+milo config set MILO_VAULT_DIR "/path/to/dra-brains"
 ```
 
 **Restore says 0 new.** Correct — it already ran. Restore merges and is
