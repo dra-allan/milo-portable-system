@@ -21,6 +21,9 @@ Commands registered here::
     milo sessions <action>      history, search, insights
     milo vault <action>         the Obsidian cold tier
     milo run <prompt>           run a prompt through the live agent
+    milo channels               which ways Milo can reach you
+    milo send <text>            push a message out through them
+    milo bot                    run the Telegram bot (inbound)
 """
 
 from __future__ import annotations
@@ -618,6 +621,71 @@ def cmd_run(args: argparse.Namespace) -> int:
     return _run_through_harness(prompt, args)
 
 
+# ── channels ──────────────────────────────────────────────────────────────────
+
+
+def cmd_channels(args: argparse.Namespace) -> int:
+    """Which ways Milo can reach Allan, and which are actually wired up."""
+    from . import channels
+
+    rows = [{"channel": c.name, "label": c.label,
+             "configured": c.configured(), "missing": c.missing(),
+             "hint": c.hint}
+            for c in channels.all_channels()]
+    if _emit(rows, args.json):
+        return 0
+
+    if args.test:
+        ui.banner("channels", "test message")
+        text = f"Test from {naming.display_name()} — if you can read this, the channel works."
+        for res in channels.send(text, args.test if isinstance(args.test, list) else None):
+            (ui.ok if res.ok else (ui.info if res.skipped else ui.err))("  " + res.render())
+        return 0
+
+    ui.banner("channels")
+    ui.table(
+        [[r["channel"], "yes" if r["configured"] else "no",
+          ", ".join(r["missing"]) or "—"] for r in rows],
+        headers=["channel", "ready", "needs"],
+    )
+    unset = [r for r in rows if not r["configured"]]
+    if unset:
+        ui.say()
+        for r in unset:
+            if r["hint"]:
+                ui.say(ui.dim(f"  {r['channel']}: {r['hint']}"))
+    ui.say()
+    ui.say(ui.dim("  test them:  milo channels --test"))
+    return 0
+
+
+def cmd_send(args: argparse.Namespace) -> int:
+    """Push a message out. Reads stdin when given no text, so it pipes."""
+    from . import channels
+
+    text = _joined(args.text)
+    if not text and not sys.stdin.isatty():
+        text = sys.stdin.read().strip()
+    if not text:
+        return _fail('say something: milo send "the backup finished"')
+
+    results = channels.send(text, args.to)
+    if _emit([r.__dict__ for r in results], args.json):
+        return 0
+    for res in results:
+        (ui.ok if res.ok else (ui.info if res.skipped else ui.err))(res.render())
+    # Skipped channels are not failures — only a configured channel that
+    # refused should give the shell a non-zero exit.
+    return 0 if all(r.ok or r.skipped for r in results) else 1
+
+
+def cmd_bot(args: argparse.Namespace) -> int:
+    """Run the Telegram bot in the foreground."""
+    from .bot import TelegramBot
+
+    return TelegramBot().run_forever(max_iterations=args.once and 1 or 0)
+
+
 def cmd_harness(args: argparse.Namespace) -> int:
     from . import harness
 
@@ -723,6 +791,24 @@ def register(sub) -> None:
     s.add_argument("--with-harness", default="", dest="with_harness")
     s.add_argument("--model", default="")
     s.set_defaults(func=cmd_run)
+
+    s = sub.add_parser("channels", aliases=["channel"],
+                       help="how Milo can reach you — Telegram, ntfy, Discord…")
+    s.add_argument("--test", nargs="*", default=None,
+                   help="send a test message (optionally to named channels)")
+    s.set_defaults(func=cmd_channels)
+
+    s = sub.add_parser("send", help="push a message out through a channel")
+    s.add_argument("text", nargs="*")
+    s.add_argument("--to", nargs="*",
+                   help="telegram, ntfy, discord, slack, webhook, log "
+                        "(default: every configured channel)")
+    s.set_defaults(func=cmd_send)
+
+    s = sub.add_parser("bot", help="run the Telegram bot (inbound messages)")
+    s.add_argument("--once", action="store_true",
+                   help="poll a single batch and exit — for testing")
+    s.set_defaults(func=cmd_bot)
 
     s = sub.add_parser("harness", help="which agent tools are installed and synced")
     s.set_defaults(func=cmd_harness)
