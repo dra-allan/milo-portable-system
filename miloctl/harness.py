@@ -24,7 +24,6 @@ adapter layer knows or cares.
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -33,7 +32,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from . import env, paths, persona
-from .naming import agent_name as agent_slug, display_name
+from .naming import agent_name as agent_slug
+from .naming import display_name
 
 __all__ = [
     "Harness",
@@ -388,6 +388,12 @@ class Harness:
         argv = self.invoke(prompt, model=model)
         if not argv:
             return 1, f"{self.label} does not support one-shot invocation"
+        # Windows: CreateProcess only finds .exe/.bat on PATH, never .CMD. The
+        # npm/pip shims live as *.CMD, so resolve the first binary to its full
+        # path when subprocess would otherwise miss it.
+        resolved = self.which()
+        if resolved and argv and not Path(argv[0]).is_absolute():
+            argv = [resolved, *argv[1:]]
         try:
             p = subprocess.run(
                 argv, capture_output=True, text=True, timeout=timeout,

@@ -85,6 +85,7 @@ class VoiceSession:
         self,
         *,
         harness: Optional[Callable[[str], str]] = None,
+        harness_name: str = "",
         stt_provider: Optional[str] = None,
         tts_provider: Optional[str] = None,
         wake_engine: Optional[str] = None,
@@ -92,6 +93,7 @@ class VoiceSession:
         record_kwargs: Optional[dict] = None,
     ):
         self.harness = harness or self._echo_harness
+        self.harness_name = harness_name
         self.stt_provider = stt_provider
         self.tts_provider = tts_provider
         self.wake_engine = wake_engine
@@ -114,7 +116,14 @@ class VoiceSession:
         try:
             from .. import harness as harness_mod
 
-            h = harness_mod.Harness.load(harness_mod.Harness.default_backend())
+            if getattr(self, "harness_name", ""):
+                h = harness_mod.get_harness(self.harness_name)
+            else:
+                h = None
+                for cand in harness_mod.detect_installed():
+                    if cand.which():
+                        h = cand
+                        break
             if h is None:
                 return self._echo_harness
             return lambda prompt: h.run(prompt)[1]
@@ -243,6 +252,8 @@ def run_cli(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--tts", help="TTS provider (gemini|openai|elevenlabs)")
     parser.add_argument("--identity", action="store_true", help="require passphrase check")
     parser.add_argument("--wake", help="wake-word engine (openwakeword|sherpa|porcupine)")
+    parser.add_argument("--harness", default="",
+                        help="agent harness (opencode|claude-code|codex|cursor|gemini)")
     parser.add_argument("--test-tts", metavar="TEXT", help="synthesize TEXT to a file and exit")
     parser.add_argument("--tts-out", default="", help="output path for --test-tts")
 
@@ -265,6 +276,7 @@ def run_cli(argv: Optional[List[str]] = None) -> int:
 
     session = VoiceSession(
         harness=None,
+        harness_name=args.harness,
         stt_provider=args.stt,
         tts_provider=args.tts,
         wake_engine=args.wake,
