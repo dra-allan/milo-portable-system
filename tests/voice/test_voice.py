@@ -76,7 +76,7 @@ def test_write_read_wav_roundtrip(tmp_path):
 
 # ── Provider resolution ──────────────────────────────────────────────────────
 
-def test_no_provider_without_keys(monkeypatch):
+def test_no_provider_without_keys(monkeypatch, milo_home):
     for k in ("GEMINI_API_KEY", "GEMINI_API_KEYS", "OPENAI_API_KEY", "ELEVENLABS_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     cfg = {"streaming": {"provider": "auto"}}
@@ -105,7 +105,7 @@ def test_unknown_provider_returns_none(monkeypatch):
     assert tts_streaming.resolve_streaming_provider(cfg) is None
 
 
-def test_available_reflects_keys(monkeypatch):
+def test_available_reflects_keys(monkeypatch, milo_home):
     monkeypatch.delenv("GEMINI_API_KEYS", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     assert tts_streaming.GeminiStreamer.available() is False
@@ -150,3 +150,32 @@ def test_tts_tool_requires_text():
 
     result = TextToSpeechTool().run(text="")
     assert result["status"] == "error"
+
+
+# ── VoiceSession turn plumbing ──────────────────────────────────────────────
+
+def test_capture_turn_passes_duration_once(monkeypatch, tmp_path):
+    """Regression: record() got duration twice (positional + **record_kwargs)."""
+    from miloctl.voice import audio
+    from miloctl.voice.mode import VoiceSession
+    from miloctl.voice import stt as stt_mod
+
+    calls = []
+
+    def fake_record(duration, out_wav, **kwargs):
+        calls.append((duration, kwargs))
+
+    def fake_transcribe(path, **kwargs):
+        return {"status": "success", "transcript": "hello world"}
+
+    monkeypatch.setattr(audio, "record", fake_record)
+    monkeypatch.setattr(stt_mod, "transcribe_audio", fake_transcribe)
+
+    session = VoiceSession(record_kwargs={"duration": 5.0, "device": 3})
+    text = session._capture_turn()
+
+    assert text == "hello world"
+    assert len(calls) == 1
+    duration, kwargs = calls[0]
+    assert duration == 5.0
+    assert kwargs == {"device": 3}  # duration popped, not duplicated

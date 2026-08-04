@@ -129,7 +129,9 @@ class VoiceSession:
         fd, tmp = tempfile.mkstemp(suffix=".wav")
         os.close(fd)
         try:
-            audio.record(self._turn_seconds(), tmp, **self.record_kwargs)
+            rec_kwargs = dict(self.record_kwargs)
+            rec_kwargs.pop("duration", None)  # duration comes from _turn_seconds()
+            audio.record(self._turn_seconds(), tmp, **rec_kwargs)
             result = stt.transcribe_audio(tmp, provider=self.stt_provider)
             if result.get("status") != "success":
                 print(f"[stt] {result.get('message', 'transcription failed')}")
