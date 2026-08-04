@@ -134,6 +134,53 @@ def cmd_prompt(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_context(args: argparse.Namespace) -> int:
+    """Fresh boot context: current memory, recent sessions, vault handoff.
+
+    This is the payload a SessionStart hook injects into an agent so it boots
+    with today's state instead of a static persona file. OpenCode gets the same
+    effect from its boot injection; this gives every other harness a CLI hook.
+    """
+    from . import vault as vault_mod
+    from .curated import CuratedMemory
+    from .sessions import store as session_store
+
+    parts: List[str] = []
+
+    mem = CuratedMemory()
+    block = mem.render_block()
+    if block:
+        parts.append(block)
+
+    v = vault_mod.vault()
+    if v.exists:
+        boot = v.boot_context(budget=args.budget)
+        for label in ("handoff", "priorities", "today"):
+            body = boot.get(label, "").strip()
+            if body:
+                parts.append(f"## {label.title()}\n\n{body}")
+
+    st = session_store()
+    rows = st.recent(5)
+    recent = [r for r in rows if r.surface != "hook" or r.task]
+    if recent:
+        lines = []
+        for r in recent:
+            state = "active" if r.ended_at is None else "done"
+            lines.append(f"- {r.age_label():<10} [{state}] {r.surface:<8} {(r.task or r.name or '')[:60]}")
+        parts.append("## Recent sessions\n\n" + "\n".join(lines))
+
+    text = "\n\n".join(p for p in parts if p.strip()).strip()
+    if args.hook:
+        print(json.dumps({"additionalContext": text}))
+        return 0
+    if args.json:
+        print(json.dumps({"context": text, "chars": len(text)}, indent=2))
+        return 0
+    ui.say(text or ui.dim("nothing to load"))
+    return 0
+
+
 # ── skills ────────────────────────────────────────────────────────────────────
 
 
@@ -842,6 +889,14 @@ def register(sub) -> None:
     s.add_argument("--sections", action="store_true", help="show the size budget")
     s.add_argument("--lean", action="store_true")
     s.set_defaults(func=cmd_prompt)
+
+    s = sub.add_parser("context", help="fresh boot context (memory + handoff + sessions)")
+    s.add_argument("--budget", type=int, default=8000,
+                   help="vault handoff/priorities char budget (default: 8000)")
+    s.add_argument("--hook", action="store_true",
+                   help="emit JSON for a Claude Code SessionStart hook")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(func=cmd_context)
 
     s = sub.add_parser("skills", help="procedural memory — what Milo knows how to do")
     s.add_argument("action", nargs="?", default="list",

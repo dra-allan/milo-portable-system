@@ -28,3 +28,6 @@ Thumbs.db
 /milo.py
 /MANIFEST.json
 /.env.template
+
+# pip build artifacts
+build/
