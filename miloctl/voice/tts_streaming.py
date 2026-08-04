@@ -80,6 +80,50 @@ SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])(?:\s|\n)|(?:\n\n)")
 _THINK_BLOCK_RE = re.compile(r"<think[\s>].*?</think>", flags=re.DOTALL)
 
 
+def text_for_speech(text: str) -> str:
+    """Strip markdown and noise so the voice reads clean prose, not source.
+
+    LLM replies come back as markdown; read verbatim they sound like
+    "asterisk asterisk bold asterisk asterisk". This collapses emphasis,
+    headings, links, bullets, tables, code fences and list numbers into plain
+    sentences, normalises whitespace, and repairs UTF-8-doubled mojibake.
+    """
+    t = text
+    # Code fences and inline code -> plain text (keep content, drop delimiters).
+    t = re.sub(r"```(.+?)```", r"\1", t, flags=re.S)
+    t = re.sub(r"`([^`]*)`", r"\1", t)
+    # Images and links -> their label text.
+    t = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", t)
+    t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t)
+    # Bold / italic / strikethrough markers.
+    t = re.sub(r"(\*\*|__)(.*?)\1", r"\2", t)
+    t = re.sub(r"(?<!\w)\*(?!\*)(.*?)(?<!\w)\*(?!\*)", r"\1", t)
+    t = re.sub(r"(?<!\w)_(?!_)(.*?)(?<!\w)_(?!_)", r"\1", t)
+    t = re.sub(r"~~(.*?)~~", r"\1", t)
+    # Headings, blockquotes, list markers, hr, html tags.
+    t = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", t)
+    t = re.sub(r"(?m)^\s{0,3}>\s?", "", t)
+    t = re.sub(r"(?m)^\s{0,3}[-*+]\s+", "", t)
+    t = re.sub(r"(?m)^\s{0,3}\d+[.)]\s+", "", t)
+    t = re.sub(r"(?m)^\s*[-_*]{3,}\s*$", "", t)
+    t = re.sub(r"<[^>]+>", "", t)
+    # Table cells.
+    t = t.replace("|", " ")
+    # Common mojibake from UTF-8 bytes read as cp1252/latin-1.
+    for bad, good in (
+        ("â€”", "—"), ("â€“", "–"), ("â€™", "'"), ("â€œ", '"'),
+        ("â€\x9c", '"'), ("â€\x9d", '"'), ("â€¦", "…"), ("Ã©", "é"),
+        ("Ã¨", "è"), ("Ã¡", "á"), ("Ã«", "ë"), ("Ã¼", "ü"),
+    ):
+        t = t.replace(bad, good)
+    # Collapse leftover stray markers and whitespace.
+    t = re.sub(r"\*+", "", t)
+    t = re.sub(r"_+", "", t)
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
+
+
 class SentenceChunker:
     """Incremental sentence cutter for LLM token deltas.
 
@@ -538,9 +582,13 @@ def stream_tts_to_wav(
 ) -> Dict[str, Any]:
     """Stream *text* to a mono 16-bit WAV file via the resolved provider.
 
-    Returns a summary dict; raises RuntimeError when no provider is usable.
+    Text is cleaned (markdown stripped) before synthesis so the voice reads
+    prose, not source. Returns a summary dict; raises RuntimeError when no
+    provider is usable.
     """
     import wave
+
+    clean = text_for_speech(text)
 
     cfg = dict(tts_config or {})
     cfg.setdefault("streaming", {"provider": provider or "auto"})
@@ -555,7 +603,7 @@ def stream_tts_to_wav(
         )
 
     frames = bytearray()
-    for chunk in streamer.stream(text):
+    for chunk in streamer.stream(clean):
         frames += chunk
 
     with wave.open(out_path, "wb") as wf:

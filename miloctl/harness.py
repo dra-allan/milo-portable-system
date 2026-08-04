@@ -397,13 +397,20 @@ class Harness:
         try:
             p = subprocess.run(
                 argv, capture_output=True, text=True, timeout=timeout,
+                encoding="utf-8", errors="replace",
                 cwd=str(paths.workspace_dir()) if paths.workspace_dir().is_dir() else None,
             )
         except FileNotFoundError:
             return 127, f"{self.binaries[0] if self.binaries else self.name} not found on PATH"
         except subprocess.TimeoutExpired:
             return 124, f"{self.label} timed out after {timeout}s"
-        return p.returncode, (p.stdout or p.stderr).strip()
+        text = (p.stdout or p.stderr).strip()
+        return p.returncode, _strip_ansi(text)
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI/VT escape sequences (opencode paints its output)."""
+    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*(\x07|\x1b\\)", "", text)
 
     def status(self) -> Dict[str, object]:
         return {

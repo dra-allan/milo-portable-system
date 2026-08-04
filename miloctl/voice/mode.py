@@ -157,7 +157,7 @@ class VoiceSession:
         return float(self.record_kwargs.get("duration", 6.0))
 
     def _speak(self, text: str) -> None:
-        """Speak *text* aloud, one sentence at a time (play as each finishes)."""
+        """Speak *text* aloud: clean it, then pipeline synthesis into playback."""
         if not text.strip():
             return
         if not audio.has_sounddevice() and not audio.has_ffmpeg():
@@ -170,24 +170,77 @@ class VoiceSession:
                 print("[tts] no usable provider. Install edge-tts, or set a TTS API key.")
                 return
             chunker = SentenceChunker()
-            for sentence in (*chunker.feed(text), *chunker.flush()):
-                if not sentence.strip():
-                    continue
-                self._speak_sentence(streamer, sentence)
+            sentences = []
+            for s in (*chunker.feed(text), *chunker.flush()):
+                clean = tts_streaming.text_for_speech(s)
+                if clean.strip():
+                    sentences.append(clean)
+            if not sentences:
+                return
+            self._speak_pipelined(streamer, sentences)
         except Exception as exc:  # pragma: no cover - playback failures
             logger.warning("TTS playback failed: %s", exc)
             print(f"[tts] {exc}")
 
-    def _speak_sentence(self, streamer: Any, sentence: str) -> None:
-        """Synthesize one sentence to a temp WAV and play it."""
+    def _speak_pipelined(self, streamer: Any, sentences: List[str]) -> None:
+        """Synthesize ahead of playback so speech is continuous, not gappy.
+
+        A synthesizer thread turns each sentence into a temp WAV on a bounded
+        queue while the main thread plays them back in order. Synthesis of
+        sentence N+1 overlaps the playback of sentence N, hiding the edge-tts
+        network round-trip that used to produce audible dead air between
+        sentences. ``Ctrl+C`` stops both threads cleanly.
+        """
+        import queue
+        import threading
+
+        ready: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=2)
+        stop = threading.Event()
+
+        def synthesize() -> None:
+            for sentence in sentences:
+                if stop.is_set():
+                    break
+                try:
+                    wav = self._synthesize_sentence(streamer, sentence)
+                except Exception as exc:  # one bad sentence must not kill the rest
+                    logger.warning("TTS sentence failed: %s", exc)
+                    continue
+                if wav is not None:
+                    ready.put(wav)
+
+        worker = threading.Thread(target=synthesize, daemon=True)
+        worker.start()
+        try:
+            while True:
+                wav = ready.get()
+                if wav is None:
+                    break
+                try:
+                    audio.play(wav)
+                finally:
+                    try:
+                        Path(wav).unlink(missing_ok=True)
+                    except OSError:
+                        pass
+        except KeyboardInterrupt:
+            stop.set()
+            raise
+        finally:
+            stop.set()
+            worker.join(timeout=5)
+
+    def _synthesize_sentence(self, streamer: Any, sentence: str) -> Optional[str]:
+        """Synthesize one sentence to a temp WAV; return its path or None."""
         fd, tmp = tempfile.mkstemp(suffix=".wav")
         os.close(fd)
+        frames = bytearray()
+        wrote = False
         try:
-            frames = bytearray()
             for chunk in streamer.stream(sentence):
                 frames += chunk
             if not frames:
-                return
+                return None
             import wave as _w
 
             with _w.open(tmp, "wb") as wf:
@@ -195,12 +248,14 @@ class VoiceSession:
                 wf.setsampwidth(streamer.sample_width)
                 wf.setframerate(streamer.sample_rate)
                 wf.writeframes(bytes(frames))
-            audio.play(tmp)
+            wrote = True
+            return tmp
         finally:
-            try:
-                Path(tmp).unlink(missing_ok=True)
-            except OSError:
-                pass
+            if not wrote:
+                try:
+                    Path(tmp).unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     # -- main loop ----------------------------------------------------------
 
