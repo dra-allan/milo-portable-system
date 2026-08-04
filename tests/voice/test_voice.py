@@ -74,6 +74,47 @@ def test_write_read_wav_roundtrip(tmp_path):
     assert read_back == pcm
 
 
+# ── text_for_speech (markdown → clean spoken prose) ────────────────────────
+
+def test_text_for_speech_strips_bold_and_italic():
+    assert tts_streaming.text_for_speech("**bold** and _italic_") == "bold and italic"
+
+
+def test_text_for_speech_strips_links_and_images():
+    assert tts_streaming.text_for_speech("see [link](url) or ![a](x)") == "see link or a"
+
+
+def test_text_for_speech_strips_backticks_and_fences():
+    # code fences: keep content, drop delimiters; inline: drop backticks
+    raw = "use `code` inline or\n\n```fence``` blocks"
+    cleaned = tts_streaming.text_for_speech(raw)
+    assert "code" in cleaned
+    assert "fence" in cleaned
+    assert "`" not in cleaned
+
+
+def test_text_for_speech_strips_headings_bullets_quotes():
+    raw = "# Heading\n\n- bullet\n1. item\n> quote"
+    assert "Heading" in tts_streaming.text_for_speech(raw)
+    assert "bullet" in tts_streaming.text_for_speech(raw)
+    assert "item" in tts_streaming.text_for_speech(raw)
+    assert "quote" in tts_streaming.text_for_speech(raw)
+
+
+def test_text_for_speech_strips_hr_and_html():
+    assert tts_streaming.text_for_speech("---\n<b>hi</b>") == "hi"
+
+
+def test_text_for_speech_handles_mixed_emphasis():
+    raw = "**bold** _italic_ ~~struck~~ and `code`"
+    clean = tts_streaming.text_for_speech(raw)
+    assert "bold" in clean
+    assert "italic" in clean
+    assert "struck" in clean
+    assert "code" in clean
+    assert "**" not in clean
+
+
 # ── Provider resolution ──────────────────────────────────────────────────────
 
 def test_no_provider_without_keys(monkeypatch, milo_home):
