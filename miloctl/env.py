@@ -56,6 +56,17 @@ FIELDS: List[Tuple[str, str, bool, bool]] = [
     ("ENGRAM_API_KEY", "Engram API key", False, True),
     ("BRAVE_API_KEY", "Brave Search API key", False, True),
     ("ELEVENLABS_API_KEY", "ElevenLabs API key", False, True),
+    # Voice (STT / streaming TTS / wake word)
+    ("GEMINI_API_KEYS", "Gemini API key(s), comma-separated", False, True),
+    ("GEMINI_API_KEY", "Gemini API key (single)", False, True),
+    ("GOOGLE_API_KEY", "Google API key (Gemini fallback)", False, True),
+    ("GROQ_API_KEY", "Groq API key (free STT)", False, True),
+    ("XAI_API_KEY", "xAI API key (STT/TTS)", False, True),
+    ("MILO_STT_PROVIDER", "STT provider (local|openai|groq|xai)", False, False),
+    ("MILO_STT_LANGUAGE", "STT language hint (default: auto)", False, False),
+    ("MILO_TTS_PROVIDER", "TTS provider (gemini|openai|elevenlabs)", False, False),
+    ("MILO_IDENTITY_PASSPHRASE", "Voice identity-check passphrase", False, True),
+    ("MILO_FFMPEG", "Path to ffmpeg.exe (audio capture/playback fallback)", False, False),
     ("GOOGLE_CLIENT_ID", "Google OAuth client id", False, False),
     ("GOOGLE_CLIENT_SECRET", "Google OAuth client secret", False, True),
     ("GOOGLE_REFRESH_TOKEN", "Google OAuth refresh token", False, True),
@@ -156,6 +167,12 @@ def save(data: Dict[str, str], path: Optional[Path] = None) -> Path:
         ("Tools", [
             "STITCH_API_KEY", "ENGRAM_API_KEY", "BRAVE_API_KEY", "ELEVENLABS_API_KEY",
             "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN",
+        ]),
+        ("Voice", [
+            "GEMINI_API_KEYS", "GEMINI_API_KEY", "GOOGLE_API_KEY",
+            "GROQ_API_KEY", "XAI_API_KEY",
+            "MILO_STT_PROVIDER", "MILO_STT_LANGUAGE", "MILO_TTS_PROVIDER",
+            "MILO_IDENTITY_PASSPHRASE", "MILO_FFMPEG",
         ]),
         ("Paths", ["MILO_VAULT_DIR", "MILO_ENGRAM_DIR", "MILO_WORKSPACE"]),
     ]
