@@ -564,6 +564,30 @@ class ClaudeCodeHarness(Harness):
             rendered = json.loads(env.render(json.dumps({"mcpServers": servers}), secrets))
             res.written.append(self._write_json(cfg.parent / ".claude.json", rendered))
 
+            # SessionStart hook: inject fresh boot context (memory, handoff,
+            # priorities, recent sessions) so Claude boots the way OpenCode
+            # does — with today's state, not a static persona snapshot.
+            res.written.append(
+                self._write_json(
+                    cfg / "settings.json",
+                    {
+                        "hooks": {
+                            "SessionStart": [
+                                {
+                                    "matcher": "",
+                                    "hooks": [
+                                        {
+                                            "type": "command",
+                                            "command": "milo context --hook",
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    },
+                )
+            )
+
             # Subagent definition so `@milo` works inside Claude Code.
             for alias in (agent_slug(), "mylo"):
                 res.written.append(
