@@ -157,43 +157,50 @@ class VoiceSession:
         return float(self.record_kwargs.get("duration", 6.0))
 
     def _speak(self, text: str) -> None:
-        """Stream *text* to audio, playing sentences as they finish."""
+        """Speak *text* aloud, one sentence at a time (play as each finishes)."""
         if not text.strip():
             return
         if not audio.has_sounddevice() and not audio.has_ffmpeg():
             print(f"\n[tts disabled — no audio backend] {text}")
             return
-        tts_cfg = {
-            "streaming": {"provider": self.tts_provider or "auto"},
-            self.tts_provider: {},
-        } if self.tts_provider else {"streaming": {"provider": "auto"}}
+        tts_cfg = {"streaming": {"provider": self.tts_provider or "auto"}}
         try:
             streamer = tts_streaming.resolve_streaming_provider(tts_cfg, preferred=self.tts_provider)
             if streamer is None:
-                print("[tts] no usable provider. Set GEMINI_API_KEY / OPENAI_API_KEY.")
+                print("[tts] no usable provider. Install edge-tts, or set a TTS API key.")
                 return
-            fd, tmp = tempfile.mkstemp(suffix=".wav")
-            os.close(fd)
-            try:
-                frames = bytearray()
-                for chunk in streamer.stream(text):
-                    frames += chunk
-                import wave as _w
-
-                with _w.open(tmp, "wb") as wf:
-                    wf.setnchannels(streamer.channels)
-                    wf.setsampwidth(streamer.sample_width)
-                    wf.setframerate(streamer.sample_rate)
-                    wf.writeframes(bytes(frames))
-                audio.play(tmp)
-            finally:
-                try:
-                    Path(tmp).unlink(missing_ok=True)
-                except OSError:
-                    pass
+            chunker = SentenceChunker()
+            for sentence in (*chunker.feed(text), *chunker.flush()):
+                if not sentence.strip():
+                    continue
+                self._speak_sentence(streamer, sentence)
         except Exception as exc:  # pragma: no cover - playback failures
             logger.warning("TTS playback failed: %s", exc)
             print(f"[tts] {exc}")
+
+    def _speak_sentence(self, streamer: Any, sentence: str) -> None:
+        """Synthesize one sentence to a temp WAV and play it."""
+        fd, tmp = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        try:
+            frames = bytearray()
+            for chunk in streamer.stream(sentence):
+                frames += chunk
+            if not frames:
+                return
+            import wave as _w
+
+            with _w.open(tmp, "wb") as wf:
+                wf.setnchannels(streamer.channels)
+                wf.setsampwidth(streamer.sample_width)
+                wf.setframerate(streamer.sample_rate)
+                wf.writeframes(bytes(frames))
+            audio.play(tmp)
+        finally:
+            try:
+                Path(tmp).unlink(missing_ok=True)
+            except OSError:
+                pass
 
     # -- main loop ----------------------------------------------------------
 
