@@ -22,6 +22,12 @@ dependencies = []
 bot = ["python-telegram-bot>=20.0"]
 # Nicer terminal output. The CLI degrades gracefully without it.
 pretty = ["rich>=13.0"]
+# Voice mode: STT + streaming TTS + wake word. Core streaming TTS works with
+# just GEMINI_API_KEY/OPENAI_API_KEY over the stdlib; these extras add local
+# transcription, on-device wake word and mic/speaker I/O.
+voice = ["sounddevice>=0.4", "numpy>=1.20"]
+voice-local = ["sounddevice>=0.4", "numpy>=1.20", "faster-whisper>=1.0"]
+voice-wake = ["openwakeword>=0.5", "sounddevice>=0.4", "numpy>=1.20"]
 # Embedding dependencies for semantic search
 embeddings = ["onnxruntime>=1.0", "numpy>=1.20"]
 # Machine learning dependencies (includes embeddings)
@@ -43,8 +49,10 @@ mylo = "miloctl.cli:main"
 milo-mcp = "miloctl.mcp:main"
 
 [tool.setuptools]
-packages = ["miloctl"]
 include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["miloctl*"]
 
 [tool.setuptools.package-data]
 miloctl = ["assets/**/*", "skills/**/*", "templates/**/*"]

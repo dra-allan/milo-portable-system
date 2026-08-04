@@ -667,6 +667,62 @@ def cmd_run(args: argparse.Namespace) -> int:
     return _run_through_harness(prompt, args)
 
 
+# ── voice ────────────────────────────────────────────────────────────────────
+
+
+def cmd_voice(args: argparse.Namespace) -> int:
+    """Voice mode: mic → STT → agent → spoken reply."""
+    from .voice import run_cli as _voice_cli
+
+    return _voice_cli([
+        *(["--once"] if getattr(args, "once", False) else []),
+        "--duration", str(getattr(args, "duration", 6.0)),
+        *(["--stt", args.stt] if getattr(args, "stt", "") else []),
+        *(["--tts", args.tts] if getattr(args, "tts", "") else []),
+        *(["--identity"] if getattr(args, "identity", False) else []),
+        *(["--wake", args.wake] if getattr(args, "wake", "") else []),
+        *(["--test-tts", args.test_tts] if getattr(args, "test_tts", "") else []),
+        *(["--tts-out", args.tts_out] if getattr(args, "tts_out", "") else []),
+    ])
+
+
+def cmd_say(args: argparse.Namespace) -> int:
+    """Speak a single line of text (or render it to a WAV file)."""
+    from .voice.mode import json_dumps
+    from .voice.tts_streaming import stream_tts_to_wav
+
+    text = _joined(args.text)
+    if not text:
+        return _fail('say something: milo say "hello, Allan"')
+
+    out = args.out
+    if not out:
+        out = tempfile.mktemp(suffix=".wav")
+
+    try:
+        result = stream_tts_to_wav(text, out, provider=args.tts or None)
+    except Exception as exc:
+        return _fail(f"tts failed: {exc}")
+
+    if args.out:
+        print(json_dumps(result))
+        return 0
+
+    from .voice import audio
+
+    try:
+        audio.play(out)
+    except Exception as exc:
+        ui.warn(f"playback failed: {exc} (audio saved to {out})")
+        return 1
+
+    try:
+        os.unlink(out)
+    except OSError:
+        pass
+    return 0
+
+
 # ── channels ──────────────────────────────────────────────────────────────────
 
 
@@ -1007,6 +1063,26 @@ def register(sub) -> None:
 
     s = sub.add_parser("harness", help="which agent tools are installed and synced")
     s.set_defaults(func=cmd_harness)
+
+    s = sub.add_parser("voice", help="talk to Milo — mic in, speech out")
+    s.add_argument("--once", action="store_true", help="single turn, then exit")
+    s.add_argument("--duration", type=float, default=6.0,
+                   help="recording seconds for --once")
+    s.add_argument("--stt", help="STT provider (local|openai|groq|xai)")
+    s.add_argument("--tts", help="TTS provider (gemini|openai|elevenlabs)")
+    s.add_argument("--identity", action="store_true",
+                   help="require passphrase check before sensitive actions")
+    s.add_argument("--wake", help="wake-word engine (openwakeword|sherpa|porcupine)")
+    s.add_argument("--test-tts", metavar="TEXT", help="synthesize TEXT to a file, then exit")
+    s.add_argument("--tts-out", default="", help="output path for --test-tts")
+    s.set_defaults(func=cmd_voice)
+
+    s = sub.add_parser("say", help="speak one line of text out loud (or to a file)")
+    s.add_argument("text", nargs="*")
+    s.add_argument("--tts", default="", help="TTS provider (gemini|openai|elevenlabs)")
+    s.add_argument("--out", default="", help="write to this WAV file instead of the speaker")
+    s.add_argument("--voice", default="", help="voice name (e.g. Charon for Gemini)")
+    s.set_defaults(func=cmd_say)
 
     s = sub.add_parser("tools", help="manage and run tools")
     s.add_argument("action", nargs="?", default="list",
