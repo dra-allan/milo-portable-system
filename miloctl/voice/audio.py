@@ -104,7 +104,10 @@ def play_ffmpeg(wav_path: str) -> None:
     exe = ffmpeg_path()
     if not exe:
         raise RuntimeError("ffmpeg not found. " + install_hint())
-    subprocess.Popen([exe, *args, "-"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(
+        [exe, *args, "-"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600,
+    )
 
 
 # ---------------------------------------------------------------------------
