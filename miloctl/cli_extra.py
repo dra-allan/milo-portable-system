@@ -681,6 +681,7 @@ def cmd_voice(args: argparse.Namespace) -> int:
         *(["--tts", args.tts] if getattr(args, "tts", "") else []),
         *(["--identity"] if getattr(args, "identity", False) else []),
         *(["--wake", args.wake] if getattr(args, "wake", "") else []),
+        *(["--harness", args.harness] if getattr(args, "harness", "") else []),
         *(["--test-tts", args.test_tts] if getattr(args, "test_tts", "") else []),
         *(["--tts-out", args.tts_out] if getattr(args, "tts_out", "") else []),
     ])
@@ -1073,6 +1074,8 @@ def register(sub) -> None:
     s.add_argument("--identity", action="store_true",
                    help="require passphrase check before sensitive actions")
     s.add_argument("--wake", help="wake-word engine (openwakeword|sherpa|porcupine)")
+    s.add_argument("--harness", default="",
+                   help="agent harness (opencode|claude-code|codex|cursor|gemini)")
     s.add_argument("--test-tts", metavar="TEXT", help="synthesize TEXT to a file, then exit")
     s.add_argument("--tts-out", default="", help="output path for --test-tts")
     s.set_defaults(func=cmd_voice)
