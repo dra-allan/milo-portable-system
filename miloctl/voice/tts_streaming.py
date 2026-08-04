@@ -18,8 +18,13 @@ Core pieces:
 
 Providers:
 
-* ``gemini`` (default when a Google key is present) — ``streamGenerateContent?alt=sse``
-  returning base64 PCM at 24 kHz. Voice defaults to Milo's house voice "Charon".
+* ``edge`` (default when edge-tts is installed) — Microsoft's free neural
+  voices via ``edge-tts``. No API key, no rate limits. Streams MP3, decoded to
+  int16 PCM at 24 kHz by ffmpeg (``MILO_FFMPEG`` or PATH). Voice defaults to
+  "en-US-GuyNeural".
+* ``gemini`` — ``streamGenerateContent?alt=sse`` returning base64 PCM at
+  24 kHz. Voice defaults to Milo's house voice "Charon". Rate-limited on the
+  free tier; keys are round-robined on 429.
 * ``openai`` — ``/audio/speech`` with ``response_format=pcm`` (24 kHz).
 * ``elevenlabs`` — ``/v1/text-to-speech`` with ``output_format=pcm_24000``.
 
@@ -32,11 +37,14 @@ import base64
 import json
 import logging
 import re
+import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
 from ..env import get as env_get
@@ -153,7 +161,14 @@ def _sse_pcm_stream(url: str, params: dict, payload: dict, *, timeout: float = 6
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    try:
+        resp = urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:500]
+        if exc.code == 429:
+            raise RateLimited(detail) from exc
+        raise RuntimeError(f"HTTP {exc.code} from {url}: {detail}") from exc
+    with resp:
         buf = b""
         while True:
             chunk = resp.read(4096)
@@ -179,6 +194,43 @@ def _sse_pcm_stream(url: str, params: dict, payload: dict, *, timeout: float = 6
                         yield base64.b64decode(b64)
                     except (ValueError, TypeError) as exc:
                         logger.warning("SSE: bad base64 audio: %s", exc)
+
+
+class RateLimited(RuntimeError):
+    """A provider answered 429 — the caller may retry with another key."""
+
+
+def _ffmpeg_exe() -> Optional[str]:
+    """Resolve ffmpeg for MP3→PCM decoding (MILO_FFMPEG env, else PATH)."""
+    env_path = env_get("MILO_FFMPEG").strip()
+    if env_path and Path(env_path).exists():
+        return env_path
+    found = shutil.which("ffmpeg")
+    return found
+
+
+def _decode_mp3_to_pcm(mp3: bytes, sample_rate: int) -> bytes:
+    """Decode MP3 bytes to mono int16 PCM at ``sample_rate`` via ffmpeg."""
+    exe = _ffmpeg_exe()
+    if not exe:
+        raise RuntimeError(
+            "Edge TTS needs ffmpeg to decode audio. Install ffmpeg and set "
+            "MILO_FFMPEG in $MILO_HOME/.env."
+        )
+    proc = subprocess.run(
+        [
+            exe, "-hide_banner", "-loglevel", "error",
+            "-i", "pipe:0",
+            "-f", "s16le", "-ac", "1", "-ar", str(sample_rate),
+            "pipe:1",
+        ],
+        input=mp3, capture_output=True, timeout=120,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg decode failed: {proc.stderr.decode('utf-8', 'replace')[-300:]}"
+        )
+    return proc.stdout
 
 
 def _capped(chunks: Iterator[bytes], label: str) -> Iterator[bytes]:
@@ -239,8 +291,9 @@ def _try_instantiate(name: str, tts_config: Dict) -> Optional[StreamingTTSProvid
         return None
 
 
-# Best chunked latency/quality first.
-_PROVIDER_PRIORITY: List[str] = ["gemini", "openai", "elevenlabs"]
+# Best free/no-key first, then chunked latency/quality. edge-tts has no rate
+# limits; Gemini/OpenAI/ElevenLabs need paid keys or face 429s on free tiers.
+_PROVIDER_PRIORITY: List[str] = ["edge", "gemini", "openai", "elevenlabs"]
 
 
 def resolve_streaming_provider(
@@ -262,7 +315,13 @@ def resolve_streaming_provider(
         return None
     if pinned:
         return _try_instantiate(pinned, tts_config)
-    name = (preferred or str(streaming_cfg.get("preferred") or "gemini")).lower().strip()
+    name = (preferred or str(streaming_cfg.get("preferred") or "auto")).lower().strip()
+    if name == "auto":
+        for cand in _PROVIDER_PRIORITY:
+            inst = _try_instantiate(cand, tts_config)
+            if inst is not None:
+                return inst
+        return None
     return _try_instantiate(name, tts_config)
 
 
@@ -277,17 +336,85 @@ def _key(*names: str) -> str:
     return ""
 
 
+def _gemini_keys() -> list:
+    """All Gemini keys (round-robin list from GEMINI_API_KEYS, else single)."""
+    for n in ("GEMINI_API_KEYS", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        val = env_get(n).strip()
+        if not val:
+            continue
+        keys = [k.strip() for k in val.split(",") if k.strip()]
+        if keys:
+            return keys
+    return []
+
+
 def _gemini_key() -> str:
-    return _key("GEMINI_API_KEYS", "GEMINI_API_KEY", "GOOGLE_API_KEY")
+    keys = _gemini_keys()
+    return keys[0] if keys else ""
 
 
 # ---------------------------------------------------------------------------
 # Providers
 # ---------------------------------------------------------------------------
 
+def _has_module(name: str) -> bool:
+    try:
+        import importlib.util  # noqa: F401
+
+        return importlib.util.find_spec(name) is not None
+    except Exception:
+        return False
+
+
+@register("edge")
+class EdgeTTSStreamer(StreamingTTSProvider):
+    """Microsoft Edge neural TTS via ``edge-tts`` — free, no key, no limits.
+
+    Streams MP3 through edge-tts's async generator; decodes to mono int16 PCM
+    at 24 kHz with ffmpeg. Not truly chunked (synthesizes per sentence), but
+    the free tier has no rate limit so long replies just work.
+    """
+
+    sample_rate = 24000
+    DEFAULT_VOICE = "en-US-GuyNeural"
+
+    @staticmethod
+    def available() -> bool:
+        return _has_module("edge_tts") and _ffmpeg_exe() is not None
+
+    def stream(self, text: str) -> Iterator[bytes]:
+        import asyncio
+
+        import edge_tts
+
+        voice = str(self.section.get("voice") or self.DEFAULT_VOICE).strip() or self.DEFAULT_VOICE
+        rate = str(self.section.get("rate") or "+0%").strip() or "+0%"
+
+        async def _collect() -> bytes:
+            communicate = edge_tts.Communicate(text, voice, rate=rate)
+            chunks = []
+            async for chunk in communicate.stream():
+                if chunk.get("type") == "audio" and chunk.get("data"):
+                    chunks.append(chunk["data"])
+            return b"".join(chunks)
+
+        try:
+            mp3 = asyncio.run(_collect())
+        except Exception as exc:
+            raise RuntimeError(f"Edge TTS failed: {exc}") from exc
+        if not mp3:
+            return
+        pcm = _decode_mp3_to_pcm(mp3, self.sample_rate)
+        yield from _capped(iter([pcm]), "Edge TTS")
+
+
 @register("gemini")
 class GeminiStreamer(StreamingTTSProvider):
-    """Gemini ``streamGenerateContent?alt=sse`` — base64 PCM chunks (24 kHz)."""
+    """Gemini ``streamGenerateContent?alt=sse`` — base64 PCM chunks (24 kHz).
+
+    Round-robins across every ``GEMINI_API_KEYS`` entry on 429; free-tier TTS
+    is heavily rate-limited, so this is what makes long replies survivable.
+    """
 
     sample_rate = 24000
     DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
@@ -299,7 +426,6 @@ class GeminiStreamer(StreamingTTSProvider):
         return bool(_gemini_key())
 
     def stream(self, text: str) -> Iterator[bytes]:
-        api_key = _gemini_key()
         model = str(self.section.get("model") or self.DEFAULT_MODEL).strip() or self.DEFAULT_MODEL
         voice = str(self.section.get("voice") or self.DEFAULT_VOICE).strip() or self.DEFAULT_VOICE
         base_url = str(self.section.get("base_url") or self.DEFAULT_BASE_URL).strip().rstrip("/")
@@ -316,8 +442,22 @@ class GeminiStreamer(StreamingTTSProvider):
             },
         }
         url = f"{base_url}/models/{model}:streamGenerateContent"
-        params = {"alt": "sse", "key": api_key}
-        yield from _capped(_sse_pcm_stream(url, params, payload), "Gemini streaming TTS")
+
+        keys = _gemini_keys()
+        last_err: Optional[Exception] = None
+        for i, api_key in enumerate(keys):
+            params = {"alt": "sse", "key": api_key}
+            try:
+                yield from _capped(
+                    _sse_pcm_stream(url, params, payload),
+                    "Gemini streaming TTS",
+                )
+                return
+            except RateLimited as exc:
+                last_err = exc
+                logger.warning("gemini 429 on key %d/%d; rotating", i + 1, len(keys))
+                continue
+        raise RuntimeError(f"All Gemini keys rate-limited: {last_err}") from last_err
 
 
 @register("openai")

@@ -113,6 +113,58 @@ def test_available_reflects_keys(monkeypatch, milo_home):
     assert tts_streaming.GeminiStreamer.available() is True
 
 
+def test_gemini_keys_parses_round_robin_list(monkeypatch, milo_home):
+    monkeypatch.setenv("GEMINI_API_KEYS", "alpha,beta , gamma")
+    assert tts_streaming._gemini_keys() == ["alpha", "beta", "gamma"]
+    assert tts_streaming._gemini_key() == "alpha"
+
+
+def test_edge_preferred_over_gemini(monkeypatch, milo_home, tmp_path):
+    """edge-tts + ffmpeg beat Gemini in auto mode: free, no rate limits."""
+    fake_ffmpeg = tmp_path / "ffmpeg.exe"
+    fake_ffmpeg.write_bytes(b"MZ")
+    monkeypatch.setenv("MILO_FFMPEG", str(fake_ffmpeg))
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+
+    # Pretend edge_tts is importable (a real spec so find_spec() sees it).
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_loader("edge_tts", loader=None)
+    edge_mod = importlib.util.module_from_spec(spec)
+    sys.modules["edge_tts"] = edge_mod
+
+    cfg = {"streaming": {"provider": "auto"}}
+    streamer = tts_streaming.resolve_streaming_provider(cfg)
+    assert streamer is not None
+    assert streamer.__class__.__name__ == "EdgeTTSStreamer"
+
+    sys.modules.pop("edge_tts", None)
+
+
+def test_gemini_rotates_keys_on_429(monkeypatch, milo_home):
+    """A 429 on one key retries the next; exhausting all raises the last error."""
+    monkeypatch.setenv("GEMINI_API_KEYS", "k1,k2,k3")
+
+    calls = []
+
+    def fake_sse(url, params, payload, **kw):
+        calls.append(params["key"])
+        raise tts_streaming.RateLimited(f"429 for {params['key']}")
+
+    monkeypatch.setattr(tts_streaming, "_sse_pcm_stream", fake_sse)
+
+    cfg = {"streaming": {"provider": "gemini"}}
+    streamer = tts_streaming.resolve_streaming_provider(cfg)
+    assert streamer is not None
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="All Gemini keys rate-limited"):
+        list(streamer.stream("test"))
+    assert calls == ["k1", "k2", "k3"]  # rotated through all three keys
+
+
 # ── Identity gate ────────────────────────────────────────────────────────────
 
 def test_identity_gate_open_when_no_passphrase(monkeypatch):
@@ -157,8 +209,8 @@ def test_tts_tool_requires_text():
 def test_capture_turn_passes_duration_once(monkeypatch, tmp_path):
     """Regression: record() got duration twice (positional + **record_kwargs)."""
     from miloctl.voice import audio
-    from miloctl.voice.mode import VoiceSession
     from miloctl.voice import stt as stt_mod
+    from miloctl.voice.mode import VoiceSession
 
     calls = []
 
