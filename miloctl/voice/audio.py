@@ -17,6 +17,8 @@ import wave
 from pathlib import Path
 from typing import Optional
 
+from ..env import get as env_get
+
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000  # Whisper-native capture rate.
@@ -32,13 +34,13 @@ def has_sounddevice() -> bool:
 
 
 def has_ffmpeg() -> bool:
-    if os.getenv("MILO_FFMPEG"):
-        return Path(os.environ["MILO_FFMPEG"]).exists()
+    if env_get("MILO_FFMPEG"):
+        return Path(env_get("MILO_FFMPEG")).exists()
     return shutil.which("ffmpeg") is not None
 
 
 def ffmpeg_path() -> Optional[str]:
-    env_path = os.getenv("MILO_FFMPEG", "").strip()
+    env_path = env_get("MILO_FFMPEG").strip()
     if env_path and Path(env_path).exists():
         return env_path
     found = shutil.which("ffmpeg")
