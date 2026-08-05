@@ -272,3 +272,67 @@ def test_capture_turn_passes_duration_once(monkeypatch, tmp_path):
     duration, kwargs = calls[0]
     assert duration == 5.0
     assert kwargs == {"device": 3}  # duration popped, not duplicated
+
+
+# ── Voice prompt + history ───────────────────────────────────────────────────
+
+def test_voice_prompt_puts_question_first_style_last():
+    from miloctl.voice.mode import VoiceSession
+
+    session = VoiceSession()
+    prompt = session._build_voice_prompt("What is going on?")
+
+    # The question must lead so the model answers it, not the instruction.
+    assert prompt.startswith("What is going on?")
+    # Style note rides at the very end, in a parenthetical.
+    assert prompt.rstrip().endswith(")")
+    assert "No bullet points" in prompt
+
+
+def test_voice_prompt_includes_history():
+    from miloctl.voice.mode import VoiceSession
+
+    session = VoiceSession()
+    session._history = [("you", "First question"), ("milo", "First answer")]
+    prompt = session._build_voice_prompt("Second question")
+
+    assert "First question" in prompt
+    assert "First answer" in prompt
+    assert prompt.startswith("Second question")
+
+
+def test_voice_history_trims_to_budget():
+    from miloctl.voice.mode import _MAX_HISTORY_TURNS, VoiceSession
+
+    session = VoiceSession()
+    for i in range(30):
+        session._history.append(("you", f"q{i}"))
+        session._history.append(("milo", f"a{i}"))
+    assert len(session._history) > 2 * _MAX_HISTORY_TURNS
+    session._history = session._history[-2 * _MAX_HISTORY_TURNS:]
+    assert len(session._history) == 2 * _MAX_HISTORY_TURNS
+
+
+def test_speech_caps_sentence_count(monkeypatch):
+    """Only the first MAX_SPEECH_SENTENCES are synthesized — verbose free
+    models must not turn a reply into a wall of spoken text."""
+    from miloctl.voice import audio, tts_streaming
+    from miloctl.voice.mode import MAX_SPEECH_SENTENCES, VoiceSession
+
+    spoken = []
+    monkeypatch.setattr(audio, "has_sounddevice", lambda: True)
+    monkeypatch.setattr(audio, "has_ffmpeg", lambda: False)
+    monkeypatch.setattr(tts_streaming, "resolve_streaming_provider", lambda *a, **k: object())
+
+    session = VoiceSession(tts_provider="edge")
+    session._synthesize_sentence = lambda streamer, s: spoken.append(s) or None
+    session._speak_pipelined = lambda streamer, sentences: spoken.extend(sentences)
+
+    long_reply = (
+        "One sentence. Two sentence. Three sentence. "
+        "Four sentence. Five sentence."
+    )
+    session._speak(long_reply)
+
+    assert len(spoken) <= MAX_SPEECH_SENTENCES
+    assert spoken[0].startswith("One sentence")
