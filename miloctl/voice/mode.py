@@ -45,6 +45,16 @@ DEFAULT_REPLY_BEGIN = (
     "Hello. This is Milo. I'm listening. Press enter to talk, press Ctrl+C to stop."
 )
 
+VOICE_SYSTEM_NOTE = (
+    "Answer briefly and naturally, like spoken conversation. "
+    "No bullet points, no headings, no bold text, no numbered lists."
+)
+
+_MAX_HISTORY_TURNS = 6
+
+#: Only this many sentences of a reply are spoken aloud; the terminal shows all.
+MAX_SPEECH_SENTENCES = 3
+
 
 # ---------------------------------------------------------------------------
 # Identity gate
@@ -100,6 +110,25 @@ class VoiceSession:
         self.require_identity = require_identity
         self.record_kwargs = dict(record_kwargs or {})
         self._chunker = SentenceChunker()
+        self._history: list[tuple[str, str]] = []  # (role, text)
+
+    # -- voice prompt ---------------------------------------------------------
+
+    def _build_voice_prompt(self, turn: str) -> str:
+        """Compose a one-shot prompt that sounds conversational, not like a report.
+
+        Question first (so the model answers it), style note appended at the
+        end so the instruction doesn't get treated as the thing to respond to.
+        Conversation history rides along so the model keeps context across
+        turns in a fresh process."""
+        parts = [turn]
+        if self._history:
+            parts.append("")
+            parts.append("Earlier in this conversation:")
+            for role, text in self._history[-(_MAX_HISTORY_TURNS + 1):]:
+                parts.append(f"  Allan: {text}" if role == "you" else f"  Milo: {text}")
+        parts.append(f" ({VOICE_SYSTEM_NOTE})")
+        return "\n".join(parts)
 
     # -- wiring -------------------------------------------------------------
 
@@ -157,7 +186,12 @@ class VoiceSession:
         return float(self.record_kwargs.get("duration", 6.0))
 
     def _speak(self, text: str) -> None:
-        """Speak *text* aloud: clean it, then pipeline synthesis into playback."""
+        """Speak *text* aloud: clean it, then pipeline synthesis into playback.
+
+        Only the first ``MAX_SPEECH_SENTENCES`` are spoken — free models answer
+        verbosely, and a wall of synthesized speech is as bad as a wall of
+        text. The full reply still shows in the terminal.
+        """
         if not text.strip():
             return
         if not audio.has_sounddevice() and not audio.has_ffmpeg():
@@ -177,7 +211,7 @@ class VoiceSession:
                     sentences.append(clean)
             if not sentences:
                 return
-            self._speak_pipelined(streamer, sentences)
+            self._speak_pipelined(streamer, sentences[:MAX_SPEECH_SENTENCES])
         except Exception as exc:  # pragma: no cover - playback failures
             logger.warning("TTS playback failed: %s", exc)
             print(f"[tts] {exc}")
@@ -288,9 +322,14 @@ class VoiceSession:
                     continue
 
                 print(f"[you] {turn}")
-                reply = harness(turn)
+                prompt = self._build_voice_prompt(turn)
+                reply = harness(prompt)
                 print(f"[milo] {reply}")
                 self._speak(reply)
+                self._history.append(("you", turn))
+                self._history.append(("milo", reply))
+                if len(self._history) > 2 * _MAX_HISTORY_TURNS:
+                    self._history = self._history[-2 * _MAX_HISTORY_TURNS:]
 
                 if once:
                     break
