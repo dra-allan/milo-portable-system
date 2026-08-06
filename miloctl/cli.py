@@ -252,6 +252,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
           else "; ".join(f"{name} → {ch}" for name, ch in stranded),
           "run: milo channels --test", level="warn")
 
+    # The OS scheduler is the heartbeat that makes every routine real.
+    # Registration is not health — a battery-blocked task never fires, which
+    # is the exact silent failure that loses backups.
+    from . import scheduler
+    healthy = scheduler.healthy()
+    ok_sched = any(h.ok for h in healthy)
+    check("scheduler", ok_sched,
+          "; ".join(f"{h.backend}: {h.detail}" for h in healthy)
+          or "no scheduler backend",
+          "run: milo routines install", level="error")
+
     last = backup.last_backup_time()
     if last:
         days = (_time.time() - last) / 86400
