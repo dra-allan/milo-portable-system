@@ -555,6 +555,174 @@ class YouTubeDownloader:
         self._save_library(library)
 
     # ------------------------------------------------------------------
+    # Section fetch (only the chosen clip ranges)
+    # ------------------------------------------------------------------
+    def _section_path(self, video_id: str, req_start: float,
+                      req_end: float) -> Optional[Path]:
+        """Find an already-downloaded section file for this exact request."""
+        stem = f"{video_id}{ID_SEPARATOR}sec_{int(round(req_start))}_{int(round(req_end))}"
+        for p in self.sections_dir.glob(f"{glob_escape(stem)}.*"):
+            if self._is_usable_video(p):
+                return p
+        return None
+
+    def download_section(self, video_id: str, start: float, end: float,
+                         padding: Optional[float] = None,
+                         force_redownload: bool = False) -> Optional[Dict]:
+        """Fetch just [start, end] of a video as its own small file.
+
+        Returns a dict describing where the wanted clip sits *inside the
+        downloaded file*:
+
+            {'path', 'clip_start_in_file', 'clip_duration',
+             'file_duration', 'requested_start', 'requested_end', 'lead_in'}
+
+        WHY THE OFFSET IS MEASURED, NOT ASSUMED
+        ---------------------------------------
+        A stream copy cannot begin mid-GOP, so the file we get back starts at
+        the keyframe *preceding* the requested start. That lead-in is unknown
+        up front and varies per source. Assuming it is zero shifts every clip
+        (and every caption) by up to ~10 seconds.
+
+        So the offset is derived from the file itself: we ask for the range
+        with ``padding`` of slack on each side, then probe the real duration.
+        Anything longer than the span we asked for is lead-in the keyframe
+        added, and:
+
+            clip_start_in_file = lead_in + padding_before
+
+        Both the render cut and the caption rebase use this one number, so the
+        video and its captions always move together -- sync does not depend on
+        the estimate being exactly right.
+        """
+        if end <= start:
+            logger.error("Invalid section bounds %.2f-%.2f for %s", start, end, video_id)
+            return None
+
+        pad = float(config.section_padding if padding is None else padding)
+        req_start = max(0.0, float(start) - pad)
+        req_end = float(end) + pad
+        # How much padding actually survived the clamp at zero. Without this,
+        # a clip starting at 3s with 8s padding would think it had 8s of
+        # lead-in when only 3s was available -- shifting the cut by 5s.
+        pad_before = float(start) - req_start
+
+        existing = None if force_redownload else self._section_path(video_id, req_start, req_end)
+        if existing:
+            logger.info("Resume: reusing section %s", existing.name)
+            return self._describe_section(existing, start, end, req_start, req_end,
+                                          pad_before)
+
+        try:
+            import yt_dlp
+        except ImportError as exc:
+            logger.error("yt-dlp is not installed: %s (pip install yt-dlp)", exc)
+            return None
+
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        logger.info(
+            "Fetching section %.1f-%.1fs (+/-%.0fs padding) of %s",
+            start, end, pad, video_id,
+        )
+        started = time.time()
+
+        try:
+            with yt_dlp.YoutubeDL(self._section_opts(video_id, req_start, req_end)) as ydl:
+                ydl.extract_info(url, download=True)
+        except Exception as exc:
+            logger.error("Section download failed for %s [%.1f-%.1f]: %s",
+                         video_id, start, end, exc)
+            return None
+
+        path = self._section_path(video_id, req_start, req_end)
+        if not path:
+            logger.error(
+                "Section download reported success but produced no usable file "
+                "for %s [%.1f-%.1f] in %s", video_id, start, end, self.sections_dir,
+            )
+            return None
+
+        logger.info(
+            "Section ready: %s (%.1f MB in %.1fs)",
+            path.name, path.stat().st_size / (1024 * 1024), time.time() - started,
+        )
+        return self._describe_section(path, start, end, req_start, req_end, pad_before)
+
+    def _describe_section(self, path: Path, start: float, end: float,
+                          req_start: float, req_end: float,
+                          pad_before: float) -> Dict:
+        """Locate the wanted clip inside a downloaded section file."""
+        clip_duration = float(end) - float(start)
+        file_duration = self._probe_duration(path)
+        requested_span = float(req_end) - float(req_start)
+
+        # Whatever the file has beyond the span we requested is the keyframe
+        # lead-in that yt-dlp could not avoid.
+        lead_in = max(0.0, file_duration - requested_span) if file_duration > 0 else 0.0
+        clip_start_in_file = lead_in + pad_before
+
+        # A section can also come back SHORTER than requested (end of video, or
+        # the range was clamped). Never point the cut past the end of the file.
+        if file_duration > 0:
+            clip_start_in_file = min(clip_start_in_file,
+                                     max(0.0, file_duration - 0.05))
+            clip_duration = min(clip_duration, file_duration - clip_start_in_file)
+
+        if lead_in > 0.05:
+            logger.info(
+                "  keyframe lead-in measured at %.2fs; clip starts %.2fs into "
+                "the section file", lead_in, clip_start_in_file,
+            )
+
+        return {
+            'path': str(path),
+            'video_id': _id_from_filename(path) or '',
+            'clip_start_in_file': clip_start_in_file,
+            'clip_duration': clip_duration,
+            'file_duration': file_duration,
+            'requested_start': float(req_start),
+            'requested_end': float(req_end),
+            'source_start': float(start),
+            'source_end': float(end),
+            'lead_in': lead_in,
+        }
+
+    def download_sections(self, video_id: str,
+                          ranges: Sequence[Tuple[float, float]],
+                          padding: Optional[float] = None,
+                          concurrency: Optional[int] = None,
+                          force_redownload: bool = False) -> List[Optional[Dict]]:
+        """Fetch several clip ranges, up to ``concurrency`` at a time.
+
+        Section fetches are network-bound and rendering is CPU-bound, so these
+        two overlap almost perfectly -- that is where the real wall-clock win
+        is, not in running more encodes at once (measured: parallel encodes
+        give only 1.02-1.06x on a 2-core box; see BENCHMARKS.md).
+
+        Results are returned in the same order as ``ranges``, with None for any
+        range that failed, so callers can keep the index alignment.
+        """
+        ranges = list(ranges)
+        if not ranges:
+            return []
+
+        workers = int(concurrency if concurrency is not None
+                      else config.download_concurrency)
+        workers = max(1, min(workers, len(ranges)))
+
+        def fetch(rng):
+            return self.download_section(video_id, rng[0], rng[1], padding=padding,
+                                         force_redownload=force_redownload)
+
+        if workers == 1:
+            return [fetch(r) for r in ranges]
+
+        logger.info("Fetching %d section(s) with %d parallel download(s)",
+                    len(ranges), workers)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            return list(pool.map(fetch, ranges))
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def download_video(self, video_id: str, force_redownload: bool = False) -> Optional[Dict]:
