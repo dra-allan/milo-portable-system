@@ -143,7 +143,7 @@ class Config:
         # Use 'crop' to fill frame without bars, 'black' for solid bars, or 'cheap'/'blur' for blurred bars
 # Use 'smart' for intelligent person-aware cropping (face detection based)
         self.background_mode = (os.getenv('BACKGROUND_MODE') or 'crop').lower()
-        if self.background_mode not in ('cheap', 'blur', 'black', 'crop'):
+        if self.background_mode not in ('cheap', 'blur', 'black', 'crop', 'smart'):
             self.background_mode = 'crop'
         # How many clips to keep in the persisted plan. Rendering is capped by
         # max_clips_per_video, but keeping a deep ranked list means "give me
@@ -162,6 +162,8 @@ class Config:
         self.video_preset = os.getenv('VIDEO_PRESET', 'veryfast')
         self.video_crf = self._int('VIDEO_CRF', 23, minimum=0)
         self.caption_font_size = self._int('CAPTION_FONT_SIZE', 54, minimum=8)
+        # Caption style: 'default', 'hormozi', 'minimalist', 'pop', 'kinetic'
+        self.caption_style = (os.getenv('CAPTION_STYLE') or 'default').lower()
 
         # --- Paths (anchored to project root) ----------------------------
         self.temp_dir = _resolve(os.getenv('TEMP_DIR', 'data/temp'))
