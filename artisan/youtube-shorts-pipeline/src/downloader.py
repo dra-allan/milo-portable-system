@@ -105,7 +105,7 @@ class YouTubeDownloader:
         if not self.library_path.exists():
             return {}
         try:
-            with open(self.library_path, 'r', encoding='utf-8') as f:
+            with open(self.library_path, 'r', encoding='utf-8-sig') as f:
                 data = json.load(f)
             return data if isinstance(data, dict) else {}
         except Exception as exc:
@@ -178,7 +178,7 @@ class YouTubeDownloader:
         if not candidates:
             for info_file in self.temp_dir.glob('*.info.json'):
                 try:
-                    with open(info_file, 'r', encoding='utf-8') as f:
+                    with open(info_file, 'r', encoding='utf-8-sig') as f:
                         info = json.load(f)
                 except Exception:
                     continue
@@ -240,7 +240,7 @@ class YouTubeDownloader:
         info = {}
         if info_path:
             try:
-                with open(info_path, 'r', encoding='utf-8') as f:
+                with open(info_path, 'r', encoding='utf-8-sig') as f:
                     info = json.load(f) or {}
             except Exception as exc:
                 logger.warning("Could not read cached metadata %s: %s", info_path.name, exc)
