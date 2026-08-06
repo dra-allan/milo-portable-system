@@ -44,14 +44,56 @@ deleted. Lookup order:
 Only real video containers count, ``.part``/``.ytdl`` are ignored, and a size
 floor rejects truncated downloads. Metadata is served from the cached
 ``.info.json`` when present, so a resumed run needs no network at all.
+
+PHASE 4: AUDIO-ONLY DISCOVERY + SECTION FETCH
+---------------------------------------------
+The full-video download was the second-biggest cost in the pipeline after
+transcription, and almost all of it was wasted:
+
+* **Discovery only ever needs the audio.** Finding the highlights is a
+  transcription job. Pulling 1-2 GB of 1080p H.264 to decide *where* the good
+  moments are, and then throwing 95% of those frames away, is pure overhead.
+  ``DOWNLOAD_AUDIO_ONLY=true`` fetches ``bestaudio`` instead: ~40 MB for an
+  hour of podcast rather than 1-2 GB, and no ffmpeg audio-extraction pass
+  afterwards because the download *is* the audio.
+* **Rendering only ever needs the chosen ranges.** ``DOWNLOAD_SECTIONS=true``
+  fetches each selected clip as its own small file via yt-dlp's
+  ``download_ranges``, so a 51-minute source costs ~5 x 40s of video instead
+  of 51 minutes of it.
+
+THE KEYFRAME-DRIFT TRAP (and why this design is immune to it)
+------------------------------------------------------------
+A stream-copy cut cannot start mid-GOP, so a section file actually begins at
+the **keyframe preceding** the requested start -- an offset we do not know in
+advance and which varies per source (commonly 0-10s). The naive composition of
+"fetch section" + "captions from the full-source transcript" desyncs *every*
+caption by that unknown drift, silently.
+
+Two things make that impossible here:
+
+1. ``download_section`` measures the drift instead of guessing it. The section
+   is requested with ``SECTION_PADDING`` slack on both sides, then the file's
+   real duration is probed: whatever exceeds the requested span is the lead-in
+   the keyframe added. That yields ``clip_start_in_file`` -- where the wanted
+   clip actually begins inside the file we just downloaded.
+2. The renderer cuts the clip at ``clip_start_in_file`` **and** rebases the
+   captions by the same number, both derived from the same file. So even if the
+   drift estimate is off, the video and its captions move *together* and stay
+   in sync. Sync no longer depends on the estimate being right.
+
+Combined with the caption pass transcribing the section's own audio (see
+``transcriber.transcribe_file``), captions are correct by construction rather
+than by arithmetic.
 """
 
 import json
 import os
 import shutil
 import subprocess
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 try:  # package-relative first (python -m src.main)
     from .utils import get_temp_dir, setup_logger, sanitize_filename
@@ -64,25 +106,47 @@ logger = setup_logger(__name__)
 
 # Containers we accept as a finished, playable download.
 VIDEO_EXTENSIONS = {'.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v', '.flv', '.ts'}
+# Audio-only containers. '.webm' and '.mp4' are deliberately absent even though
+# YouTube serves audio in them: an extension cannot distinguish an audio-only
+# webm from a video webm. Audio downloads are instead kept in their own
+# directory, so the *location* classifies them and no guessing is required.
+AUDIO_EXTENSIONS = {'.m4a', '.opus', '.mp3', '.ogg', '.oga', '.aac', '.wav',
+                    '.flac', '.weba'}
 # Never treat these as a video: partial downloads and sidecars.
 SKIP_EXTENSIONS = {'.part', '.ytdl', '.json', '.vtt', '.srt', '.ass', '.txt',
                    '.jpg', '.jpeg', '.png', '.webp', '.description', '.temp'}
 # A "video" smaller than this is a stub or a failed download, not media.
 MIN_VIDEO_BYTES = 64 * 1024
+# Audio is ~1/30th the size, so the video floor would reject valid audio.
+MIN_AUDIO_BYTES = 8 * 1024
 
 # Filenames are "<video_id>__<safe title>.<ext>" so the ID survives renaming.
 ID_SEPARATOR = '__'
+
+# Subdirectories of temp_dir. Keeping audio and clip sections apart from full
+# downloads means find_local_video() can never mistake a 40 MB audio file or a
+# 40-second clip for the full source.
+AUDIO_SUBDIR = 'audio'
+SECTIONS_SUBDIR = 'sections'
 
 
 class YouTubeDownloader:
     def __init__(self):
         self.temp_dir = Path(get_temp_dir())
         self.temp_dir.mkdir(parents=True, exist_ok=True)
+        # Audio and clip sections live in their own directories so that the
+        # resume scan for a *full* download cannot pick them up by mistake.
+        self.audio_dir = self.temp_dir / AUDIO_SUBDIR
+        self.sections_dir = self.temp_dir / SECTIONS_SUBDIR
+        self.audio_dir.mkdir(parents=True, exist_ok=True)
+        self.sections_dir.mkdir(parents=True, exist_ok=True)
         self.library_path = Path(config.data_dir) / 'library.json'
         self.ffprobe = os.getenv('MILO_FFPROBE') or shutil.which('ffprobe') or 'ffprobe'
 
+        height = int(getattr(config, 'download_height', 1080) or 1080)
         self.ydl_opts = {
-            'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+            'format': (f'bestvideo[height<={height}]+bestaudio/'
+                       f'best[height<={height}]/best'),
             # Download straight to the id-prefixed name: no post-hoc rename,
             # so the file is findable by ID forever.
             'outtmpl': str(self.temp_dir / f'%(id)s{ID_SEPARATOR}%(title).80B.%(ext)s'),
@@ -93,6 +157,57 @@ class YouTubeDownloader:
             'merge_output_format': 'mp4',
             'restrictfilenames': True,
             'continuedl': True,          # resume a half-finished download
+            'noprogress': True,
+            'quiet': True,
+            'no_warnings': True,
+        }
+
+    # ------------------------------------------------------------------
+    # Shared yt-dlp option builders
+    # ------------------------------------------------------------------
+    def _audio_opts(self) -> Dict:
+        """Options for the audio-only discovery fetch.
+
+        No ``writeautosub`` and no re-encode: the goal is the smallest number
+        of bytes that Whisper can read. faster-whisper decodes via ffmpeg, so
+        the native m4a/opus stream is used as-is -- transcoding it to wav here
+        would add an ffmpeg pass over the whole file for no benefit.
+        """
+        return {
+            'format': 'bestaudio/best',
+            'outtmpl': str(self.audio_dir / f'%(id)s{ID_SEPARATOR}%(title).80B.%(ext)s'),
+            'writeinfojson': True,
+            'skip_unavailable_fragments': True,
+            'restrictfilenames': True,
+            'continuedl': True,
+            'noprogress': True,
+            'quiet': True,
+            'no_warnings': True,
+        }
+
+    def _section_opts(self, video_id: str, start: float, end: float) -> Dict:
+        """Options for fetching a single clip range as its own small file.
+
+        ``force_keyframes_at_cuts`` is deliberately NOT set. It makes yt-dlp
+        re-encode the section so it starts exactly on the requested frame,
+        which costs a full transcode of the range and defeats the point of
+        fetching a small piece. Instead we accept the keyframe lead-in and
+        *measure* it (see ``download_section``), which is free and exact.
+        """
+        from yt_dlp.utils import download_range_func
+
+        height = int(getattr(config, 'download_height', 1080) or 1080)
+        return {
+            'format': (f'bestvideo[height<={height}]+bestaudio/'
+                       f'best[height<={height}]/best'),
+            'outtmpl': str(
+                self.sections_dir
+                / f'{video_id}{ID_SEPARATOR}sec_{int(round(start))}_{int(round(end))}.%(ext)s'
+            ),
+            'download_ranges': download_range_func(None, [(start, end)]),
+            'merge_output_format': 'mp4',
+            'skip_unavailable_fragments': True,
+            'restrictfilenames': True,
             'noprogress': True,
             'quiet': True,
             'no_warnings': True,
@@ -209,15 +324,25 @@ class YouTubeDownloader:
         return None
 
     def _find_info_json(self, video_path: Path, video_id: str) -> Optional[Path]:
-        for candidate in (
-            video_path.with_suffix('.info.json'),
-            self.temp_dir / f"{video_path.stem}.info.json",
-            self.temp_dir / f"{video_id}.info.json",
-        ):
+        # Search the media file's own directory first, then temp_dir. Audio
+        # downloads live in temp_dir/audio, so a temp_dir-only search would
+        # miss their sidecar and silently fall back to filename-derived titles.
+        search_dirs = []
+        for d in (video_path.parent, self.temp_dir):
+            if d not in search_dirs:
+                search_dirs.append(d)
+
+        candidates = [video_path.with_suffix('.info.json')]
+        for d in search_dirs:
+            candidates.append(d / f"{video_path.stem}.info.json")
+            candidates.append(d / f"{video_id}.info.json")
+        for candidate in candidates:
             if candidate.exists():
                 return candidate
-        for candidate in self.temp_dir.glob(f"{video_id}*.info.json"):
-            return candidate
+
+        for d in search_dirs:
+            for candidate in d.glob(f"{video_id}*.info.json"):
+                return candidate
         return None
 
     def _probe_duration(self, video_path: Path) -> float:
@@ -271,6 +396,163 @@ class YouTubeDownloader:
             'tags': info.get('tags') or [],
             'from_cache': True,
         }
+
+    # ------------------------------------------------------------------
+    # Audio-only discovery fetch
+    # ------------------------------------------------------------------
+    def _is_usable_audio(self, path: Path) -> bool:
+        """A complete audio container -- not a sidecar or a partial download.
+
+        Extension checking alone is not enough: YouTube serves audio in
+        ``.webm`` and ``.mp4`` containers too, which are indistinguishable from
+        video by name. Anything inside ``audio_dir`` that is not a known
+        sidecar is therefore accepted, and the *directory* does the
+        classifying.
+        """
+        try:
+            if not path.is_file():
+                return False
+            if any(s.lower() in SKIP_EXTENSIONS for s in path.suffixes):
+                return False
+            suffix = path.suffix.lower()
+            if suffix not in AUDIO_EXTENSIONS and suffix not in VIDEO_EXTENSIONS:
+                return False
+            return path.stat().st_size >= MIN_AUDIO_BYTES
+        except OSError:
+            return False
+
+    def find_local_audio(self, video_id: str) -> Optional[Path]:
+        """Return an already-downloaded audio file for this ID, or None."""
+        candidates = [p for p in self.audio_dir.glob(f"{video_id}*")
+                      if self._is_usable_audio(p)]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda p: p.stat().st_size, reverse=True)
+        return candidates[0]
+
+    def download_audio(self, video_id: str,
+                       force_redownload: bool = False) -> Optional[Dict]:
+        """Fetch audio only, for the discovery/transcription pass.
+
+        Returns the same metadata shape as ``download_video`` with an extra
+        ``audio_path`` and ``audio_only=True``, and with ``video_path`` left
+        empty -- there is no video yet. Callers render from clip sections
+        fetched later, so nothing downstream needs the full source.
+
+        This is the single biggest byte saving in the pipeline: ~40 MB for an
+        hour of podcast instead of 1-2 GB, and it removes the ffmpeg audio
+        extraction pass over the full source as a side effect.
+        """
+        if not force_redownload:
+            existing = self.find_local_audio(video_id)
+            if existing:
+                metadata = self._audio_metadata(video_id, existing)
+                if metadata:
+                    logger.info(
+                        "Resume: reusing downloaded audio for %s (%.1f MB) "
+                        "-- skipping download",
+                        video_id, existing.stat().st_size / (1024 * 1024),
+                    )
+                    return metadata
+
+        try:
+            import yt_dlp
+        except ImportError as exc:
+            logger.error("yt-dlp is not installed: %s (pip install yt-dlp)", exc)
+            return None
+
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        logger.info("Fetching audio only for %s (discovery pass)", video_id)
+        started = time.time()
+
+        try:
+            with yt_dlp.YoutubeDL(self._audio_opts()) as ydl:
+                info = ydl.extract_info(url, download=True)
+        except Exception as exc:
+            logger.error("Audio download failed for %s: %s", video_id, exc)
+            salvaged = self.find_local_audio(video_id)
+            if salvaged:
+                logger.warning("Using a previously downloaded audio copy of %s", video_id)
+                return self._audio_metadata(video_id, salvaged)
+            return None
+
+        audio_path = self.find_local_audio(video_id)
+        if not audio_path:
+            reported = (info or {}).get('requested_downloads') or [{}]
+            reported_path = reported[0].get('filepath')
+            if reported_path and Path(reported_path).exists():
+                audio_path = Path(reported_path)
+        if not audio_path:
+            logger.error("Audio download reported success but no file was found "
+                         "for %s in %s", video_id, self.audio_dir)
+            return None
+
+        size_mb = audio_path.stat().st_size / (1024 * 1024)
+        logger.info(
+            "Audio ready: %s (%.1f MB in %.1fs)",
+            audio_path.name, size_mb, time.time() - started,
+        )
+
+        metadata = self._audio_metadata(video_id, audio_path, info or {})
+        if metadata:
+            self._remember_audio(video_id, audio_path, metadata)
+        return metadata
+
+    def _audio_metadata(self, video_id: str, audio_path: Path,
+                        info: Optional[Dict] = None) -> Dict:
+        """Metadata for an audio-only fetch, from yt-dlp info or the cache."""
+        if info is None:
+            info = {}
+            info_path = self._find_info_json(audio_path, video_id)
+            if info_path:
+                try:
+                    with open(info_path, 'r', encoding='utf-8-sig') as f:
+                        info = json.load(f) or {}
+                except Exception as exc:
+                    logger.warning("Could not read cached metadata %s: %s",
+                                   info_path.name, exc)
+            if not info:
+                entry = self._load_library().get(video_id) or {}
+                info = {
+                    'title': entry.get('title', ''),
+                    'duration': entry.get('duration', 0),
+                    'uploader': entry.get('uploader', ''),
+                    'upload_date': entry.get('upload_date'),
+                }
+
+        duration = info.get('duration') or self._probe_duration(audio_path)
+        return {
+            'id': video_id,
+            'title': info.get('title') or _title_from_filename(audio_path, video_id),
+            'duration': duration,
+            'upload_date': info.get('upload_date'),
+            'description': info.get('description', '') or '',
+            'uploader': info.get('uploader', '') or '',
+            # No full video on disk: rendering uses clip sections instead.
+            'video_path': '',
+            'audio_path': str(audio_path),
+            'audio_only': True,
+            'subtitle_path': None,
+            'thumbnail': info.get('thumbnail', '') or '',
+            'tags': info.get('tags') or [],
+            'from_cache': False,
+        }
+
+    def _remember_audio(self, video_id: str, audio_path: Path,
+                        metadata: Dict) -> None:
+        """Record the audio fetch without clobbering a known full video path."""
+        library = self._load_library()
+        entry = dict(library.get(video_id) or {})
+        entry.update({
+            'audio_path': str(audio_path),
+            'title': metadata.get('title', '') or entry.get('title', ''),
+            'duration': metadata.get('duration', 0) or entry.get('duration', 0),
+            'uploader': metadata.get('uploader', '') or entry.get('uploader', ''),
+            'upload_date': metadata.get('upload_date') or entry.get('upload_date'),
+        })
+        entry.setdefault('video_path', '')
+        library[video_id] = entry
+        self._save_library(library)
 
     # ------------------------------------------------------------------
     # Public API
