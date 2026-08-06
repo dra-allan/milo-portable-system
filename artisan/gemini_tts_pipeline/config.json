@@ -1,0 +1,15 @@
+{
+    "default_voice": "Charon",
+    "output_format": "mp3",
+    "max_words_per_chunk": 999,
+    "max_lines_per_chunk": 999,
+    "max_sentences_per_chunk": 10,
+    "sleep_sequence": [35, 60, 300],
+    "base_delay": 2,
+    "proactive_rotation_limit": 3,
+    "pool_cooldown": 90,
+    "remove_silence": true,
+    "min_silence_len": 1000,
+    "silence_thresh": -45,
+    "keep_silence": 300
+}

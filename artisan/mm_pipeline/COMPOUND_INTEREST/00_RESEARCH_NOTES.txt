@@ -1,0 +1,225 @@
+================================================================================
+COMPOUND INTEREST — RESEARCH NOTES
+MM_PIPELINE / COMPOUND_INTEREST
+================================================================================
+
+1. THE POWER OF COMPOUND INTEREST (BASIC MATH)
+   ----------------------------------------------------------------------------
+   $10,000 invested once at 8% annual return, no additional contributions:
+
+     Year     Balance     Annual Interest Earned
+       0      $10,000       —
+      10      $21,589      $1,599
+      20      $46,610      $3,452
+      30      $100,627     $7,454
+      40      $217,245     $16,092
+
+   Interest earned: $207,245  |  Multiplier: 21.72×
+   Source: lifecalculators.com.au — $10,000 at 8% for 40 Years
+
+   KEY INSIGHT: In year 40, you earn more in interest ($16,092) than the
+   entire original principal ($10,000). The money is doing the work.
+
+2. THE RULE OF 72
+   ----------------------------------------------------------------------------
+   Years to double = 72 ÷ annual return rate
+
+     Rate (%)    Years to Double
+       4%           18.0
+       6%           12.0
+       8%            9.0
+      10%            7.2
+      12%            6.0
+
+   Example: At 8%, your money doubles every 9 years.
+   Over 40 years (~4.4 doublings), $10,000 → $217,245.
+
+   Source: NerdWallet Compound Interest Calculator / Investor.gov Compound
+   Interest Calculator
+
+3. STARTING EARLY — THE AGE GAP
+   ----------------------------------------------------------------------------
+   Scenario A: Invest $5,000/year from age 25–34 (10 years, $50,000 total).
+   Scenario B: Invest $5,000/year from age 35–44 (10 years, $50,000 total).
+
+   Both assume 8% annual return. At age 65:
+
+     Investor A (start 25): $776,856
+     Investor B (start 35): $349,991
+
+   Difference: $426,865 — despite putting in the SAME $50,000.
+   The 10-year head start produced 2.2× more wealth.
+
+   Source: 24/7 Wall St. — "Start Investing at 25 Instead of 35: The Math
+   Shows You'll Have $426,000 More by 65" (May 2026)
+
+   ALTERNATE FRAMING (Investopedia, 2025):
+   Saver starting at 22 vs 32 vs 42, each contributing $8,400/yr:
+
+     Start 22 (45 yrs compounding): ~2× balance of start 32
+     Start 32 (35 yrs compounding): ~2× balance of start 42
+     Start 42 (25 yrs compounding): ~¼ of start 22
+
+   The earlier starter's money compounds for a decade longer. That decade
+   is when the exponential curve steepens dramatically.
+
+4. REAL-WORLD CASE STUDY: WARREN BUFFETT
+   ----------------------------------------------------------------------------
+   - Began investing seriously at age 10.
+   - Net worth at 30: ~$1 million ($9.3M inflation-adjusted).
+   - By 50: ~$3.8 billion.
+   - By 65: ~$81.5 billion.
+   - Current (age 95): ~$132 billion.
+
+   99% of Buffett's wealth was accumulated AFTER age 52.
+   99.9% of his wealth would disappear if he stopped at 60, even at 22%
+   annual returns.
+
+   His average annual return: ~22%.
+   Compare: Jim Simons (Renaissance Tech) compounded at 66%/year — but
+   started at 50. His net worth: ~$23B (72% less than Buffett).
+
+   KEY INSIGHT: Buffett's wealth is not about being the best investor by
+   returns. It's about having the longest compounding runway.
+
+   Sources:
+     - CNBC, "Most of Warren Buffett's wealth came after age 65" (May 2024)
+     - Morgan Housel, CNBC interview (2020)
+     - Investopedia, "The Buffett Era as CEO Is Over" (Jan 2026)
+
+5. THE IMPACT OF DIFFERENT RETURN RATES
+   ----------------------------------------------------------------------------
+   $10,000 invested once, held for 30 years:
+
+     Rate     Final Balance     Multiplier
+      4%        $32,434          3.24×
+      5%        $43,219          4.32×
+      6%        $57,435          5.74×
+      7%        $76,123          7.61×
+      8%       $100,627         10.06×
+      9%       $132,677         13.27×
+     10%       $174,494         17.45×
+     12%       $299,599         29.96×
+
+   Going from 5% to 8% — a 3 percentage point difference — more than doubles
+   your ending balance. Going from 8% to 12% triples it.
+
+   KEY INSIGHT: Small differences in rate compound into enormous differences
+   over time. The "average" investor who chases hot stocks (net of fees)
+   significantly underperforms the buy-and-hold index investor.
+
+   Source: lifecalculators.com.au — $10,000 at various rates for 30 Years
+
+6. INFLATION — REAL VS NOMINAL RETURNS
+   ----------------------------------------------------------------------------
+   - Average annual S&P 500 return (since 1957): ~10.51% nominal
+   - Average annual inflation (same period): ~3.5–4%
+   - Average annual REAL return (S&P 500): ~6.64–6.81%
+
+   Source: Investopedia — "S&P 500 Average Returns and Historical
+   Performance" (2026); Dimensional Fund Advisors — "Will Inflation Hurt
+   Stock Returns?" (2023)
+
+   $10,000 invested at 8% nominal for 30 years = $100,627 (nominal).
+   $10,000 invested at 5% real (8% − 3% inflation) for 30 years = $43,219
+   (real purchasing power).
+
+   KEY INSIGHT: Inflation is a hidden tax on returns. The headline number
+   looks great; the real purchasing power gain is roughly 60% less depending
+   on the period. Taxable accounts take another 15–30% off the top.
+
+7. CASE STUDIES / ANALOGIES
+   ----------------------------------------------------------------------------
+   7A. THE SNOWBALL ANALOGY (Warren Buffett)
+       "Compound interest is like a snowball rolling down a very long hill.
+       By the time it gets to the bottom, it is much larger. The trick is
+       to have a very long hill, which means starting very young or living
+       to be very old."
+
+   7B. THE CHESSBOARD / RICE GRAINS ANALOGY
+       If you place 1 grain of rice on chess square 1, 2 on square 2, 4 on
+       square 3, doubling each square: by square 64, the total exceeds all
+       the rice ever produced on Earth (~18.4 quintillion grains).
+       This is the exponential nature of compounding.
+
+   7C. THE TWO BROTHERS ANALOGY
+       Brother A saves $200/month from age 25 to 45 (20 years), then stops.
+       Total contributed: $48,000.
+       Brother B saves nothing until age 45, then saves $500/month from
+       45 to 65 (20 years). Total contributed: $120,000.
+
+       At 8% return at age 65:
+         Brother A: ~$589,000
+         Brother B: ~$296,000
+
+       Brother A contributed 60% LESS money but ended with 2× MORE.
+
+8. MARKET CONTEXT
+   ----------------------------------------------------------------------------
+   - S&P 500 average annual return since 1928: ~10.09% nominal, ~6.81% real
+   - S&P 500 average since 1957: ~10.51% nominal, ~6.64% real
+   - 10-year Treasury (risk-free rate): typically 3–5% depending on period
+   - Inflation (historical average): ~3.2%
+   - Typical 60/40 portfolio long-term return: ~8–9% nominal
+   - Typical balanced portfolio real return (after inflation): ~4–5%
+
+   Sources: Aswath Damodaran (NYU Stern) historical returns dataset;
+   Investopedia, Dimensional Fund Advisors
+
+   CONTEXT NOTE: The 8% nominal assumption used in many examples is
+   realistic for a 60–80% equity portfolio over long periods but should
+   be caveated. 10–12% is aggressive for any balanced portfolio and
+   reflects pure equity, pre-tax, pre-fee assumptions. 4–6% real is a
+   more conservative planning assumption.
+
+9. COMPOUNDING ENEMIES (ANTI-PATTERNS)
+   ----------------------------------------------------------------------------
+   - Fees: A 1% annual fee on a 30-year 8% portfolio reduces the final
+     balance by ~25%. A 2% fee (common in actively managed funds) cuts
+     it by ~45%.
+   - Behavioral churn: Missing the 10 best days in the market over 30
+     years can cut returns in half. Time in the market > timing the market.
+   - Debt: Credit card debt at 22% APR is a guaranteed negative
+     compounding machine. Pay it down before investing.
+   - Sequence risk: Poor returns in the first 5 years of a portfolio have
+     outsized long-term impact (especially relevant for lump-sum investors
+     near retirement, less relevant for accumulators).
+
+10. SOURCES
+    ----------------------------------------------------------------------------
+    [1] Life Calculators Australia — "$10,000 at 8% for 40 Years"
+        https://lifecalculators.com.au/compound-interest/10000/40/8
+    [2] CNBC — "Most of Warren Buffett's wealth came after age 65. Here's
+        why" (Lorie Konish, May 2024)
+        https://www.cnbc.com/2024/05/03/most-of-warren-buffetts-wealth-came-after-age-65-heres-why.html
+    [3] CNBC — "The most overlooked fact about how Warren Buffett amassed
+        his fortune" (Morgan Housel, Sep 2020)
+        https://www.cnbc.com/2020/09/08/billionaire-warren-buffett-most-overlooked-fact-about-how-he-got-so-rich.html
+    [4] Investopedia — "The Buffett Era as CEO Is Over" (Jan 2026)
+        https://www.investopedia.com/the-buffett-era-as-ceo-is-over-here-is-how-much-he-crushed-the-market-berkshire-stock-11878302
+    [5] 24/7 Wall St. — "Start Investing at 25 Instead of 35: The Math
+        Shows You'll Have $426,000 More by 65" (Jeremy Phillips, May 2026)
+        https://247wallst.com/personal-finance/2026/05/12/start-investing-at-25-instead-of-35-the-math-shows-youll-have-426000-more-by-65/
+    [6] Investopedia — "The One Financial Move in Your 20s That Can Make
+        You a Millionaire Later" (Oct 2025)
+        https://www.investopedia.com/retirement-planning-in-your-20s-11834481
+    [7] Investopedia — "S&P 500 Average Returns and Historical Performance"
+        (2026)
+        https://www.investopedia.com/ask/answers/042415/what-average-annual-return-sp-500.asp
+    [8] Aswath Damodaran (NYU Stern) — "Historical Returns on Stocks,
+        Bonds and Bills: 1928-2022"
+        https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histret.html
+    [9] Dimensional Fund Advisors — "Will Inflation Hurt Stock Returns?
+        Not Necessarily" (2023)
+        https://www.dimensional.com/be-en/insights/will-inflation-hurt-stock-returns-not-necessarily
+    [10] NerdWallet — "Compound Interest Calculator"
+         https://www.nerdwallet.com/banking/calculators/compound-interest-calculator
+    [11] Investor.gov (SEC) — "Compound Interest Calculator"
+         https://www.investor.gov/financial-tools-calculators/calculators/compound-interest-calculator
+    [12] MoneyLion — "The Cost If You Wait until 35 To Start Saving for
+         Retirement" (Angela Mae Watson, May 2026)
+         https://www.moneylion.com/trending/money/start-saving-for-retirement-at-35-instead-of-25-how-much-it-costs
+
+================================================================================
+END RESEARCH NOTES
+================================================================================
