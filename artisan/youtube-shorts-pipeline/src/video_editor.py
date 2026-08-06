@@ -53,6 +53,72 @@ logger = setup_logger(__name__)
 SHORT_WIDTH = 1080
 SHORT_HEIGHT = 1920
 
+# The reference blur strength, applied at full 1080x1920 by the original code.
+# Every cheaper backdrop mode is calibrated to look like this one.
+REFERENCE_BLUR_SIGMA = 28.0
+# Downscale factor for the 'cheap' backdrop. Measured at k=8 (136x240):
+# SSIM 0.975 against the full-resolution blur, filter stage 3.07x faster.
+CHEAP_BACKDROP_DIVISOR = 8
+
+
+def build_background_filters(mode: str, width: int = SHORT_WIDTH,
+                             height: int = SHORT_HEIGHT):
+    """Build the scale/pad filter graph, returning (filters, output_label).
+
+    Why this is worth its own function: ``gblur=sigma=28`` over a full
+    1080x1920 frame was the most expensive operation in the entire pipeline --
+    measured at 19.87s of filtering for a 20s clip, more than the H.264 encode
+    itself (see BENCHMARKS.md).
+
+    A Gaussian blur is scale-invariant: blurring an image downscaled by k with
+    sigma S/k looks like blurring the original with sigma S. Since the
+    backdrop is deliberately out of focus, it can be blurred at a fraction of
+    the resolution and scaled back up. Deriving sigma from the divisor matters
+    -- an earlier hand-picked sigma scored SSIM 0.870 and looked visibly
+    wrong, while the derived value scores 0.975.
+    """
+    mode = (mode or 'cheap').lower()
+
+    # fast_bilinear costs ~10% less than the default scaler and no one can see
+    # the difference on a blurred backdrop or a downscale.
+    fg = (f"[fg]scale={width}:{height}:force_original_aspect_ratio=decrease"
+          f":flags=fast_bilinear[fgs]")
+
+    if mode == 'black':
+        # No backdrop at all: flat bars. Fastest (2.01x) but a different look.
+        return ([f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease"
+                 f":flags=fast_bilinear,"
+                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black[padded]"], 'padded')
+
+    if mode == 'crop':
+        # Fill the frame by cropping the sides. No bars, but loses the edges.
+        return ([f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase"
+                 f":flags=fast_bilinear,crop={width}:{height}[padded]"], 'padded')
+
+    if mode == 'blur':
+        # The original, kept as the reference look for anyone who wants it.
+        return ([
+            "[0:v]split=2[bg][fg]",
+            f"[bg]scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},gblur=sigma={REFERENCE_BLUR_SIGMA:g}[bgb]",
+            fg,
+            "[bgb][fgs]overlay=(W-w)/2:(H-h)/2[padded]",
+        ], 'padded')
+
+    # 'cheap' (default): blur small, then scale up.
+    k = CHEAP_BACKDROP_DIVISOR
+    bw = max(2, (width // k) // 2 * 2)
+    bh = max(2, (height // k) // 2 * 2)
+    sigma = REFERENCE_BLUR_SIGMA / k
+    return ([
+        "[0:v]split=2[bg][fg]",
+        f"[bg]scale={bw}:{bh}:force_original_aspect_ratio=increase"
+        f":flags=fast_bilinear,crop={bw}:{bh},gblur=sigma={sigma:g},"
+        f"scale={width}:{height}:flags=fast_bilinear[bgb]",
+        fg,
+        "[bgb][fgs]overlay=(W-w)/2:(H-h)/2[padded]",
+    ], 'padded')
+
 
 class VideoEditor:
     def __init__(self):
@@ -212,11 +278,22 @@ class VideoEditor:
     def create_short_from_segment(self, video_path: str, start_time: float,
                                   end_time: float, transcript_segments: List[Dict],
                                   output_path: str, add_branding: bool = False,
-                                  burn_captions: bool = True) -> bool:
+                                  burn_captions: bool = True,
+                                  captions_are_clip_relative: bool = False,
+                                  threads: Optional[int] = None) -> bool:
         """Render one vertical Short in a single FFmpeg pass.
 
-        Pipeline: seek -> scale/pad to 1080x1920 (blurred fill) -> burn
-        captions -> loudness-normalise audio -> encode.
+        Pipeline: seek -> scale/pad to 1080x1920 -> burn captions ->
+        loudness-normalise audio -> encode.
+
+        Args:
+            captions_are_clip_relative: when True, ``transcript_segments``
+                already start at 0 for this clip, so no rebasing is applied.
+                This is what the two-pass caption flow produces: the clip's own
+                audio is transcribed, so its timings are correct in the file
+                being rendered and must not be shifted again.
+            threads: cap libx264 threads. Used when several renders run
+                concurrently so they do not each try to claim every core.
         """
         src = Path(video_path)
         if not src.exists():
@@ -244,21 +321,19 @@ class VideoEditor:
         staging = out.with_name(f".{out.stem}.partial.mp4")
 
         # --- video filter chain ------------------------------------------
-        # Scale to fit inside 1080x1920 and pad with a blurred, zoomed copy of
-        # the frame. Nothing is cropped out, and the result is exactly the
-        # resolution YouTube Shorts expects.
-        filters = [
-            f"[0:v]split=2[bg][fg]",
-            f"[bg]scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=increase,"
-            f"crop={SHORT_WIDTH}:{SHORT_HEIGHT},gblur=sigma=28[bgb]",
-            f"[fg]scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=decrease[fgs]",
-            f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2[padded]",
-        ]
-        last_label = 'padded'
+        # Scale to fit inside 1080x1920 and fill the bars behind it. Nothing is
+        # cropped out, and the result is exactly the resolution YouTube Shorts
+        # expects. The backdrop strategy is configurable because the original
+        # full-resolution gblur cost more than the video encode itself.
+        filters, last_label = build_background_filters(config.background_mode)
 
         if burn_captions and transcript_segments:
+            # Clip-relative captions are already on this file's timeline (the
+            # two-pass flow transcribes the clip's own audio), so rebasing them
+            # by start_time would shift every line out of sync.
+            caption_offset = 0.0 if captions_are_clip_relative else start_time
             if self.write_ass(transcript_segments, ass_path,
-                              time_offset=start_time, clip_duration=duration):
+                              time_offset=caption_offset, clip_duration=duration):
                 filters.append(
                     f"[{last_label}]subtitles='{self._escape_filter_path(ass_path)}'[captioned]"
                 )
@@ -299,8 +374,10 @@ class VideoEditor:
             '-pix_fmt', 'yuv420p',
             '-r', '30',
             '-movflags', '+faststart',
-            '-y', str(staging),
         ]
+        if threads and int(threads) > 0:
+            cmd += ['-threads', str(int(threads))]
+        cmd += ['-y', str(staging)]
 
         # Timeouts must scale with the work: a fixed 30s killed any real clip.
         timeout = max(300, int(duration * 30) + 120)
@@ -375,15 +452,15 @@ class VideoEditor:
         if not Path(input_path).exists():
             logger.error("Input video not found: %s", input_path)
             return False
+        # Reuse the shared (and much cheaper) backdrop graph rather than
+        # keeping a second copy of the expensive full-resolution blur.
+        filters, last_label = build_background_filters(config.background_mode)
+        filters.append(f"[{last_label}]format=yuv420p[vout]")
         cmd = [
             self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
             '-i', input_path,
-            '-vf',
-            f"split=2[bg][fg];"
-            f"[bg]scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=increase,"
-            f"crop={SHORT_WIDTH}:{SHORT_HEIGHT},gblur=sigma=28[bgb];"
-            f"[fg]scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=decrease[fgs];"
-            f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,format=yuv420p",
+            '-filter_complex', ';'.join(filters),
+            '-map', '[vout]', '-map', '0:a?',
             '-c:v', 'libx264', '-preset', config.video_preset,
             '-crf', str(config.video_crf), '-c:a', 'copy', '-y', output_path,
         ]
