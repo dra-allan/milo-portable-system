@@ -1,26 +1,41 @@
 @echo off
 title YouTube Shorts Pipeline - Easy Runner
 
+:: Load persistent settings from .env file
+set "BACKGROUND_MODE=crop"
+set "CAPTION_STYLE=default"
+if exist .env (
+    for /f "tokens=1,* delims==" %%a in ('findstr /b /i "BACKGROUND_MODE=" .env') do set "BACKGROUND_MODE=%%b"
+    for /f "tokens=1,* delims==" %%a in ('findstr /b /i "CAPTION_STYLE=" .env') do set "CAPTION_STYLE=%%b"
+)
+
 :main
 cls
 echo.
 echo ================================================================
-echo           YouTube Shorts Pipeline - Easy Reader
+echo           YouTube Shorts Pipeline - Easy Runner
 echo ================================================================
+echo.
+echo Current BackgroundMode: %BACKGROUND_MODE%
+echo Current CaptionStyle:   %CAPTION_STYLE%
 echo.
 echo 1. Run in Test Mode (check components)
 echo 2. Process a YouTube URL/Video ID
 echo 3. Run in Scheduled Mode (9AM, 2PM, 7PM daily)
 echo 4. Process from Library (downloaded videos)
-echo 5. Exit
+echo 5. Set BackgroundMode
+echo 6. Set CaptionStyle
+echo 7. Exit
 echo.
-set /p choice="Select an option (1-5): "
+set /p choice="Select an option (1-7): "
 
 if "%choice%"=="1" goto test
 if "%choice%"=="2" goto url
 if "%choice%"=="3" goto schedule
 if "%choice%"=="4" goto library
-if "%choice%"=="5" goto exit
+if "%choice%"=="5" goto set_background
+if "%choice%"=="6" goto set_caption
+if "%choice%"=="7" goto exit
 
 echo Invalid choice! Please try again.
 timeout /t 2 > nul
@@ -91,7 +106,7 @@ for /f "delims=" %%v in ('powershell -NoProfile -Command "& {
             try {
                 $json = Get-Content -Raw -Path $($files[$i].FullName) | ConvertFrom-Json
                 $title = $json.title
-                if (-not $title) { $title = $j.id }
+                if (-not $title) { $title = $json.id }
             } catch {
                 $title = $($files[$i].BaseName)
             }
@@ -134,6 +149,79 @@ if "%niche%"=="" (
 )
 pause
 goto main
+
+:set_background
+cls
+echo.
+echo Set Background Mode
+echo.
+echo Current BackgroundMode: %BACKGROUND_MODE%
+echo.
+echo 1. crop      - Fill frame by cropping sides (default)
+echo 2. blur      - Blurred background bars
+echo 3. cheap     - Low-res blurred background (faster)
+echo 4. black     - Solid black bars
+echo 5. smart     - Person-aware cropping (face detection)
+echo.
+set /p bg_choice="Select background mode (1-5): "
+if "%bg_choice%"=="1" set "new_mode=crop"
+if "%bg_choice%"=="2" set "new_mode=blur"
+if "%bg_choice%"=="3" set "new_mode=cheap"
+if "%bg_choice%"=="4" set "new_mode=black"
+if "%bg_choice%"=="5" set "new_mode=smart"
+if not defined new_mode (
+    echo Invalid choice!
+    pause
+    goto set_background
+)
+:: Update .env file
+call :update_env BACKGROUND_MODE %new_mode%
+set "BACKGROUND_MODE=%new_mode%"
+echo Background mode set to %BACKGROUND_MODE%
+pause
+goto main
+
+:set_caption
+cls
+echo.
+echo Set Caption Style
+echo.
+echo Current CaptionStyle: %CAPTION_STYLE%
+echo.
+echo 1. default   - Original Arial style (default)
+echo 2. hormozi   - Alex Hormozi style (bold, dynamic colors)
+echo 3. minimalist - Clean minimalist (sans-serif, white with shadow)
+echo 4. pop       - Pop & bounce (neon highlights, black outline)
+echo 5. kinetic   - Kinetic karaoke (word-by-word highlight)
+echo.
+set /p cap_choice="Select caption style (1-5): "
+if "%cap_choice%"=="1" set "new_style=default"
+if "%cap_choice%"=="2" set "new_style=hormozi"
+if "%cap_choice%"=="3" set "new_style=minimalist"
+if "%cap_choice%"=="4" set "new_style=pop"
+if "%cap_choice%"=="5" set "new_style=kinetic"
+if not defined new_style (
+    echo Invalid choice!
+    pause
+    goto set_caption
+)
+:: Update .env file
+call :update_env CAPTION_STYLE %new_style%
+set "CAPTION_STYLE=%new_style%"
+echo Caption style set to %CAPTION_STYLE%
+pause
+goto main
+
+:update_env
+rem %1 = key, %2 = value
+if exist .env (
+    findstr /v /i "%1=" .env > .env.tmp
+) else (
+    > .env.tmp
+)
+echo %1=%2>> .env.tmp
+move /y .env.tmp .env > nul
+goto :eof
 
 :exit
 cls
