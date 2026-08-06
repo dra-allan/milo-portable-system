@@ -1,326 +1,309 @@
+"""Whisper transcription for the shorts pipeline.
+
+The previous implementation split audio into 30-second chunks and ran Whisper
+once per chunk. Three problems, all of which the user's 22-minute transcription
+of a 30-minute video demonstrates:
+
+1. Infinite loop at the tail. The advance was ``start_time += actual_duration
+   - overlap_duration``. Once ``actual_duration`` shrinks to the 2s overlap the
+   position stops moving, so the loop spun on the same final 2 seconds until
+   the ``chunk_index > 1000`` safety valve fired -- roughly 935 wasted Whisper
+   invocations per run. Reproduced: the loop parks at start=1813.0 forever.
+2. Chunking is unnecessary. faster-whisper streams long files natively and
+   applies VAD across the whole timeline; 60 separate invocations pay the
+   model's fixed setup cost 60 times and destroy cross-chunk context.
+3. The 2s overlap was never de-duplicated, so every boundary injected ~2s of
+   duplicated speech into the transcript -- duplicate captions and inflated
+   segment counts.
+
+Now: one streaming pass over the whole file, with an opt-in chunked fallback
+(with a guaranteed-forward advance and overlap de-duplication) for the rare
+case where a single pass fails.
+"""
+
 import os
+import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
-from faster_whisper import WhisperModel
+from typing import Dict, List, Optional
+
 try:  # package-relative first (python -m src.main)
-    from .utils import setup_logger, format_timestamp
+    from .utils import setup_logger
     from .config import config
 except ImportError:  # pragma: no cover - direct script execution
-    from utils import setup_logger, format_timestamp
+    from utils import setup_logger
     from config import config
 
 logger = setup_logger(__name__)
 
+
 class VideoTranscriber:
-    def __init__(self, model_size: str = "base", device: str = "cpu"):
-        """
-        Initialize the Whisper transcription model
+    def __init__(self, model_size: Optional[str] = None, device: Optional[str] = None,
+                 compute_type: Optional[str] = None):
+        self.model_size = model_size or config.whisper_model
+        self.device = device or config.whisper_device
+        self.compute_type = compute_type or (
+            'int8' if self.device == 'cpu' else 'float16'
+        )
+        self.ffmpeg = os.getenv('MILO_FFMPEG') or shutil.which('ffmpeg') or 'ffmpeg'
+        self.ffprobe = os.getenv('MILO_FFPROBE') or shutil.which('ffprobe') or 'ffprobe'
 
-        Args:
-            model_size: Size of Whisper model (tiny, base, small, medium, large)
-            device: Device to run on (cpu, cuda)
-        """
-        self.model_size = model_size
-        self.device = device
-
-        # Initialize model
         try:
-            self.model = WhisperModel(
-                model_size,
-                device=device,
-                compute_type="int8" if device == "cpu" else "float16"
+            from faster_whisper import WhisperModel
+        except ImportError as exc:
+            logger.error(
+                "faster-whisper is not installed: %s. Run "
+                "'pip install -r requirements.txt'.", exc
             )
-            logger.info(f"Whisper model '{model_size}' loaded on {device}")
-        except Exception as e:
-            logger.error(f"Failed to load Whisper model: {str(e)}")
             raise
 
-    def _get_audio_duration(self, audio_path: str) -> float:
-        """
-        Get audio duration in seconds using ffprobe
-
-        Args:
-            audio_path: Path to audio file
-
-        Returns:
-            Duration in seconds
-        """
         try:
-            cmd = [
-                'ffprobe', '-v', 'error', '-show_entries',
-                'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1',
-                audio_path
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                return float(result.stdout.strip())
-            else:
-                logger.warning(f"Could not get audio duration: {result.stderr}")
-                return 0.0
-        except Exception as e:
-            logger.warning(f"Error getting audio duration: {str(e)}")
-            return 0.0
-
-    def _extract_audio_chunk(self, input_path: str, output_path: str, start_time: float, duration: float) -> bool:
-        """
-        Extract a chunk from audio file using ffmpeg
-
-        Args:
-            input_path: Path to input audio file
-            output_path: Path for output audio chunk
-            start_time: Start time in seconds
-            duration: Duration in seconds
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            cmd = [
-                'ffmpeg',
-                '-ss', str(start_time),
-                '-i', input_path,
-                '-t', str(duration),
-                '-acodec', 'pcm_s16le',  # PCM 16-bit little-endian
-                '-ar', '16000',  # 16kHz sample rate
-                '-ac', '1',  # Mono
-                '-y',  # Overwrite output file
-                output_path
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                logger.error(f"FFmpeg audio chunk extraction failed: {result.stderr}")
-                return False
-            return Path(output_path).exists()
-        except Exception as e:
-            logger.error(f"Error extracting audio chunk: {str(e)}")
-            return False
-
-    def transcribe_audio(self, audio_path: str) -> Optional[List[Dict]]:
-        """
-        Transcribe audio file to text with timestamps, handling long files by chunking
-
-        Args:
-            audio_path: Path to audio file (WAV format recommended)
-
-        Returns:
-            List of segments with 'text', 'start', 'end', 'confidence' keys
-            or None if transcription failed
-        """
-        if not Path(audio_path).exists():
-            logger.error(f"Audio file not found: {audio_path}")
-            return None
-
-        try:
-            # Check audio duration
-            duration = self._get_audio_duration(audio_path)
-            logger.info(f"Audio duration: {duration:.2f} seconds")
-
-            # Define maximum chunk duration (30 seconds) to avoid memory issues
-            MAX_CHUNK_DURATION = 30.0  # 30 seconds
-
-            if duration <= MAX_CHUNK_DURATION:
-                # Short audio, process normally
-                return self._transcribe_audio_segment(audio_path, 0.0)
-            else:
-                # Long audio, process in chunks
-                logger.info(f"Audio is long ({duration:.2f}s), processing in chunks of {MAX_CHUNK_DURATION}s")
-
-                all_segments = []
-                chunk_duration = MAX_CHUNK_DURATION
-                overlap_duration = 2.0  # 2 seconds overlap to avoid missing speech at boundaries
-
-                start_time = 0.0
-                chunk_index = 0
-
-                while start_time < duration:
-                    # Calculate actual chunk duration (avoid going beyond file end)
-                    actual_duration = min(chunk_duration, duration - start_time)
-                    if actual_duration <= 0:
-                        break
-
-                    # Create temporary file for this chunk
-                    chunk_path = str(Path(audio_path).parent / f"{Path(audio_path).stem}_chunk_{chunk_index}.wav")
-
-                    logger.info(f"Processing chunk {chunk_index}: {start_time:.2f}-{start_time + actual_duration:.2f}s")
-
-                    # Extract chunk
-                    if not self._extract_audio_chunk(audio_path, chunk_path, start_time, actual_duration):
-                        logger.error(f"Failed to extract chunk {chunk_index}")
-                        # Clean up any temporary files
-                        self._cleanup_chunks(Path(audio_path).parent, Path(audio_path).stem)
-                        return None
-
-                    # Transcribe chunk
-                    chunk_segments = self._transcribe_audio_segment(chunk_path, start_time)
-                    if chunk_segments is None:
-                        logger.error(f"Failed to transcribe chunk {chunk_index}")
-                        # Clean up any temporary files
-                        self._cleanup_chunks(Path(audio_path).parent, Path(audio_path).stem)
-                        return None
-
-                    all_segments.extend(chunk_segments)
-
-                    # Clean up chunk file
-                    try:
-                        os.remove(chunk_path)
-                    except OSError:
-                        pass
-
-                    # Move to next chunk (with overlap)
-                    start_time += actual_duration - overlap_duration
-                    chunk_index += 1
-
-                    # Avoid infinite loop
-                    if chunk_index > 1000:  # Safety limit
-                        logger.error("Too many chunks, aborting")
-                        break
-
-                logger.info(f"Transcribed audio in {chunk_index} chunks: {len(all_segments)} total segments")
-                return all_segments
-
-        except Exception as e:
-            logger.error(f"Transcription failed for {audio_path}: {str(e)}")
-            return None
-
-    def _transcribe_audio_segment(self, audio_path: str, time_offset: float) -> Optional[List[Dict]]:
-        """
-        Transcribe a single audio segment (internal method)
-
-        Args:
-            audio_path: Path to audio file segment
-            time_offset: Time offset to add to segment timestamps
-
-        Returns:
-            List of segments with adjusted timestamps or None if failed
-        """
-        if not Path(audio_path).exists():
-            logger.error(f"Audio segment not found: {audio_path}")
-            return None
-
-        try:
-            # First attempt: Transcribe with word timestamps and VAD filter
-            segments, info = self.model.transcribe(
-                audio_path,
-                beam_size=5,
-                word_timestamps=True,
-                vad_filter=True,  # Voice activity detection
-                vad_parameters=dict(min_silence_duration_ms=500)
+            self.model = WhisperModel(
+                self.model_size, device=self.device, compute_type=self.compute_type
             )
+            logger.info(
+                "Whisper model '%s' loaded on %s (%s)",
+                self.model_size, self.device, self.compute_type,
+            )
+        except Exception as exc:
+            logger.error("Failed to load Whisper model '%s': %s", self.model_size, exc)
+            raise
 
-            # Convert generator to list and format
-            transcript_segments = []
-            for segment in segments:
-                transcript_segments.append({
-                    'text': segment.text.strip(),
-                    'start': segment.start + time_offset,
-                    'end': segment.end + time_offset,
-                    'confidence': getattr(segment, 'avg_logprob', 0.0),  # Convert log prob to confidence-ish
-                    'words': [
-                        {
-                            'word': word.word,
-                            'start': word.start + time_offset,
-                            'end': word.end + time_offset,
-                            'probability': word.probability
-                        } for word in segment.words
-                    ] if hasattr(segment, 'words') and segment.words else []
-                })
+    # ------------------------------------------------------------------
+    def _get_audio_duration(self, audio_path: str) -> float:
+        try:
+            result = subprocess.run(
+                [self.ffprobe, '-v', 'error', '-show_entries', 'format=duration',
+                 '-of', 'default=noprint_wrappers=1:nokey=1', audio_path],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return float(result.stdout.strip())
+            logger.warning("Could not read duration: %s", result.stderr.strip())
+        except Exception as exc:
+            logger.warning("Error getting audio duration: %s", exc)
+        return 0.0
 
-            # If no segments found with VAD, try without VAD
-            if len(transcript_segments) == 0:
-                logger.warning(f"No speech segments found with VAD for segment, trying without VAD")
-                segments2, info2 = self.model.transcribe(
-                    audio_path,
+    # ------------------------------------------------------------------
+    def transcribe_audio(self, audio_path: str,
+                         language: Optional[str] = None) -> Optional[List[Dict]]:
+        """Transcribe a whole audio file in one streaming pass.
+
+        Returns a list of {'text','start','end','confidence','words'} or None.
+        """
+        if not Path(audio_path).exists():
+            logger.error("Audio file not found: %s", audio_path)
+            return None
+
+        duration = self._get_audio_duration(audio_path)
+        logger.info(
+            "Transcribing %s (%.1fs) with '%s'",
+            Path(audio_path).name, duration, self.model_size,
+        )
+
+        segments = self._transcribe_whole(audio_path, language=language)
+        if segments is None:
+            logger.warning("Single-pass transcription failed; trying chunked fallback")
+            segments = self._transcribe_chunked(audio_path, duration, language=language)
+
+        if not segments:
+            logger.error("Transcription produced no segments for %s", audio_path)
+            return None
+
+        segments.sort(key=lambda s: s['start'])
+        logger.info("Transcribed audio: %d segments", len(segments))
+        return segments
+
+    def _transcribe_whole(self, audio_path: str,
+                          language: Optional[str] = None) -> Optional[List[Dict]]:
+        """One pass over the whole file. faster-whisper streams internally."""
+        for use_vad in (True, False):
+            try:
+                kwargs = dict(
                     beam_size=5,
                     word_timestamps=True,
-                    vad_filter=False  # Disable VAD
+                    vad_filter=use_vad,
+                    condition_on_previous_text=False,
                 )
-                transcript_segments = []
-                for segment in segments2:
-                    transcript_segments.append({
-                        'text': segment.text.strip(),
-                        'start': segment.start + time_offset,
-                        'end': segment.end + time_offset,
-                        'confidence': getattr(segment, 'avg_logprob', 0.0),  # Convert log prob to confidence-ish
-                        'words': [
-                            {
-                                'word': word.word,
-                                'start': word.start + time_offset,
-                                'end': word.end + time_offset,
-                                'probability': word.probability
-                            } for word in segment.words
-                        ] if hasattr(segment, 'words') and segment.words else []
-                    })
+                if use_vad:
+                    kwargs['vad_parameters'] = dict(min_silence_duration_ms=500)
+                if language:
+                    kwargs['language'] = language
 
-            return transcript_segments
+                seg_iter, info = self.model.transcribe(audio_path, **kwargs)
+                out = self._collect(seg_iter, time_offset=0.0)
 
-        except Exception as e:
-            logger.error(f"Transcription failed for segment {audio_path}: {str(e)}")
+                if out:
+                    logger.info(
+                        "Detected language: %s (vad=%s)",
+                        getattr(info, 'language', '?'), use_vad,
+                    )
+                    return out
+
+                logger.warning(
+                    "No speech segments found with vad=%s%s",
+                    use_vad, "; retrying without VAD" if use_vad else "",
+                )
+            except Exception as exc:
+                logger.error("Transcription pass (vad=%s) failed: %s", use_vad, exc)
+                return None
+        return None
+
+    def _collect(self, seg_iter, time_offset: float = 0.0) -> List[Dict]:
+        """Materialise a faster-whisper generator into plain dicts."""
+        out: List[Dict] = []
+        for seg in seg_iter:
+            text = (seg.text or '').strip()
+            if not text:
+                continue
+            words = []
+            raw_words = getattr(seg, 'words', None) or []
+            for w in raw_words:
+                if w.start is None or w.end is None:
+                    continue
+                words.append({
+                    'word': w.word,
+                    'start': w.start + time_offset,
+                    'end': w.end + time_offset,
+                    'probability': getattr(w, 'probability', None),
+                })
+            out.append({
+                'text': text,
+                'start': float(seg.start) + time_offset,
+                'end': float(seg.end) + time_offset,
+                'confidence': getattr(seg, 'avg_logprob', 0.0),
+                'words': words,
+            })
+        return out
+
+    # ------------------------------------------------------------------
+    def _transcribe_chunked(self, audio_path: str, duration: float,
+                            chunk_seconds: float = 300.0, overlap: float = 3.0,
+                            language: Optional[str] = None) -> Optional[List[Dict]]:
+        """Fallback: large chunks, guaranteed forward progress, deduplicated.
+
+        Kept only as a safety net. Note the two fixes versus the original:
+        the advance is always positive, and overlapping segments are dropped.
+        """
+        if duration <= 0:
             return None
 
-    def _cleanup_chunks(self, directory: Path, stem: str) -> None:
-        """
-        Clean up temporary chunk files
+        # A minimum advance means the loop can never stall, no matter how the
+        # remaining duration shrinks. This is the infinite-loop fix.
+        advance = max(chunk_seconds - overlap, 1.0)
+        all_segments: List[Dict] = []
+        start = 0.0
+        index = 0
+        tmp_dir = Path(config.temp_dir)
+        tmp_dir.mkdir(parents=True, exist_ok=True)
 
-        Args:
-            directory: Directory containing chunk files
-            stem: Stem of the original audio file
-        """
+        while start < duration:
+            chunk_len = min(chunk_seconds, duration - start)
+            if chunk_len <= 0.05:
+                break
+
+            chunk_path = tmp_dir / f"{Path(audio_path).stem}_chunk_{index}.wav"
+            logger.info(
+                "Chunk %d: %.1f-%.1fs", index, start, start + chunk_len
+            )
+            if not self._extract_audio_chunk(audio_path, str(chunk_path), start, chunk_len):
+                logger.error("Failed to extract chunk %d", index)
+                break
+
+            try:
+                kwargs = dict(beam_size=5, word_timestamps=True, vad_filter=True,
+                              condition_on_previous_text=False)
+                if language:
+                    kwargs['language'] = language
+                seg_iter, _ = self.model.transcribe(str(chunk_path), **kwargs)
+                chunk_segments = self._collect(seg_iter, time_offset=start)
+            except Exception as exc:
+                logger.error("Chunk %d transcription failed: %s", index, exc)
+                chunk_segments = []
+            finally:
+                try:
+                    chunk_path.unlink()
+                except OSError:
+                    pass
+
+            # De-duplicate the overlap region: drop segments that start before
+            # the last kept segment ended. The original kept them, injecting
+            # ~2s of duplicated speech at every boundary.
+            if all_segments:
+                last_end = all_segments[-1]['end']
+                chunk_segments = [s for s in chunk_segments if s['start'] >= last_end - 0.25]
+
+            all_segments.extend(chunk_segments)
+
+            start += advance
+            index += 1
+            if index > 500:
+                logger.error("Chunk limit reached; stopping")
+                break
+
+        self._cleanup_chunks(tmp_dir, Path(audio_path).stem)
+        return all_segments or None
+
+    def _extract_audio_chunk(self, input_path: str, output_path: str,
+                             start_time: float, duration: float) -> bool:
         try:
-            for chunk_file in directory.glob(f"{stem}_chunk_*.wav"):
+            result = subprocess.run(
+                [self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
+                 '-ss', f"{start_time:.3f}", '-i', input_path,
+                 '-t', f"{duration:.3f}",
+                 '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1',
+                 '-y', output_path],
+                capture_output=True, text=True, timeout=600,
+            )
+            if result.returncode != 0:
+                logger.error("Chunk extraction failed: %s", (result.stderr or '')[-400:])
+                return False
+            return Path(output_path).exists()
+        except Exception as exc:
+            logger.error("Error extracting audio chunk: %s", exc)
+            return False
+
+    @staticmethod
+    def _cleanup_chunks(directory: Path, stem: str) -> None:
+        try:
+            for chunk_file in Path(directory).glob(f"{stem}_chunk_*.wav"):
                 try:
                     chunk_file.unlink()
                 except OSError:
                     pass
-        except Exception as e:
-            logger.warning(f"Error cleaning up chunk files: {str(e)}")
+        except Exception as exc:
+            logger.warning("Error cleaning up chunk files: %s", exc)
 
+    # ------------------------------------------------------------------
     def extract_audio_from_video(self, video_path: str) -> Optional[str]:
-        """
-        Extract audio from video file using FFmpeg
-
-        Args:
-            video_path: Path to video file
-
-        Returns:
-            Path to extracted audio file or None if failed
-        """
-        import subprocess
-
+        """Extract 16kHz mono WAV audio, which is what Whisper wants."""
         if not Path(video_path).exists():
-            logger.error(f"Video file not found: {video_path}")
+            logger.error("Video file not found: %s", video_path)
             return None
 
-        # Create audio file path
-        video_stem = Path(video_path).stem
-        audio_path = str(Path(video_path).parent / f"{video_stem}_audio.wav")
+        src = Path(video_path)
+        audio_path = Path(config.temp_dir) / f"{src.stem}_audio.wav"
+        audio_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            # FFmpeg command to extract audio as 16kHz mono WAV
-            cmd = [
-                'ffmpeg',
-                '-i', video_path,
-                '-vn',  # No video
-                '-acodec', 'pcm_s16le',  # PCM 16-bit little-endian
-                '-ar', '16000',  # 16kHz sample rate
-                '-ac', '1',  # Mono
-                '-y',  # Overwrite output file
-                audio_path
-            ]
-
-            result = subprocess.run(cmd, capture_output=True, text=True)
-
+            result = subprocess.run(
+                [self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
+                 '-i', str(src), '-vn',
+                 '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1',
+                 '-y', str(audio_path)],
+                capture_output=True, text=True, timeout=3600,
+            )
             if result.returncode != 0:
-                logger.error(f"FFmpeg audio extraction failed: {result.stderr}")
+                logger.error("Audio extraction failed: %s", (result.stderr or '')[-500:])
                 return None
-
-            if not Path(audio_path).exists():
-                logger.error(f"Audio file not created: {audio_path}")
+            if not audio_path.exists() or audio_path.stat().st_size == 0:
+                logger.error("Audio file not created: %s", audio_path)
                 return None
-
-            logger.info(f"Audio extracted to: {audio_path}")
-            return audio_path
-
-        except Exception as e:
-            logger.error(f"Error extracting audio: {str(e)}")
+            logger.info("Audio extracted to: %s", audio_path)
+            return str(audio_path)
+        except subprocess.TimeoutExpired:
+            logger.error("Audio extraction timed out for %s", video_path)
+            return None
+        except Exception as exc:
+            logger.error("Error extracting audio: %s", exc)
             return None
