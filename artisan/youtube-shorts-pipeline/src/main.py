@@ -12,11 +12,11 @@ modules (downloader, transcriber, processor, video_editor, uploader,
 scheduler, database) without changing their public APIs.
 
 Modes:
-  test      -- verify ffmpeg/deps/config/credentials, no downloads
-  once      -- process one video (URL or ID), or sweep configured niches
-  library   -- list/process videos already downloaded to data/temp
-  stats     -- fetch YouTube metrics for uploaded shorts (feedback loop)
-  schedule  -- run on the configured cron times until interrupted
+  test           -- verify ffmpeg/deps/config/credentials, no downloads
+  once           -- process one video (URL or ID), or sweep configured niches
+  library        -- list/process videos already downloaded to data/temp
+  stats          -- fetch YouTube metrics for uploaded shorts (feedback loop)
+  schedule       -- run on the configured cron times until interrupted
 
 RESUMABILITY
 ------------
@@ -26,10 +26,22 @@ and each retry paid for the download and the transcription again:
 
   download    -> data/temp + data/library.json  (downloader.find_local_video)
   transcript  -> data/transcripts/<video_id>.json
+  clip plan   -> data/clip_plans/<video_id>.json   (Phase 6: ranked candidates)
   rendered    -> data/shorts/<title>/NN_<title>.mp4  (existing files reused)
 
 So a crash in rendering costs only the rendering on the next run, and
 ``--force`` is the only thing that redoes finished work.
+
+PHASE 6: CLIP PLAN CACHE + OVERLAPPED FETCH/RENDER
+---------------------------------------------------
+- Clip plan cache: the full ranked candidate list is persisted to
+  data/clip_plans/<video_id>.json after transcription. ``--render-more N``
+  reads it and renders additional clips with zero re-download and zero
+  re-transcription.
+- ``--max-source-minutes N`` limits transcription to the first N minutes
+  (useful for fast discovery on hour-long sources; 0 = full source).
+- Overlapped fetch+render: while one clip renders (CPU), the next clip's
+  footage is downloaded (network). Producer/consumer via ThreadPoolExecutor.
 """
 
 import argparse
@@ -125,6 +137,9 @@ class ShortsPipeline:
         self.upload_enabled = config.upload_enabled if upload is None else upload
         self.transcript_dir = Path(config.data_dir) / 'transcripts'
         self.transcript_dir.mkdir(parents=True, exist_ok=True)
+        # Phase 6: clip plan cache directory
+        self.clip_plan_dir = Path(config.data_dir) / 'clip_plans'
+        self.clip_plan_dir.mkdir(parents=True, exist_ok=True)
 
         # Heavy/optional components are created lazily so that `--mode test`
         # and a no-upload run don't require every dependency to be installed.
@@ -236,6 +251,39 @@ class ShortsPipeline:
         except Exception as exc:
             logger.warning("Could not cache transcript for %s: %s", video_id, exc)
 
+    def _clip_plan_path(self, video_id: str) -> Path:
+        return self.clip_plan_dir / f"{video_id}.json"
+
+    def load_clip_plan(self, video_id: str) -> Optional[Dict]:
+        """Return a previously saved clip plan, or None."""
+        path = self._clip_plan_path(video_id)
+        if not path.exists():
+            return None
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                plan = json.load(f)
+            if not isinstance(plan, dict) or 'candidates' not in plan:
+                return None
+            logger.info(
+                "Resume: reusing clip plan for %s (%d candidates) -- skipping transcription",
+                video_id, len(plan['candidates']),
+            )
+            return plan
+        except Exception as exc:
+            logger.warning("Could not read clip plan %s: %s", path.name, exc)
+            return None
+
+    def save_clip_plan(self, video_id: str, plan: Dict) -> None:
+        path = self._clip_plan_path(video_id)
+        try:
+            tmp = path.with_suffix('.json.tmp')
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(plan, f, ensure_ascii=False, indent=2)
+            os.replace(str(tmp), str(path))
+            logger.info("Cached clip plan -> %s (%d candidates)", path.name, len(plan.get('candidates', [])))
+        except Exception as exc:
+            logger.warning("Could not cache clip plan for %s: %s", video_id, exc)
+
     # ------------------------------------------------------------------
     def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
                                  force: bool = False,
@@ -335,6 +383,7 @@ class ShortsPipeline:
                 max_segment_length=self.config.max_segment_length,
                 min_gap_between=self.config.min_gap_between_clips,
                 max_clips=self.config.max_clips_per_video,
+                max_candidates=getattr(self.config, 'max_candidates', None),
                 min_score=float(niche_config.get('min_score') or 0.0),
             )
             if not highlights:
@@ -342,6 +391,18 @@ class ShortsPipeline:
                 self.stats['errors'] += 1
                 return False
             logger.info("Found %d highlight segments", len(highlights))
+
+            # Phase 6: cache the full ranked candidate list for --render-more
+            if not force and getattr(self.config, 'max_candidates', None):
+                plan = {
+                    'video_id': video_id,
+                    'title': title,
+                    'niche': niche,
+                    'niche_keywords': niche_keywords,
+                    'transcript_span': float(transcript[-1]['end']) - float(transcript[0]['start']),
+                    'candidates': highlights,  # already includes 'rank' field from processor
+                }
+                self.save_clip_plan(video_id, plan)
 
             # -- 4. render --------------------------------------------------
             safe_title = sanitize_filename(title) or video_id
@@ -750,6 +811,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help='Whisper model size (tiny/base/small/medium/large)')
     parser.add_argument('--clean', action='store_true',
                         help='Delete temp files older than 24h before running')
+    parser.add_argument('--render-more', type=int, default=0, metavar='N',
+                        help='Render N additional clips from a cached clip plan '
+                             '(no re-download, no re-transcribe; use after a full run)')
+    parser.add_argument('--max-source-minutes', type=int, default=0, metavar='N',
+                        help='Transcribe only the first N minutes of the source '
+                             '(0 = full source; useful for fast discovery on hour-long videos)')
     parser.add_argument('--limit', type=int, default=50,
                         help='With --mode stats: max shorts to refresh (default 50)')
     parser.add_argument('--stats-age-hours', type=int, default=24,
@@ -779,6 +846,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     pipeline = ShortsPipeline(upload=args.upload, whisper_model=args.model)
 
+    # Phase 6: --max-source-minutes limits transcription to first N minutes
+    if args.max_source_minutes > 0:
+        pipeline.transcriber.max_seconds = args.max_source_minutes * 60
+        logger.info("Transcription limited to first %d minutes (%.0fs)",
+                    args.max_source_minutes, args.max_source_minutes * 60)
+
     if args.mode == 'stats':
         return run_stats_mode(pipeline, args)
 
@@ -787,6 +860,17 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.mode == 'library':
         return _run_library(pipeline, args)
+
+    # --- render-more: render additional clips from cached clip plan ---
+    if args.render_more > 0:
+        if not args.target:
+            logger.error("--render-more requires a video ID or URL (--target)")
+            return 2
+        video_id = extract_video_id(args.target)
+        if not video_id:
+            logger.error("Could not read video ID from %r", args.target)
+            return 2
+        return _render_more_from_plan(pipeline, video_id, args.render_more, args.force)
 
     # --- once ---
     if args.target:
@@ -811,7 +895,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     return 0 if stats['videos_processed'] > 0 else 1
 
 
-def _run_library(pipeline: 'ShortsPipeline', args) -> int:
+def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
+                           count: int, force: bool = False) -> int:
     """List (and optionally process) videos already downloaded to data/temp.
 
     This is the resume entry point: it never downloads. run_pipeline.bat's
