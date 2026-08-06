@@ -146,9 +146,11 @@ class YouTubeDownloader:
         self.ffprobe = os.getenv('MILO_FFPROBE') or shutil.which('ffprobe') or 'ffprobe'
 
         height = int(getattr(config, 'download_height', 1080) or 1080)
+        # Force a specific known-working format to avoid format selection issues
+        # Format 18 is 640x360 mp4 with AAC audio - the only combined stream available
         self.ydl_opts = {
-            # Use Android client which is often less restricted than web
-            'format': f'best[height<={height}]/best',
+            # Format selection: try specific format first, then fall back
+            'format': '18/best[height<={height}]/best',
             # Download straight to the id-prefixed name: no post-hoc rename,
             # so the file is findable by ID forever.
             'outtmpl': str(self.temp_dir / f'%(id)s{ID_SEPARATOR}%(title).80B.%(ext)s'),
@@ -162,27 +164,19 @@ class YouTubeDownloader:
             'noprogress': True,
             'quiet': True,
             'no_warnings': True,
-            # Use Android client to avoid web restrictions
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android'],
-                }
-            },
-            # Basic headers that work
-            'http_headers': {
-                'User-Agent': 'com.google.android.youtube/17.36.4 (Linux; U; Android 12) gzip',
-            },
-            # Additional options to avoid detection and handle restrictions
-            'extractor_retries': 3,
-            'fragment_retries': 3,
-            'retry_sleep': lambda n: min(30, 2 ** n),  # exponential backoff
-            'sleep_interval': 1,
-            'max_sleep_interval': 3,
+            # Enhanced retry and fragmentation handling
+            'extractor_retries': 5,
+            'fragment_retries': 10,
+            'retry_sleep': lambda n: min(60, 2 ** n),  # longer exponential backoff
+            'sleep_interval': 2,
+            'max_sleep_interval': 10,
             # Try to bypass age restrictions and regional blocks
             'age_limit': None,
             'bypass_geoblock': True,
             # Prefer formats that don't require DRM
             'prefer_free_formats': True,
+            # Additional robustness flags
+            'keep_video': True,
         }
 
     # ------------------------------------------------------------------
