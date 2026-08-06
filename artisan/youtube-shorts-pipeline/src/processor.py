@@ -196,7 +196,8 @@ class ContentProcessor:
                                 max_segment_length: int = 60,
                                 min_gap_between: int = 30,
                                 max_clips: int = 8,
-                                min_score: float = 0.0) -> List[Dict]:
+                                min_score: float = 0.0,
+                                max_candidates: Optional[int] = None) -> List[Dict]:
         """Select the best non-overlapping Shorts candidates.
 
         Args:
@@ -207,9 +208,16 @@ class ContentProcessor:
             min_gap_between: Minimum spacing between two chosen clips.
             max_clips: Hard cap on clips returned per source video.
             min_score: Score floor; ignored if it would return nothing.
+            max_candidates: Select this many ranked clips instead of
+                ``max_clips``. Used to build a deep plan: transcription is the
+                expensive stage, so once it is done, ranking 30 clips costs
+                nothing extra and "give me 10 more" needs no re-download and no
+                re-transcribe. Rendering is still capped separately by the
+                caller.
 
         Returns:
-            Chronologically sorted list of clips with start/end/text/score.
+            Chronologically sorted list of clips with start/end/text/score/rank.
+            The ``rank`` field reflects priority order (1 = highest score).
         """
         if niche_keywords is None:
             niche_keywords = []
@@ -252,8 +260,13 @@ class ContentProcessor:
         # Prefer higher score, then longer clip as tie-break.
         candidates.sort(key=lambda c: (c['score'], c['end'] - c['start']), reverse=True)
 
+        # How many clips to actually select. The deep plan wants every clip the
+        # source can support; a plain run wants only what it will render.
+        wanted = int(max_candidates) if max_candidates else int(max_clips)
+        wanted = max(1, wanted)
+
         selected = self._select_non_overlapping(
-            candidates, min_gap_between, max_clips, min_score
+            candidates, min_gap_between, wanted, min_score
         )
 
         # Never return zero clips just because the score floor was too strict:
@@ -265,8 +278,16 @@ class ContentProcessor:
                 min_score,
             )
             selected = self._select_non_overlapping(
-                candidates, min_gap_between, max_clips, 0.0
+                candidates, min_gap_between, wanted, 0.0
             )
+
+        # Rank order is the plan's priority order and must survive the
+        # chronological sort below -- otherwise "render the top 5" would mean
+        # "render the 5 earliest", which is not the same thing at all.
+        for position, clip in enumerate(
+            sorted(selected, key=lambda c: (-c['score'], c['start'])), start=1
+        ):
+            clip['rank'] = position
 
         selected.sort(key=lambda c: c['start'])
         logger.info(
