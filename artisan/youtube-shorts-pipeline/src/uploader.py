@@ -4,8 +4,12 @@ from typing import Optional, List, Dict
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2 import service_account
-from utils import setup_logger, format_timestamp
-from config import config
+try:  # package-relative first (python -m src.main)
+    from .utils import setup_logger, format_timestamp
+    from .config import config
+except ImportError:  # pragma: no cover - direct script execution
+    from utils import setup_logger, format_timestamp
+    from config import config
 
 logger = setup_logger(__name__)
 
