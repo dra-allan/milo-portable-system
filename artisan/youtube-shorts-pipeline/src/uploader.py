@@ -108,3 +108,34 @@ class YouTubeUploader:
         except Exception as e:
             logger.error(f"Failed to get video details for {video_id}: {str(e)}")
             return None
+
+    def fetch_statistics(self, video_id: str) -> Optional[Dict]:
+        """Pull view/like/comment counts for a video ID.
+
+        The feedback loop: called after upload and on `--mode stats` to record
+        how a clip actually performed. Returns a flat dict of ints, or None if
+        the video can't be read (deleted, private to another account, etc).
+
+        NOTE: statistics are only visible for the uploader's own videos under
+        the same credentials used to upload. Reading them for arbitrary public
+        videos may require the Data API to report them; private videos return
+        nothing.
+        """
+        details = self.get_video_details(video_id)
+        if not details:
+            return None
+
+        stats = details.get('statistics') or {}
+
+        def _count(key: str) -> int:
+            try:
+                return int(stats.get(key, 0) or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        return {
+            'views': _count('viewCount'),
+            'likes': _count('likeCount'),
+            'comments': _count('commentCount'),
+            'favorites': _count('favoriteCount'),
+        }
