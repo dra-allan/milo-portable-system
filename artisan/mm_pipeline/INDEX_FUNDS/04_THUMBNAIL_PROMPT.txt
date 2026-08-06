@@ -1,0 +1,8 @@
+BACKGROUND: #0A1628
+CHARACTER: Man in his 40s, jaw dropped, wide-eyed realization, hands clutching his head. Semi-realistic comic illustration, left-aligned, facing right toward text zone.
+BIG NUMBER: $1.3M
+TEXT LINE 1: YOU ARE LOSING
+TEXT LINE 1 COLOR: #FFFFFF
+BIG NUMBER COLOR: #FFD166
+STYLE: Semi-realistic comic illustration, bold outlines, rich color, dramatic lighting on face
+NOTE: NO TEXT IN IMAGE — text added in post-production overlay
