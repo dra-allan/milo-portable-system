@@ -1,0 +1,22 @@
+{
+  "channel": "explaination",
+  "channel_id": "EX",
+  "name": "ExplaiNation",
+  "video_id_prefix": "POV",
+  "description": "POV and documentary narrative thrillers — true stories, crime, history, second-person visceral.",
+  "voice": "Fenrir",
+  "tts_model": "gemini-2.5-flash-preview-tts",
+  "video_id_re": "^POV-\\d{4}-\\d{3}$",
+  "brand": {
+    "accent": [200, 30, 30],
+    "bg_from": [10, 10, 14],
+    "bg_to": [28, 22, 20]
+  },
+  "visual_style": "minimalist 2D vector cartoon, clean line art, solid colors, flat shading, corporate illustration style",
+  "content_modes": [
+    "NAR"
+  ],
+  "word_budget": [1620, 2025],
+  "segment_budget": [35, 55],
+  "outro_text": "The cycle continues."
+}
