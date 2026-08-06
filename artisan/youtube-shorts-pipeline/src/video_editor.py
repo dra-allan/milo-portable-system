@@ -1,447 +1,436 @@
-import subprocess
+"""FFmpeg rendering for vertical Shorts.
+
+Bugs fixed in this rewrite (all reproduced against a real 40s test source):
+
+1. Cross-device rename. The final step did ``Path(tmp).rename(output)``, which
+   raises ``OSError: [Errno 18] Invalid cross-device link`` whenever data/temp
+   and the output directory live on different filesystems. The whole render
+   succeeded and was then thrown away. Now uses shutil.move.
+
+2. Captions were never in sync. Segment timestamps are absolute (source
+   timeline), but after extracting a clip the timeline restarts at 0. The ASS
+   file was written with the absolute times, so a clip cut at 10:00 had no
+   captions for its first 10 minutes and the rest landed past the end.
+   Timestamps are now rebased onto the clip.
+
+3. Sub-second truncation. Cut points went through format_timestamp(), which
+   returns HH:MM:SS and floors the fraction, so every clip drifted up to 1s
+   from its scored boundary and could clip a word. Now passes float seconds.
+
+4. Four sequential re-encodes (extract -> crop -> caption -> loudnorm), each
+   decoding and encoding the video again: 4x the time and 4x generation loss.
+   Now one filter chain, one encode.
+
+5. Fixed 30-60s subprocess timeouts. A 60s 1080p clip cannot encode in 30s on
+   a laptop CPU, so long clips were killed and reported as failures. Timeouts
+   now scale with clip length.
+
+6. Output was a crop of the source, so a 1280x720 input produced a 405x720
+   video. YouTube Shorts wants 1080x1920. Now scales and pads to exactly
+   1080x1920 with a blurred fill, so nothing is cropped away and the frame is
+   always correct.
+
+7. ASS escaping wrote a literal '\\n' into every caption line and did not
+   escape the text properly.
+"""
+
 import os
+import re
+import shutil
+import subprocess
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
-from utils import setup_logger, format_timestamp, sanitize_filename
-from config import config
+from typing import Dict, List, Optional
+
+try:  # package-relative first (python -m src.main)
+    from .utils import setup_logger, sanitize_filename
+    from .config import config
+except ImportError:  # pragma: no cover - direct script execution
+    from utils import setup_logger, sanitize_filename
+    from config import config
 
 logger = setup_logger(__name__)
 
+SHORT_WIDTH = 1080
+SHORT_HEIGHT = 1920
+
+
 class VideoEditor:
     def __init__(self):
-        """Initialize video editor"""
-        # Check if FFmpeg is available
+        self.ffmpeg = os.getenv('MILO_FFMPEG') or shutil.which('ffmpeg') or 'ffmpeg'
+        self.ffprobe = os.getenv('MILO_FFPROBE') or shutil.which('ffprobe') or 'ffprobe'
         try:
-            result = subprocess.run(['ffmpeg', '-version'],
-                                  capture_output=True, text=True, timeout=10)
+            result = subprocess.run([self.ffmpeg, '-version'],
+                                    capture_output=True, text=True, timeout=15)
             if result.returncode != 0:
-                raise RuntimeError("FFmpeg not found")
-            logger.info("FFmpeg video editor initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize FFmpeg: {str(e)}")
+                raise RuntimeError('ffmpeg returned a non-zero exit status')
+            first = (result.stdout or '').splitlines()[:1]
+            logger.info("FFmpeg ready: %s", first[0] if first else 'unknown version')
+        except FileNotFoundError:
+            logger.error(
+                "FFmpeg not found. Install it and make sure 'ffmpeg' is on PATH "
+                "(or set MILO_FFMPEG to its full path)."
+            )
+            raise
+        except Exception as exc:
+            logger.error("Failed to initialise FFmpeg: %s", exc)
             raise
 
-    def create_vertical_crop(self, input_path: str, output_path: str,
-                           x_offset: int = 0, y_offset: int = 0) -> bool:
-        """
-        Crop video to 9:16 aspect ratio (vertical)
-
-        Args:
-            input_path: Path to input video
-            output_path: Path for output video
-            x_offset: Horizontal offset from center (negative = left, positive = right)
-            y_offset: Vertical offset from top (negative = up, positive = down)
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not Path(input_path).exists():
-            logger.error(f"Input video not found: {input_path}")
-            return False
-
+    # ------------------------------------------------------------------
+    def probe_dimensions(self, path: str):
+        """Return (width, height) or None."""
         try:
-            # First, get video dimensions to calculate crop
-            cmd_probe = [
-                'ffprobe', '-v', 'error', '-select_streams', 'v:0',
-                '-show_entries', 'stream=width,height', '-of', 'csv=p=0',
-                input_path
-            ]
-            result = subprocess.run(cmd_probe, capture_output=True, text=True, timeout=10)
-
+            result = subprocess.run(
+                [self.ffprobe, '-v', 'error', '-select_streams', 'v:0',
+                 '-show_entries', 'stream=width,height', '-of', 'csv=p=0', path],
+                capture_output=True, text=True, timeout=30,
+            )
             if result.returncode != 0:
-                logger.error(f"Failed to probe video dimensions: {result.stderr}")
-                return False
+                logger.error("ffprobe failed on %s: %s", path, result.stderr.strip())
+                return None
+            parts = [p for p in re.split(r'[,\sx]+', result.stdout.strip()) if p]
+            if len(parts) < 2:
+                return None
+            return int(parts[0]), int(parts[1])
+        except Exception as exc:
+            logger.error("Could not probe %s: %s", path, exc)
+            return None
 
-            width, height = map(int, result.stdout.strip().split(','))
-
-            # Calculate 9:16 crop dimensions
-            target_ratio = 9/16
-            if width / height > target_ratio:
-                # Video is wider than 9:16, crop width
-                new_width = int(height * target_ratio)
-                new_height = height
-                x_offset_calc = (width - new_width) // 2 + x_offset
-                y_offset_calc = 0
-            else:
-                # Video is taller than 9:16, crop height
-                new_width = width
-                new_height = int(width / target_ratio)
-                x_offset_calc = 0
-                y_offset_calc = (height - new_height) // 2 + y_offset
-
-            # Ensure offsets don't go negative or exceed bounds
-            x_offset_calc = max(0, min(x_offset_calc, width - new_width))
-            y_offset_calc = max(0, min(y_offset_calc, height - new_height))
-
-            # Build crop filter
-            crop_filter = f'crop={new_width}:{new_height}:{x_offset_calc}:{y_offset_calc}'
-
-            # FFmpeg command for cropping
-            cmd = [
-                'ffmpeg',
-                '-i', input_path,
-                '-vf', crop_filter,
-                '-c:a', 'copy',  # Copy audio stream
-                '-avoid_negative_ts', 'make_zero',
-                '-fflags', '+genpts',
-                '-y',  # Overwrite output
-                output_path
-            ]
-
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-
-            if result.returncode != 0:
-                logger.error(f"Video cropping failed: {result.stderr}")
-                return False
-
-            if not Path(output_path).exists():
-                logger.error(f"Output video not created: {output_path}")
-                return False
-
-            logger.info(f"Video cropped to 9:16: {output_path}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error in vertical crop: {str(e)}")
-            return False
-
-    def add_burn_in_captions(self, input_path: str, transcript_segments: List[Dict],
-                           output_path: str, font_size: int = 24) -> bool:
-        """
-        Add burned-in captions from transcript segments
-
-        Args:
-            input_path: Path to input video
-            transcript_segments: List of segments with 'text', 'start', 'end'
-            output_path: Path for output video with captions
-            font_size: Font size for captions
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not Path(input_path).exists():
-            logger.error(f"Input video not found: {input_path}")
-            return False
-
+    def has_audio_stream(self, path: str) -> bool:
         try:
-            # Create ASS subtitle file from transcript segments
-            ass_path = str(Path(output_path).with_suffix('.ass'))
-
-            # Write ASS subtitle file
-            with open(ass_path, 'w', encoding='utf-8') as f:
-                f.write('[Script Info]\n')
-                f.write('Title: Generated Subtitles\n')
-                f.write('ScriptType: v4.00+\n')
-                f.write('WrapStyle: 0\n')
-                f.write('ScaledBorderAndShadow: yes\n')
-                f.write('PlayResX: 1080\n')
-                f.write('PlayResY: 1920\n')  # 9:16 ratio
-                f.write('Timer: 100.0000\n')
-                f.write('\n')
-
-                f.write('[V4+ Styles]\n')
-                f.write('Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n')
-                f.write(f'Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1\n')
-                f.write('\n')
-
-                f.write('[Events]\n')
-                f.write('Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
-
-                for segment in transcript_segments:
-                    start_time = self._format_ass_time(segment['start'])
-                    end_time = self._format_ass_time(segment['end'])
-                    # Remove HTML tags and escape special characters for ASS
-                    text = segment['text'].replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}')
-                    f.write(f'Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text}\\n')
-
-            # FFmpeg command to burn in subtitles
-            cmd = [
-                'ffmpeg',
-                '-i', input_path,
-                '-vf', f'subtitles={ass_path}:force_style=\'Fontsize={font_size},PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=3,Outline=2,Shadow=1,Alignment=2\'',
-                '-c:a', 'copy',
-                '-avoid_negative_ts', 'make_zero',
-                '-fflags', '+genpts',
-                '-y',
-                output_path
-            ]
-
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-
-            # Clean up temporary ASS file
-            try:
-                os.remove(ass_path)
-            except OSError:
-                pass  # Ignore if already deleted
-
-            if result.returncode != 0:
-                logger.error(f"Caption burning failed: {result.stderr}")
-                return False
-
-            if not Path(output_path).exists():
-                logger.error(f"Output video not created: {output_path}")
-                return False
-
-            logger.info(f"Captions burned into video: {output_path}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error adding captions: {str(e)}")
-            # Clean up ASS file if it exists
-            ass_path = str(Path(output_path).with_suffix('.ass'))
-            try:
-                os.remove(ass_path)
-            except OSError:
-                pass
+            result = subprocess.run(
+                [self.ffprobe, '-v', 'error', '-select_streams', 'a:0',
+                 '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', path],
+                capture_output=True, text=True, timeout=30,
+            )
+            return 'audio' in (result.stdout or '')
+        except Exception:
             return False
 
-    def _format_ass_time(self, seconds: float) -> str:
-        """Convert seconds to ASS time format (H:MM:SS.cc)"""
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _format_ass_time(seconds: float) -> str:
+        """ASS timestamps are H:MM:SS.cc and must not go negative."""
+        seconds = max(0.0, float(seconds))
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
         secs = int(seconds % 60)
-        centisecs = int((seconds - int(seconds)) * 100)
-        return f"{hours}:{minutes:02d}:{secs:02d}.{centisecs:02d}"
+        centis = int(round((seconds - int(seconds)) * 100))
+        if centis >= 100:
+            centis = 99
+        return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
 
-    def add_intro_outro(self, input_path: str, output_path: str,
-                       intro_path: Optional[str] = None, outro_path: Optional[str] = None) -> bool:
-        """
-        Add intro and/or outro clips to a video
+    @staticmethod
+    def _escape_ass_text(text: str) -> str:
+        """Escape for an ASS dialogue line and wrap long captions."""
+        text = (text or '').strip()
+        text = text.replace('\\', '\\\\').replace('{', '(').replace('}', ')')
+        text = re.sub(r'\s+', ' ', text)
+        # Keep captions to two readable lines rather than one long ribbon.
+        words = text.split()
+        if len(words) > 7:
+            mid = (len(words) + 1) // 2
+            text = ' '.join(words[:mid]) + r'\N' + ' '.join(words[mid:])
+        return text
+
+    def write_ass(self, transcript_segments: List[Dict], ass_path: Path,
+                  time_offset: float = 0.0, clip_duration: Optional[float] = None,
+                  font_size: Optional[int] = None) -> bool:
+        """Write an ASS subtitle file with timestamps rebased onto the clip.
 
         Args:
-            input_path: Path to main video
-            output_path: Path for output video
-            intro_path: Path to intro video (optional)
-            outro_path: Path to outro video (optional)
-
-        Returns:
-            True if successful, False otherwise
+            transcript_segments: segments carrying ABSOLUTE source timestamps.
+            time_offset: clip start in the source timeline; subtracted from
+                every timestamp so captions line up with the extracted clip.
+            clip_duration: clamp/drop captions past the end of the clip.
         """
-        if not Path(input_path).exists():
-            logger.error(f"Input video not found: {input_path}")
+        font_size = font_size or config.caption_font_size
+        try:
+            ass_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(ass_path, 'w', encoding='utf-8') as f:
+                f.write('[Script Info]\n')
+                f.write('Title: Shorts captions\n')
+                f.write('ScriptType: v4.00+\n')
+                f.write('WrapStyle: 0\n')
+                f.write('ScaledBorderAndShadow: yes\n')
+                f.write(f'PlayResX: {SHORT_WIDTH}\n')
+                f.write(f'PlayResY: {SHORT_HEIGHT}\n\n')
+
+                f.write('[V4+ Styles]\n')
+                f.write('Format: Name, Fontname, Fontsize, PrimaryColour, '
+                        'SecondaryColour, OutlineColour, BackColour, Bold, Italic, '
+                        'Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, '
+                        'BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, '
+                        'MarginV, Encoding\n')
+                # Alignment 2 = bottom-centre; MarginV lifts it clear of the
+                # Shorts UI overlay.
+                f.write(
+                    f'Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,'
+                    f'&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,2,60,60,320,1\n\n'
+                )
+
+                f.write('[Events]\n')
+                f.write('Format: Layer, Start, End, Style, Name, MarginL, MarginR, '
+                        'MarginV, Effect, Text\n')
+
+                written = 0
+                for seg in transcript_segments or []:
+                    start = float(seg.get('start', 0.0)) - time_offset
+                    end = float(seg.get('end', 0.0)) - time_offset
+                    if clip_duration is not None:
+                        if start >= clip_duration:
+                            continue        # entirely past the clip
+                        end = min(end, clip_duration)
+                    if end <= 0:
+                        continue            # entirely before the clip
+                    start = max(0.0, start)
+                    if end <= start:
+                        continue
+                    text = self._escape_ass_text(seg.get('text', ''))
+                    if not text:
+                        continue
+                    f.write(
+                        f'Dialogue: 0,{self._format_ass_time(start)},'
+                        f'{self._format_ass_time(end)},Default,,0,0,0,,{text}\n'
+                    )
+                    written += 1
+
+            logger.debug("Wrote %d caption lines to %s", written, ass_path.name)
+            return written > 0
+        except Exception as exc:
+            logger.error("Could not write subtitle file %s: %s", ass_path, exc)
+            return False
+
+    @staticmethod
+    def _escape_filter_path(path: str) -> str:
+        """Escape a path for use inside an FFmpeg filter argument."""
+        p = str(path).replace('\\', '/')
+        # Windows drive colons and filter separators must be escaped.
+        p = p.replace(':', r'\:').replace("'", r"\'")
+        return p
+
+    # ------------------------------------------------------------------
+    def create_short_from_segment(self, video_path: str, start_time: float,
+                                  end_time: float, transcript_segments: List[Dict],
+                                  output_path: str, add_branding: bool = False,
+                                  burn_captions: bool = True) -> bool:
+        """Render one vertical Short in a single FFmpeg pass.
+
+        Pipeline: seek -> scale/pad to 1080x1920 (blurred fill) -> burn
+        captions -> loudness-normalise audio -> encode.
+        """
+        src = Path(video_path)
+        if not src.exists():
+            logger.error("Source video not found: %s", video_path)
+            return False
+
+        start_time = max(0.0, float(start_time))
+        end_time = float(end_time)
+        duration = end_time - start_time
+        if duration <= 0:
+            logger.error(
+                "Invalid clip bounds %.2f-%.2f (duration %.2f)",
+                start_time, end_time, duration,
+            )
+            return False
+
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+
+        temp_dir = Path(config.temp_dir)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        ass_path = temp_dir / f"{sanitize_filename(out.stem)}.ass"
+        # Render to a temp file next to the destination so the final move is
+        # always same-filesystem (fixes the cross-device rename failure).
+        staging = out.with_name(f".{out.stem}.partial.mp4")
+
+        # --- video filter chain ------------------------------------------
+        # Scale to fit inside 1080x1920 and pad with a blurred, zoomed copy of
+        # the frame. Nothing is cropped out, and the result is exactly the
+        # resolution YouTube Shorts expects.
+        filters = [
+            f"[0:v]split=2[bg][fg]",
+            f"[bg]scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=increase,"
+            f"crop={SHORT_WIDTH}:{SHORT_HEIGHT},gblur=sigma=28[bgb]",
+            f"[fg]scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=decrease[fgs]",
+            f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2[padded]",
+        ]
+        last_label = 'padded'
+
+        if burn_captions and transcript_segments:
+            if self.write_ass(transcript_segments, ass_path,
+                              time_offset=start_time, clip_duration=duration):
+                filters.append(
+                    f"[{last_label}]subtitles='{self._escape_filter_path(ass_path)}'[captioned]"
+                )
+                last_label = 'captioned'
+            else:
+                logger.warning("No caption lines fell inside the clip; skipping captions")
+
+        filters.append(f"[{last_label}]format=yuv420p[vout]")
+        filter_complex = ';'.join(filters)
+
+        has_audio = self.has_audio_stream(str(src))
+
+        cmd = [
+            self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
+            # -ss before -i seeks fast; -t after gives an exact duration.
+            # Both are floats, so no sub-second truncation.
+            '-ss', f"{start_time:.3f}",
+            '-i', str(src),
+            '-t', f"{duration:.3f}",
+            '-filter_complex', filter_complex,
+            '-map', '[vout]',
+        ]
+
+        if has_audio:
+            cmd += [
+                '-map', '0:a:0',
+                '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
+                '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+            ]
+        else:
+            logger.warning("Source has no audio stream; rendering a silent clip")
+            cmd += ['-an']
+
+        cmd += [
+            '-c:v', 'libx264',
+            '-preset', config.video_preset,
+            '-crf', str(config.video_crf),
+            '-pix_fmt', 'yuv420p',
+            '-r', '30',
+            '-movflags', '+faststart',
+            '-y', str(staging),
+        ]
+
+        # Timeouts must scale with the work: a fixed 30s killed any real clip.
+        timeout = max(300, int(duration * 30) + 120)
+
+        logger.info(
+            "Rendering %.2f-%.2fs (%.1fs) -> %s",
+            start_time, end_time, duration, out.name,
+        )
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            logger.error("FFmpeg timed out after %ss rendering %s", timeout, out.name)
+            self._cleanup(staging, ass_path)
+            return False
+        except Exception as exc:
+            logger.error("FFmpeg could not be launched: %s", exc)
+            self._cleanup(staging, ass_path)
+            return False
+
+        if result.returncode != 0:
+            logger.error(
+                "FFmpeg failed (exit %s) for %s: %s",
+                result.returncode, out.name,
+                (result.stderr or '').strip()[-800:],
+            )
+            self._cleanup(staging, ass_path)
+            return False
+
+        if not staging.exists() or staging.stat().st_size == 0:
+            logger.error("FFmpeg reported success but produced no output for %s", out.name)
+            self._cleanup(staging, ass_path)
             return False
 
         try:
-            # Build filter complex for concatenation
-            inputs = ['-i', input_path]
-            filters = []
-            input_count = 1
-
-            if intro_path and Path(intro_path).exists():
-                inputs.extend(['-i', intro_path])
-                input_count += 1
-
-            if outro_path and Path(outro_path).exists():
-                inputs.extend(['-i', outro_path])
-                input_count += 1
-
-            # Build concat filter
-            concat_inputs = ''
-            if input_count == 3:  # intro + main + outro
-                concat_inputs = '[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[outv][outa]'
-            elif input_count == 2:  # Either intro+main or main+outro
-                if intro_path:
-                    concat_inputs = '[1:v][1:a][0:v][0:a]concat=n=2:v=1:a=1[outv][outa]'
-                else:  # outro only
-                    concat_inputs = '[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]'
-            else:  # Just main video
-                concat_inputs = '[0:v][0:a]'
-
-            # FFmpeg command
-            cmd = ['ffmpeg'] + inputs + [
-                '-filter_complex', concat_inputs,
-                '-map', '[outv]', '-map', '[outa]',
-                '-avoid_negative_ts', 'make_zero',
-                '-fflags', '+genpts',
-                '-y',
-                output_path
-            ]
-
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-
-            if result.returncode != 0:
-                logger.error(f"Intro/outro addition failed: {result.stderr}")
-                return False
-
-            if not Path(output_path).exists():
-                logger.error(f"Output video not created: {output_path}")
-                return False
-
-            logger.info(f"Intro/outro added to video: {output_path}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error adding intro/outro: {str(e)}")
+            if out.exists():
+                out.unlink()
+            # shutil.move handles cross-filesystem moves; Path.rename does not.
+            shutil.move(str(staging), str(out))
+        except Exception as exc:
+            logger.error("Could not move rendered clip into place: %s", exc)
+            self._cleanup(staging, ass_path)
             return False
+
+        self._cleanup(None, ass_path)
+
+        dims = self.probe_dimensions(str(out))
+        logger.info(
+            "Short ready: %s (%s, %.1f MB)",
+            out, f"{dims[0]}x{dims[1]}" if dims else 'unknown',
+            out.stat().st_size / (1024 * 1024),
+        )
+        return True
+
+    @staticmethod
+    def _cleanup(*paths):
+        for p in paths:
+            if not p:
+                continue
+            try:
+                Path(p).unlink()
+            except OSError:
+                pass
+
+    # ------------------------------------------------------------------
+    # Backwards-compatible helpers. The single-pass renderer above replaces
+    # these for normal use, but they are kept because other tooling calls them.
+    # ------------------------------------------------------------------
+    def create_vertical_crop(self, input_path: str, output_path: str,
+                             x_offset: int = 0, y_offset: int = 0) -> bool:
+        """Scale/pad a video to 1080x1920 (kept for API compatibility)."""
+        if not Path(input_path).exists():
+            logger.error("Input video not found: %s", input_path)
+            return False
+        cmd = [
+            self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
+            '-i', input_path,
+            '-vf',
+            f"split=2[bg][fg];"
+            f"[bg]scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=increase,"
+            f"crop={SHORT_WIDTH}:{SHORT_HEIGHT},gblur=sigma=28[bgb];"
+            f"[fg]scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=decrease[fgs];"
+            f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,format=yuv420p",
+            '-c:v', 'libx264', '-preset', config.video_preset,
+            '-crf', str(config.video_crf), '-c:a', 'copy', '-y', output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        if result.returncode != 0:
+            logger.error("Vertical conversion failed: %s", (result.stderr or '')[-500:])
+            return False
+        return Path(output_path).exists()
+
+    def add_burn_in_captions(self, input_path: str, transcript_segments: List[Dict],
+                             output_path: str, font_size: Optional[int] = None,
+                             time_offset: float = 0.0) -> bool:
+        """Burn captions into an existing clip (kept for API compatibility)."""
+        if not Path(input_path).exists():
+            logger.error("Input video not found: %s", input_path)
+            return False
+        ass_path = Path(config.temp_dir) / f"{Path(output_path).stem}.ass"
+        if not self.write_ass(transcript_segments, ass_path,
+                              time_offset=time_offset, font_size=font_size):
+            logger.warning("No captions to burn; copying input through")
+        cmd = [
+            self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
+            '-i', input_path,
+            '-vf', f"subtitles='{self._escape_filter_path(ass_path)}',format=yuv420p",
+            '-c:v', 'libx264', '-preset', config.video_preset,
+            '-crf', str(config.video_crf), '-c:a', 'copy', '-y', output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        self._cleanup(ass_path)
+        if result.returncode != 0:
+            logger.error("Caption burn failed: %s", (result.stderr or '')[-500:])
+            return False
+        return Path(output_path).exists()
 
     def normalize_audio(self, input_path: str, output_path: str) -> bool:
-        """
-        Normalize audio using FFmpeg loudnorm filter
-
-        Args:
-            input_path: Path to input video
-            output_path: Path for output video
-
-        Returns:
-            True if successful, False otherwise
-        """
+        """Loudness-normalise audio, copying video (kept for API compatibility)."""
         if not Path(input_path).exists():
-            logger.error(f"Input video not found: {input_path}")
+            logger.error("Input video not found: %s", input_path)
             return False
-
-        try:
-            # Two-pass loudnorm for better results
-            # First pass: analyze
-            cmd1 = [
-                'ffmpeg',
-                '-i', input_path,
-                '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11:print_format=summary',
-                '-f', 'null', '-'
-            ]
-
-            result1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=30)
-
-            # Extract measurements from first pass (simplified - in production you'd parse the output)
-            # For now, we'll use fixed parameters which work reasonably well
-
-            # Second pass: apply normalization
-            cmd2 = [
-                'ffmpeg',
-                '-i', input_path,
-                '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
-                '-c:v', 'copy',
-                '-y',
-                output_path
-            ]
-
-            result2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=30)
-
-            if result2.returncode != 0:
-                logger.error(f"Audio normalization failed: {result2.stderr}")
-                return False
-
-            if not Path(output_path).exists():
-                logger.error(f"Output video not created: {output_path}")
-                return False
-
-            logger.info(f"Audio normalized: {output_path}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error normalizing audio: {str(e)}")
+        cmd = [
+            self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
+            '-i', input_path,
+            '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
+            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-y', output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        if result.returncode != 0:
+            logger.error("Audio normalisation failed: %s", (result.stderr or '')[-500:])
             return False
-
-    def create_short_from_segment(self, video_path: str, start_time: float,
-                                end_time: float, transcript_segments: List[Dict],
-                                output_path: str, add_branding: bool = True) -> bool:
-        """
-        Create a complete Short from a video segment
-
-        Args:
-            video_path: Path to source video
-            start_time: Start time in seconds
-            end_time: End time in seconds
-            transcript_segments: Transcript segments for this time range (for captions)
-            output_path: Path for final Short
-            add_branding: Whether to add intro/outro branding
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not Path(video_path).exists():
-            logger.error(f"Source video not found: {video_path}")
-            return False
-
-        try:
-            # Create temporary files in temp directory
-            temp_dir = Path(__file__).parent.parent / 'data' / 'temp'
-            temp_dir.mkdir(parents=True, exist_ok=True)
-
-            # Filter transcript segments for this time range
-            relevant_transcript = [
-                seg for seg in transcript_segments
-                if not (seg['end'] <= start_time or seg['start'] >= end_time)
-            ]
-
-            segmented_video = str(temp_dir / f"segmented_{Path(output_path).stem}.mp4")
-            cropped_video = str(temp_dir / f"cropped_{Path(output_path).stem}.mp4")
-            captioned_video = str(temp_dir / f"captioned_{Path(output_path).stem}.mp4")
-            normalized_video = str(temp_dir / f"normalized_{Path(output_path).stem}.mp4")
-
-            # Step 1: Extract segment
-            logger.info(f"Extracting segment {start_time:.2f}-{end_time:.2f} from {video_path}")
-            cmd_extract = [
-                'ffmpeg',
-                '-ss', format_timestamp(start_time),
-                '-i', video_path,
-                '-to', format_timestamp(end_time),
-                '-c:v', 'libx264',
-                '-c:a', 'aac',
-                '-avoid_negative_ts', 'make_zero',
-                '-fflags', '+genpts',
-                '-y',
-                segmented_video
-            ]
-
-            result = subprocess.run(cmd_extract, capture_output=True, text=True, timeout=30)
-            if result.returncode != 0:
-                logger.error(f"Segment extraction failed: {result.stderr}")
-                return False
-
-            # Step 2: Crop to 9:16 vertical
-            logger.info("Cropping to 9:16 vertical format")
-            if not self.create_vertical_crop(segmented_video, cropped_video):
-                return False
-
-            # Step 3: Add captions
-            logger.info("Adding burned-in captions")
-            if not self.add_burn_in_captions(cropped_video, relevant_transcript, captioned_video):
-                return False
-
-            # Step 4: Add branding (intro/outro) if requested
-            if add_branding:
-                logger.info("Adding branding")
-                # For now, we'll skip actual intro/outro files and just use the captioned video
-                # In production, you'd have actual intro/outro assets
-                branded_video = captioned_video
-            else:
-                branded_video = captioned_video
-
-            # Step 5: Normalize audio
-            logger.info("Normalizing audio")
-            if not self.normalize_audio(branded_video, normalized_video):
-                return False
-
-            # Step 6: Move final output to desired location
-            logger.info(f"Moving final output to {output_path}")
-            # Ensure output directory exists
-            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-            # Move/replace the file
-            if Path(output_path).exists():
-                Path(output_path).unlink()
-            Path(normalized_video).rename(output_path)
-
-            # Clean up temporary files
-            for temp_file in [segmented_video, cropped_video, captioned_video, normalized_video]:
-                try:
-                    if Path(temp_file).exists():
-                        Path(temp_file).unlink()
-                except OSError:
-                    pass  # Ignore if already deleted
-
-            logger.info(f"Short created successfully: {output_path}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error creating Short: {str(e)}")
-            # Clean up any temporary files
-            temp_files = ['segmented_video', 'cropped_video', 'captioned_video', 'normalized_video']
-            for temp_name in temp_files:
-                if temp_name in locals():
-                    try:
-                        if Path(locals()[temp_name]).exists():
-                            Path(locals()[temp_name]).unlink()
-                    except OSError:
-                        pass
-            return False
+        return Path(output_path).exists()
