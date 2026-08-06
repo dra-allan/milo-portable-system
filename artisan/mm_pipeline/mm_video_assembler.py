@@ -602,12 +602,22 @@ def assemble_video(project_dir, output_path=None, music_path=None):
         output_path = str(proj / f"{proj.name}_FINAL.mp4")
 
     visuals_path = proj / "03_VISUALS.txt"
-    tts_dir = proj / "tts_segments" / "MM-2026-001"
+    
+    # Extract VIDEO_ID from script
+    script_path = proj / "02_SCRIPT_TTS.txt"
+    video_id = "MM-2026-001"  # default fallback
+    if script_path.exists():
+        for line in script_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("VIDEO_ID:"):
+                video_id = line.split(":", 1)[1].strip()
+                break
+    
+    tts_dir = proj / "tts_segments" / video_id
     work = proj / "_work"
     if work.exists(): shutil.rmtree(work)
     work.mkdir(parents=True)
 
-    print(f"[MM-VideoAssembler] {proj.name}")
+    print(f"[MM-VideoAssembler] {proj.name} (VIDEO_ID: {video_id})")
 
     entries = parse_visuals(str(visuals_path))
     groups = OrderedDict()

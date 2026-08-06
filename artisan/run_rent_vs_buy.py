@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 Runner script for RENT_VS_BUY Money Matrix video.
 Orchestrates: TTS generation -> Audio merge -> Video assembly.
 
@@ -87,6 +87,25 @@ def run_tts():
         print("[TTS] FAILED")
         return False
     
+    # Copy segment WAVs to project's tts_segments directory for the assembler
+    video_id = ""
+    with open(SCRIPT_TTS, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("VIDEO_ID:"):
+                video_id = line.split(":", 1)[1].strip()
+                break
+    
+    if video_id:
+        src_seg_dir = audio_dir / video_id
+        dst_seg_dir = TOPIC_DIR / "tts_segments" / video_id
+        dst_seg_dir.mkdir(parents=True, exist_ok=True)
+        
+        import shutil
+        for wav_file in src_seg_dir.glob("*.wav"):
+            if not wav_file.name.startswith("_"):
+                shutil.copy2(wav_file, dst_seg_dir / wav_file.name)
+                print(f"[TTS] Copied {wav_file.name} -> {dst_seg_dir}")
+    
     print("[TTS] SUCCESS")
     return True
 
@@ -128,6 +147,11 @@ def merge_audio():
     ok = merge_mod.merge_audio_files(seg_dir, merged_path)
     if ok:
         print(f"[MERGE] SUCCESS: {merged_path}")
+        # Also copy to project directory for reference
+        import shutil
+        project_merged = TOPIC_DIR / f"{video_id}.wav"
+        shutil.copy2(merged_path, project_merged)
+        print(f"[MERGE] Copied to project: {project_merged}")
         return True
     else:
         print("[MERGE] FAILED")
