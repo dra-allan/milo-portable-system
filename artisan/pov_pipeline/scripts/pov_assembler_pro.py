@@ -1277,7 +1277,7 @@ def main():
     ap.add_argument("--script",   required=True)
     ap.add_argument("--audio",    required=True)
     ap.add_argument("--images",   required=True)
-    ap.add_argument("--output",   default=None)
+    ap.add_argument("--output", default=os.getenv("POV_OUTPUT_DIR") or None)
     ap.add_argument("--cpu-preset",
                     choices=["idle", "light", "balanced", "performance", "max"],
                     default="balanced",

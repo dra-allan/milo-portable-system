@@ -617,7 +617,7 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--script", required=True)
-    ap.add_argument("--audio-dir", required=True)
+    ap.add_argument("--audio-dir", default=os.getenv("POV_TTS_DIR"), required=False)
     ap.add_argument("--voice", default=None)
     ap.add_argument("--format", default=None, choices=["mp3", "wav"])
     ap.add_argument("--force", action="store_true")
@@ -638,3 +638,4 @@ if __name__ == "__main__":
                       voice=a.voice, fmt=a.format,
                       force=a.force, start_at=a.start_at)
     sys.exit(0 if ok else 1)
+
