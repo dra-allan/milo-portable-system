@@ -407,11 +407,6 @@ class Harness:
         text = (p.stdout or p.stderr).strip()
         return p.returncode, _strip_ansi(text)
 
-
-def _strip_ansi(text: str) -> str:
-    """Remove ANSI/VT escape sequences (opencode paints its output)."""
-    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*(\x07|\x1b\\)", "", text)
-
     def status(self) -> Dict[str, object]:
         return {
             "name": self.name,
@@ -421,6 +416,11 @@ def _strip_ansi(text: str) -> str:
             "config_dir": str(self.config_dir()),
             "synced": (self.config_dir() / self.persona_filename).is_file(),
         }
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI/VT escape sequences (opencode paints its output)."""
+    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*(\x07|\x1b\\)", "", text)
 
 
 # ── JSON helpers ──────────────────────────────────────────────────────────────

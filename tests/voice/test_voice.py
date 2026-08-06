@@ -117,16 +117,34 @@ def test_text_for_speech_handles_mixed_emphasis():
 
 # ── Provider resolution ──────────────────────────────────────────────────────
 
-def test_no_provider_without_keys(monkeypatch, milo_home):
+def test_edge_fallback_without_keys(monkeypatch, milo_home):
     for k in ("GEMINI_API_KEY", "GEMINI_API_KEYS", "OPENAI_API_KEY", "ELEVENLABS_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     cfg = {"streaming": {"provider": "auto"}}
-    assert tts_streaming.resolve_streaming_provider(cfg) is None
+    streamer = tts_streaming.resolve_streaming_provider(cfg)
+    if tts_streaming.EdgeTTSStreamer.available():
+        assert streamer is not None
+        assert streamer.__class__.__name__ == "EdgeTTSStreamer"
+    else:
+        # edge_tts/ffmpeg missing on this machine: no keyless fallback.
+        assert streamer is None
 
 
-def test_gemini_selected_when_key_present(monkeypatch):
+def test_edge_selected_in_auto_with_key_present(monkeypatch, milo_home):
+    # edge is first in the priority list, so a gemini key alone does not
+    # win auto resolution; pinning is what selects gemini.
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
     cfg = {"streaming": {"provider": "auto"}}
+    streamer = tts_streaming.resolve_streaming_provider(cfg)
+    if tts_streaming.EdgeTTSStreamer.available():
+        assert streamer.__class__.__name__ == "EdgeTTSStreamer"
+    else:
+        assert streamer.__class__.__name__ == "GeminiStreamer"
+
+
+def test_gemini_selected_when_pinned(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    cfg = {"streaming": {"provider": "gemini"}}
     streamer = tts_streaming.resolve_streaming_provider(cfg)
     assert streamer is not None
     assert streamer.__class__.__name__ == "GeminiStreamer"
