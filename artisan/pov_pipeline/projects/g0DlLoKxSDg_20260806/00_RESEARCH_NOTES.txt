@@ -1,0 +1,356 @@
+﻿00_RESEARCH_NOTES.txt
+Phase 1 — POV Researcher (Short-Form Viral Edition)
+Project: g0DlLoKxSDg_20260806
+Target runtime: 12-15 minutes
+Mode: SOURCE MODE
+
+SOURCE_MODE: ACTIVE
+KEPT vs TWISTED: Kept the skeleton — a working-class British craftsman's hands dragged into a war that wants to use them, a pocketable brass family token handed down by the father, the cold-open trap at the worst moment, the mid-point betrayal that re-frames the war, the growth beat (leaving a wounded man in Act 3, staying with a friend in Act 5), the uncertainty motif that keeps old wounds open, the "still remember how?" mirror ending, and the "building afterward" epilogue. Twisted — time period (WWII 1939-45 to WWI 1914-19), profession (Newcastle shipyard fitter to a Durham collier turned tunnelling sapper), the protagonist's whole world (merchant ships and the river Tyne to coal seams, shafts, and clay galleries under the Western Front), every name (Turner/Edith/May/Nora/Harry/Collins/Evans/Shaw replaced by Ellen, Joey, Gray, Saltmarsh, and an unnamed father), the central symbol (a steel rivet to a brass lamp-tally stamped No. 7), the anchors (Dunkirk, El Alamein, Sicily, D-Day to Lochnagar, the Somme craters, Messines Ridge, the 1918 bury), and every physical scene (the mole and the little ships to galleries, camouflets, listening posts, and crater rescues). No sentence from the source is reproduced.
+
+------------------------------------------------------------
+SECTION -1 — FORMAT MODE DECLARATION
+------------------------------------------------------------
+OUTPUT_MODE: A (Single-arc tragedy, six acts compressed for short-form)
+Justification: A single arc lets one emotional spine — a boy who learned to draw light out of the dark being taught to put it out, then digging his way back — build one steady climb to a single peak and a mirror ending that snaps shut. A level-ladder would scatter the tunnel imagery across unrelated ranks and drain the retention mechanics inside 14 minutes. Single arc, six acts, one symbol, one wound that never heals.
+
+ONE QUESTION BEFORE ANYTHING:
+Who is this person, what visceral mistake trapped them, and what is the relentless physical pressure that drives the next 14 minutes?
+ANSWER: A 21-year-old collier whose gift for hearing the earth makes him the finest listener in his seam — and exactly the man the Royal Engineers want to bury alive in the clay under France. His mistake: he trusted the army's promise that a good listener gets the safe galleries. The pressure: every day he counts another man's pick strokes through the clay and knows the roof owes him nothing.
+
+------------------------------------------------------------
+SECTION 0 — STORY FOUNDATION (MANDATORY)
+------------------------------------------------------------
+
+### 0A — THE PROTAGONIST
+You are a collier, twenty-one, in the Durham pit town of Marnley, 1916. Terraced rows, the chapel porch where the casualty lists are pinned, the winding engine that marks the hours. You work the B seam with your father, a deputy with three fingers missing from the pit fall that taught him never to trust a roof. Your mother holds the house together; your younger sister works the pit-bank screens, picking stone out of coal with hands black by dinner. You love Ellen Crowther, the apothecary's daughter, whose right hand is stained iodine-brown from the dispensary. Your closest friend is Joey Pickering, loud as the winding chain and broke by Thursday every week. Your one concrete dream: take the deputy's stripe under your father, marry Ellen, and put a second room on your mother's house with your own hands. The one loved object pre-war: a brass lamp-tally stamped with the family number seven, handed to you at thirteen when you passed your first lamp-check, with the words that now run your life.
+
+THE TRIGGERING EVENT: In early 1916 the B seam floods and the owners board up the pit. Rather than join the infantry — where Durham battalions were already dying by the battalion — you and Joey volunteer for the new Royal Engineers tunnelling companies. A recruiting officer named Captain Saltmarsh tests you in a damp cellar: you name the roof fall before it moves, and he smiles. The physical consequence: your ears now belong to the army. The antagonist at the trigger: Saltmarsh, who stamps your number and posts you to a listening gallery.
+
+MOTIVATION (non-banned): THE COERCED SPECIALIST, braided with THE HONOR-BOUND. Your skill traps you — the better you listen, the deeper they post you. And Joey volunteered first; a Harden does not let a man go down alone, and a collier does not say no to the dark.
+
+THE IRONIC TRAIT: Your ear. It made you the best collier in the seam, and it is precisely why the war wants you in the quietest, most lethal place on the Western Front. The gift that keeps you alive is the sentence that keeps you buried.
+
+THE CENTRAL WANT: To come home to Ellen with both your ears and both your hands still your own.
+
+### 0B — THE IRONIC LOOP (one paragraph)
+You set out to keep your ear and your hands for the future the pit owed you — the deputy's stripe, Ellen, the second room on your mother's house — and you end up spending the entire war underground, your hearing sharpened into a weapon the army aims at the enemy, the very gift that saved you in the seam now the thing that guarantees you a place in the clay. The final reveal is that the whole nightmare was set in motion by the first physical compromise: the day you accepted the post of listener, believing a man who is useful to the war will be kept out of it. That one acceptance is the hinge every later death swings on.
+
+### 0C — THE CENTRAL SYMBOL
+The brass lamp-tally stamped No. 7. A collier's identity — you trade it at the lamp room for your lamp and your life. Introduced Act 1. It appears in every act. Degrade path, one direction: handled in mud and fear, it wears smooth; in the Act 3 blast a hairline crack opens across the number and never closes; by Act 6 the seven is a ghost. The tally stays brass; you are what changes. Its meaning shifts exactly the way the source rivet's did — identity, then luck, then proof that your hands once drew light before the war taught them to put it out, then the thing you place in your son's palm.
+
+### 0D — NAMED SUPPORTING CHARACTERS (4, tight cast)
+- JOEY PICKERING — THE INNOCENT. One detail: a front tooth chipped on a pit prop; he laughs through the gap, louder than the winding chain, and the war's worst cruelty is that the blast takes his hearing and three fingers — it kills the laugh and the trade at once.
+- SERGEANT-MAJOR TOBY GRAY — THE HANDLER. One detail: a left forefinger bent permanently from a roof fall; he knocks tunnel timber with it, three taps, like a heartbeat, as though the stone owes him the same respect it gave his fingers. He carries the mentor role the way the source's Collins did, and he carries the mid-point secret to his grave.
+- CAPTAIN EDGAR SALTMARSH — THE BETRAYER. One detail: a lacquered map case he carries even into the tunnels, never muddied; when it is open, men's fates get decided and the clay listens to neither.
+- ELLEN CROWTHER — THE INNOCENT (love). One detail: iodine-brown fingers on her right hand from the dispensary. She is the source's Nora twisted into the medical, not the bakery; her hands are stained by mending, and that stain becomes the color of waiting.
+(Your father is named only as "your father" — he is family presence and the symbol's origin, not cast. Otto Berlinger, named in the Act 6 payoff, is a one-scene reveal character, the source's unnamed French soldier turned into a spoken name.)
+
+### 0E — THE COST LADDER (one physical loss per act)
+- ACT 1: The seam floods and takes the deputy's stripe with it. You walk out of the pit yard with your lamp in your hand and nothing to climb back to.
+- ACT 2: You burn Ellen's best shirt — the one she made you — to bind a trapped clay-kicker's leg while Gray shouts at you to withdraw.
+- ACT 3: You seal your own gallery with a camouflet and entomb the Lancashire soldier's photograph with the charge. The letter to his mother never goes; the address rots to mush in your pocket against your sweat.
+- ACT 4: The hairline crack opens across the seven on your tally. On leave you give your greatcoat and your leave money to the widow of the boy you could not save, and go back to France in a shirt that does not keep the rain out.
+- ACT 5: Joey's ears and fingers. Your own palms blister and split on fuse-twisting until you cannot feel the tally's edge, and you do not feel the cut in your palm that leaves rust-red smears on the brass.
+- ACT 6: The bury takes your left ear — the ear you spent a lifetime training. The war literally removes the gift that put you in the clay. What is left is the hands, and the hands learn to hear.
+
+### 0F — THE PIVOTAL SCENE PER ACT (choice between two deadly options)
+- ACT 1: Choose between sinking with the boarded pit and marrying Ellen into nothing, or following Joey into the tunnellers where Durham men are already dying in numbers the town cannot count. Both feel like death. You go down.
+- ACT 2: A clay-kicker is trapped under a soft fall while a German camouflet is going in. Choose between obeying Gray's order to withdraw and save the section, or digging out with bare hands toward the boy. You dig. The boy lives; you burn the shirt.
+- ACT 3 (the cold open): Ear to the clay, the German rhythm closing. Choose between firing the camouflet, which will kill the man on the other side and seal your own crew's exit, or a silent withdrawal that lets the Germans lay their chamber under the infantry trench above. You fire. The ground lifts and you are still inside it.
+- ACT 4: On leave in Marnley. Choose between staying — Ellen, the roof, the lie that the war is over — or going back to tunnels you swore you would never re-enter, because Joey is going back and Saltmarsh has already doomed the company. You go back.
+- ACT 5 (Messines): The boy freezes in a collapsing gallery while the fuse is counting. Choose between dragging him out and risking the section and the mine, or leaving him to keep the deadline. You drag him. Then you stay with Joey through the counter-blast until the stretcher party comes — the beat the source earned by staying with Harry at the mine.
+- ACT 6: Buried, the air dying. Choose between burning the candle to dig upward and swallowing the last oxygen, or holding still, tapping the three-knock code on timber, betting the section you stayed behind to save will come for you. You tap. They come.
+
+### 0G — THE COLD OPEN CANDIDATE (MANDATORY — NAR-003)
+"You press your ear to wet clay and count the picks on the other side. Twelve strokes, a pause, then thirteen. A rhythm the War Office paid you to learn by heart. Your lamp flame lies flat, the air running out. Behind you, Captain Saltmarsh is ordering the gallery sealed, with your crew still inside it. You stop counting. Let's go back and see how you got here."
+(68 words. Action verb in the first two words: "press." Ends on exactly one approved pivot line. The echo phrase "you stop counting" is the key the mirror ending uses.)
+
+### 0H — THE OPEN LOOP ARCHITECTURE (1 primary + 4 micro = 5 loops)
+LOOP-1 (PRIMARY — the rhythm):
+  Plant Segment: NAR-003 (cold open) / NAR-005 (zoom-out)
+  Plant Line: "What you don't know yet is that the rhythm you're counting has a name, and it has already decided who lives."
+  Payoff Segment: NAR-042 (last week of the war, the captured Saxon collier gives his name)
+  Payoff Type: revelation
+
+LOOP-2 (MICRO — dropped name):
+  Plant Segment: NAR-009
+  Plant Line: A wounded officer mutters the name you'll regret remembering: "Saltmarsh. The man who'll get a medal for the Messines dates."
+  Payoff Segment: NAR-024 (mid-point twist)
+  Payoff Type: betrayal
+
+LOOP-3 (MICRO — undecoded object):
+  Plant Segment: NAR-011
+  Plant Line: "The lacquered map case goes into the tunnels with him, never a mark on it. You will learn what it is hiding."
+  Payoff Segment: NAR-024 (the marked counter-chamber on the captured map)
+  Payoff Type: revelation
+
+LOOP-4 (MICRO — sensory interrupt):
+  Plant Segment: NAR-006
+  Plant Line: "The smell of wet clay is the smell of home, of the seam, of your mother's hands. You will not smell it without fear again."
+  Payoff Segment: NAR-046 (the reopened shaft smells the same and means water)
+  Payoff Type: mirror
+
+LOOP-5 (MICRO — flash-forward / the singer):
+  Plant Segment: NAR-017
+  Plant Line: "In the night above your gallery a German is singing. You do not know it yet, but you will hear that voice for the rest of the war."
+  Payoff Segment: NAR-033 (Messines — the same voice, the same rhythm, the same man on the other side of the clay)
+  Payoff Type: confrontation / revelation
+
+### 0I — THE MID-POINT TWIST (MANDATORY)
+TWIST_SEGMENT: NAR-024 (Act 4, the leave in Marnley — 50% mark)
+WHAT BREAKS: The assumption that the army's officers will not waste men needlessly, and that the "safe gallery" you were promised at Lochnagar was ever safe. You believe you survived bad luck and that going home meant going home.
+WHAT REPLACES IT: The darker reality — Captain Saltmarsh falsified the company's casualty returns so the tunnelling company could not be rotated home for the coming Messines mines. He knew for days, from a captured German map, that your gallery at Lochnagar sat directly over a German counter-chamber; he ordered the crew to keep digging to hit his deadline. The safe gallery was a lie the whole war has been built on.
+WHO REVEALS IT: Sergeant-Major Gray, wounded in the final crater fighting and believing he is dying, tells you the truth in the transit hospital before you sail home. "I knew about the chamber, lad. The order was lawful. I followed it." He dies the next morning. The mentor who taught you the craft was part of the machinery that spends men.
+
+### 0J — THE MIRROR ENDING (MANDATORY)
+COLD OPEN ECHO PHRASE: "You press your ear to wet clay and count" / "You stop counting."
+FINAL BODY LINE: "You press your ear to the clay of the new shaft and there is nothing to count at all — only water, rising the way water rises when you finally let it. And for the first time since the Somme, you stop counting."
+The loop snaps: the same posture, the same ear to the clay, but the picks are gone and the thing on the other side is not an enemy — it is the clean water of a seam reopened, the town's future instead of its dead. The tally, the seven worn smooth, passes to the son in the same gesture the father used in 1909.
+
+### 0K — THE HUMAN-FIRST VOICE REGISTERS (VOICE BIBLE)
+Banned abstractions are honored: nobody is an asset, a number is a tally and it is brass, men are crews, and the earth is the earth. Eight registers rotate; no register repeats four times; every line under 20 words; no "it's not X, it's Y" construction.
+R1 (The Grunt): "The clay gets into everything. Ears, boots, teeth. You eat the war by the mouthful."
+R1 (The Grunt): "Your knuckles bleed onto the fuse and you don't feel it. That's the part that scares you."
+R2 (The Professional): "Twelve strokes, a pause, thirteen. German galleries run a longer rhythm than ours. Write it down."
+R2 (The Professional): "A camouflet is a coffin with a fuse. You fire it and the earth does the burying for you."
+R3 (The Poet): "The lamp flame lies flat when the air dies. You watch it like a sick child."
+R3 (The Poet): "Rain sounds different over a grave. Over a crater it has nowhere to land but you."
+R3 (The Poet): "Water remembers where it used to rise. The town remembers where its men used to come up."
+R4 (The Cynic): "Every map in this war is a wish. The clay doesn't read maps."
+R4 (The Cynic): "The army calls it a listening gallery. You call it a room with one door, and the enemy owns it."
+R5 (The Adrenaline): "Your heart beats in your jaw. The picks answer it. Twelve, pause, thirteen."
+R5 (The Adrenaline): "Zero hour is the only clock in France that ever runs on time."
+R6 (The Hunter): "You learn the miner the way you'd learn a voice in the dark. His rhythm, his doubt, his weariness."
+R6 (The Hunter): "A tired digger shortens his stroke. When his strokes shorten, the charge is close."
+R7 (The Sapper): "Spiling holds what the seam won't. Timber holds what the clay won't. Nothing holds what the war won't."
+R7 (The Sapper): "The knock code says three taps. One tap is a question. Two is danger. Three is you."
+R8 (The Survivor): "They gave me back my tally with the seven worn smooth. I am what's left of the number."
+R8 (The Survivor): "I count my dead in galleries. I count my living in knocks on timber."
+R8 (The Survivor): "The war took my left ear. My hands learned to hear instead."
+18 candidate lines. Register counts: R1x2, R2x2, R3x3, R4x2, R5x2, R6x2, R7x2, R8x3. No register exceeds 3. The two lines most likely to go into the script: the R7 knock-code line (structural, seeds the Act 6 rescue) and the R8 tally line (mirror-adjacent).
+
+### 0L — THE TENSION CURVE (compressed, 6 acts)
+Cold open (NAR-003, inside Act 3): 9. Zoom-out / Act 1: 5-6. Act 2: climbs 6 to 7. Act 3: 8, spiking to 9 at the cold-open moment. Act 4: 8 (mid-point twist) and 7 into the return. Act 5: 9. Act 6: peak 10 (the bury, the tap that answers), then 6, then resolution 4 (homecoming, mirror ending). No flat acts; the only value below 5 is the resolution.
+
+### 0M — THE MICRO-HOOK PLANT SCHEDULE (12 hooks, one every ~70 seconds)
+1. NAR-003/005 — the pick rhythm (PRIMARY) — payoff NAR-042.
+2. NAR-009 — Saltmarsh's name dropped — payoff NAR-024.
+3. NAR-011 — the lacquered map case — payoff NAR-024.
+4. NAR-012 — Gray's three-knock code — payoff NAR-041.
+5. NAR-017 — the German singer's voice — payoff NAR-033.
+6. NAR-019 — the Lancashire soldier's photograph — payoff NAR-027.
+7. NAR-022 — the hairline crack in the tally — payoff NAR-046.
+8. NAR-025 — Ellen's letters stop — payoff NAR-043.
+9. NAR-007 — Joey's chipped-tooth laugh — payoff NAR-036.
+10. NAR-010 — the brown shawl — payoff NAR-044.
+11. NAR-030 — the candle in the boy's gallery — payoff NAR-041.
+12. NAR-006 — the wet-clay smell of home — payoff NAR-046.
+Every 60-90 seconds the viewer is handed something they must keep. No orphan hooks survive into the end credits.
+
+------------------------------------------------------------
+SECTION 0N — THE STORY LOGIC PACKAGE (MANDATORY)
+------------------------------------------------------------
+Reference: STORY_LOGIC_BIBLE.txt. This is the contract the Scriptwriter must execute. If 0N is weak, the script will feel fake.
+
+0N-1 — CAUSAL SPINE (Law 2)
+Every act consequence feeds the next. No "and then." Time is consistent: pit floods spring 1916, Lochnagar mines 1 July 1916, Messines 7 June 1917, the German spring offensive March 1918, Armistice 11 November 1918. The protagonist is twenty-one in 1916 and twenty-six when the war ends.
+ACT 1 — WANT: the deputy's stripe, Ellen, the second room on his mother's house. DOES: joins the tunnelling companies when the pit floods, trusting that his ear buys him a safe posting. THEREFORE/BUT: the army stamps a number on him and posts him to a listening gallery, where being useful is exactly what keeps him buried.
+ACT 2 — WANT: to survive training with his ears and hands intact. DOES: masters the knock code, learns the German rhythm, burns his shirt to save a clay-kicker. THEREFORE/BUT: every skill that keeps him alive makes him more valuable to the tunnels — and Saltmarsh has begun reading dates off a lacquered map.
+ACT 3 — WANT: to get his crew out of the Lochnagar galleries alive. DOES: fires the camouflet that seals the German counter-mine and his own exit, drags a wounded German sapper from a burning gallery, leaves a Lancashire soldier in a crater. THEREFORE/BUT: he survives, and survival is a debt — he carries a photograph he never delivers and a rhythm he can never unhear.
+ACT 4 — WANT: to believe the war is over for him. DOES: comes home, lets the town crown him, answers his father's question honestly, then learns from Gray's deathbed confession that Saltmarsh spent the crew for a date on the map. THEREFORE/BUT: the safe galleries were never safe, and the company is already doomed to Messines — so he goes back to the soil he swore he would never re-enter.
+ACT 5 — WANT: to keep Joey alive. DOES: returns to the same ridge, drags the frozen boy out of a collapsing gallery, stays with Joey through the counter-blast until the stretcher party comes. THEREFORE/BUT: Joey lives without ears or fingers, the nineteen mines lift the ridge anyway, and the war does not end — so the price of staying human keeps rising.
+ACT 6 — WANT: to come home with his hands still his own. DOES: survives the 1918 bury by tapping the three-knock code, hears the Saxon collier's name, fires his last charge, refuses to sign the victory papers. THEREFORE/BUT: the tally comes back with the seven worn smooth and the left ear gone — the man who comes up is not the boy who went down, and only the father's question is left to answer.
+RESOLUTION — the father's question becomes the son's. He teaches the boy to listen for water, and the first clean water rises in the reopened seam.
+COLD OPEN OWNERSHIP: The cold open (NAR-003) belongs to ACT 3. Its prop set — the tally (INTRODUCED NAR-006, Act 1) and the Davy lamp (INTRODUCED NAR-006, Act 1) — exists in the Prop Ledger before the act it belongs to. Confirmed.
+
+0N-2 — PROP LEDGER (Law 1)
+Rows are pipe-delimited plain text, not tables.
+PROP: Brass lamp-tally No. 7 | INTRO: NAR-006 | PATH: hand-polished brass, hairline crack opens at NAR-022, seven wears smooth by Act 6 | FINAL: worn smooth, ghost of a number | PAYOFF: NAR-046 (passed to the son).
+PROP: Davy lamp | INTRO: NAR-006 | PATH: glass sooted, flame lies flat in thin air (NAR-003), relit with shaking hands at NAR-041 | FINAL: relit, steady | PAYOFF: NAR-045.
+PROP: Lacquered map case (Saltmarsh) | INTRO: NAR-011 | PATH: never muddied; the captured German map with the counter-chamber mark goes inside it | FINAL: opened at the mid-point, then closed forever | PAYOFF: NAR-024.
+PROP: Lancashire soldier's photograph | INTRO: NAR-019 | PATH: handed over in the crater, entombed with the charge when the gallery is sealed | FINAL: never delivered; the address rots in a pocket | PAYOFF: NAR-027 (the guilt beat).
+PROP: Joey's chipped-tooth laugh | INTRO: NAR-007 | PATH: heard all through the war, then silent | FINAL: a gap that cannot laugh anymore | PAYOFF: NAR-036.
+PROP: Ellen's brown shawl | INTRO: NAR-010 | PATH: kept through the war, worn thin | FINAL: the pit bank, the same shawl | PAYOFF: NAR-044 (mirror).
+PROP: The bundle of Ellen's held letters | INTRO: NAR-025 (the letters stop) | PATH: held by field censorship during Messines secrecy | FINAL: handed back, unopened, one stack | PAYOFF: NAR-043.
+PROP: The candle in the boy's gallery | INTRO: NAR-030 | PATH: guttering, the air gauge of every tunnel | FINAL: goes out in the 1918 bury | PAYOFF: NAR-041.
+PROP: The three-knock code (Gray) | INTRO: NAR-012 | PATH: used as discipline, then as prayer | FINAL: the rescue signal that answers in the bury | PAYOFF: NAR-041.
+PROP: The clean water of the reopened seam | INTRO: NAR-046 | PATH: rises | FINAL: the water | PAYOFF: NAR-046 (mirror).
+CHECKS: No prop is used before its INTRODUCED segment. No LOST or DESTROYED prop returns without an explicit RECOVERED segment — the photograph is entombed and stays entombed; the tally is never lost, only worn. Cold-open props (tally, lamp) exist by Act 3. The central symbol (tally) degrades in one direction only: it never regains detail. PASS.
+
+0N-3 — ANTAGONIST CLARITY BLOCK (Law 3)
+PRIMARY ANTAGONIST (named): Captain Edgar Saltmarsh.
+CHAIN OF COMMAND: the War Office and the Royal Engineers Mining Branch > the Tunnelling Companies > company command under Saltmarsh.
+WHY THEY HUNT: one concrete reason — he needs the Messines dates to justify the tunnelling program he personally sold to the generals; a ridge taken by mines makes his career.
+PERSONAL STAKE/WOUND: his brother died in an infantry charge at Loos in 1915. Saltmarsh believes the tunnels are the "clean" way to wage war — the way that does not spend his brother's kind of man in the open. His fear of another brother's fate is what makes him spend other men's underground.
+ON-SCREEN REVEAL SEGMENT: NAR-011 (Act 2, the training camp) — well before the 25% mark.
+PRIMARY CAPTURE MECHANISM: records — the falsified casualty returns and the captured map in the lacquered case. He traps men with paper, not wire.
+SECONDARY PRESSURE: the German mining crews themselves — the picks through the clay are the pressure that keeps every scene airtight even when Saltmarsh is off-screen.
+
+0N-4 — TWIST SETUP TRIPLET (Law 4)
+ASSUMPTION (the false reality the viewer holds): the officers are honest men doing their best; the "safe gallery" posting you were promised is real; survival at Lochnagar was luck.
+PLANT @SEG: NAR-011 — Saltmarsh reading dates off the lacquered map while the company digs, muttering "Messines has to happen on my numbers," and Gray's quiet look that the camera should hold for two seconds.
+REINFORCE @SEG: NAR-019/022 — the captured German map is glimpsed in the tunnel before Lochnagar; Gray hesitates at a timber that he should have knocked; the order to keep digging arrives anyway, and Gray obeys with his eyes closed.
+SHATTER @SEG: NAR-024 — Gray's confession names the counter-chamber, the falsified returns, and the deadline. The viewer re-frames every earlier scene in one breath.
+CAUSE-BEFORE-EFFECT CHECK: PASS. The counter-chamber exists on the map (NAR-019) before the order to dig on (NAR-022) before the confession (NAR-024). Saltmarsh's motive (brother at Loos) is established in Act 2 before the betrayal lands. No effect precedes its cause.
+
+0N-5 — CHARACTER FUNCTION TABLE (Law 5)
+NAME: Joey Pickering | ROLE: The Innocent / the friend | THE ONE PLOT JOB: his volunteerism drags the protagonist into the tunnellers, and his maiming in Act 5 forces the stay-behind growth beat | ENTERS: NAR-007 | PAYS OFF: NAR-036.
+NAME: Sergeant-Major Toby Gray | ROLE: The Handler / mentor | THE ONE PLOT JOB: teaches the craft and the knock code, and delivers the mid-point truth that re-frames the war | ENTERS: NAR-012 | PAYS OFF: NAR-024.
+NAME: Captain Edgar Saltmarsh | ROLE: The Betrayer / antagonist | THE ONE PLOT JOB: spends the crew for the Messines deadline; his lie is the engine of the back half | ENTERS: NAR-009 | PAYS OFF: NAR-024 and NAR-033.
+NAME: Ellen Crowther | ROLE: The Innocent / the love | THE ONE PLOT JOB: her held letters and the shawl keep home alive as a presence and land the mirror ending | ENTERS: NAR-010 | PAYS OFF: NAR-043 and NAR-044.
+CONFIRMED: cast is exactly 4 named characters, each with a non-atmospheric plot job. Your father appears as family presence (symbol origin, the father's question, the mirror scene) but is not a named cast member. Otto Berlinger is a one-scene payoff reveal, not a recurring cast member. No dead weight.
+
+0N-6 — CHEKHOV LEDGER (Law 5)
+PLANT: the pick rhythm | SEG: NAR-003/005 | PROMISES: an enemy with a name and a fate | PAYOFF: NAR-042 | RESOLVES: the captured Saxon collier gives his name; the rhythm is his; the war's uncertainty finally has a face.
+PLANT: Saltmarsh's name | SEG: NAR-009 | PROMISES: a betrayal | PAYOFF: NAR-024 | RESOLVES: the confession names the falsified returns.
+PLANT: the lacquered map case | SEG: NAR-011 | PROMISES: a hidden truth | PAYOFF: NAR-024 | RESOLVES: the counter-chamber is marked on the captured map inside it.
+PLANT: the three-knock code | SEG: NAR-012 | PROMISES: a rescue built on trust | PAYOFF: NAR-041 | RESOLVES: the section that the protagonist saved digs him out on the same knock.
+PLANT: the German singer's voice | SEG: NAR-017 | PROMISES: the enemy is a man | PAYOFF: NAR-033 | RESOLVES: at Messines the voice and the rhythm are the same man; the charge that lifts the ridge may be his death.
+PLANT: the Lancashire soldier's photograph | SEG: NAR-019 | PROMISES: a debt that will never be paid | PAYOFF: NAR-027 | RESOLVES: the letter never reaches Blackburn; the address rots; the uncertainty stays open forever.
+PLANT: the hairline crack in the tally | SEG: NAR-022 | PROMISES: the war is wearing the man | PAYOFF: NAR-046 | RESOLVES: the worn-smooth seven is handed to the son.
+PLANT: Ellen's letters stop | SEG: NAR-025 | PROMISES: she has given up or is lost | PAYOFF: NAR-043 | RESOLVES: the censors held the stack during Messines secrecy; she wrote every single day.
+PLANT: the brown shawl | SEG: NAR-010 | PROMISES: waiting | PAYOFF: NAR-044 | RESOLVES: she waits at the pit bank in the same shawl; those who waited and those who returned lived different wars.
+PLANT: the candle | SEG: NAR-030 | PROMISES: air is the real currency | PAYOFF: NAR-041 | RESOLVES: in the bury the candle goes out and the knock code answers.
+PLANT: the wet-clay smell of home | SEG: NAR-006 | PROMISES: the seam is a mother and a grave | PAYOFF: NAR-046 | RESOLVES: the reopened shaft smells the same and means water, not death.
+NO ORPHANS: every plant in 0H and 0M appears here with a payoff segment. PASS.
+
+------------------------------------------------------------
+SECTION 1 — TOPIC FOUNDATION
+------------------------------------------------------------
+Topic statement: The forgotten war under the war — the tunnelling companies of the Western Front, and the twenty-something colliers who spent four years buried alive so infantry could walk over the top. The story is a single man's tally: a Durham listener who counted enemy picks by heart.
+Why this topic NOW: audiences are saturated with trench-top histories; the underground war is the one nobody has been shown. The imagery is instant — darkness, the scrape of a pick, the flame that flattens when the air dies — and it delivers the physical, claustrophobic stakes short-form videos are built on, without a single tank or beach landing.
+Target audience hook anxiety: the fear of being buried alive, the nightmare of being unable to move while something gets closer, and the modern dread of being spent by people who keep numbers. The same anxiety that makes horror from a closet, made literal and historical. The viewer clicks because they want to know what it felt like to have your hearing turned into a weapon.
+
+------------------------------------------------------------
+SECTION 2 — SETTING & WORLD RULES
+------------------------------------------------------------
+Setting: Marnley, a fictional pit town in the Durham coalfield, England, 1914-1919; then the Armentieres and Somme sectors, the Lochnagar line at La Boisselle, Messines Ridge, and a 1918 sector in Picardy. Two worlds: the town above ground (terraced rows, the winding engine, the chapel porch with the casualty lists) and the earth below (the seam, then the clay galleries).
+Time period: the Great War, spring 1916 to the Armistice, with the mirror epilogue in 1919.
+The unwritten rules of the world:
+- The lamp room is a church. You trade your tally for your lamp and your life; a tally with a dead man's number is never re-issued.
+- You never whistle in a gallery. A miner does not say "good luck" to a man going down. The dark is superstitious and it is watching.
+- Under the Front, silence is not a courtesy, it is ammunition. Steel never touches steel near a listening post; boots are muffled; a wrong breath is a German borehole.
+- The knock code is the only language the clay respects. One tap is a question. Two is danger. Three is you.
+- The tunnel is the front line of the war where nobody can see it, and the officer with the map outranks the roof that is about to fall.
+- What is said above ground about the tunnels is a lie. The papers say gallantry. The men say nothing.
+
+------------------------------------------------------------
+SECTION 3 — SENSORY PROFILE PER ACT (Action-Focused)
+------------------------------------------------------------
+ACT 1 (The Pit): the smell of coal dust and lamp oil on the last clean shirt you own; the rattle of the winding chain marking the hours over the rows; the weight of the Davy lamp on its leather strap against your hip; the screen belt shifting stones behind the pit bank, a slow curtain that never stops; the sting of chapped knuckles in the winter water at the standpipe.
+ACT 2 (Training, Armentieres): the smell of wet clay and sour sweat in a gallery six feet wide; the scrape of felt-muffled picks, a sound you learn to read like Morse; the weight of a waterlogged greatcoat that doubles your body; a candle flame leaning flat when the air thins, watched like a pulse; the raw burn of fuse-twisting across the palms at midnight.
+ACT 3 (The Somme, Lochnagar): the smell of ammonal and burnt earth that clings to a throat for a week; the deep throat-shake of the mine going up under your boots; the weight of a soaked tunic after the crater fight, pulling your shoulders down; the ground trembling up through your soles like a heartbeat in the wrong place; the ringing in your left ear after the camouflet that will not stop until it becomes silence.
+ACT 4 (Leave, Marnley): the smell of coal smoke and baking bread, which should be comfort and is only strange; the chapel bell, unfamiliar after the whistles, tolling names you half recognize; the weight of your father's hand on your shoulder, missing fingers and all; the pit-bank screens moving in the yard like a curtain across the town's grief; the ache of the tally's new crack under your thumb as you lie to your mother.
+ACT 5 (Messines): the smell of cordite and crushed white chalk; nineteen muffled thumps counting under the ridge like a giant heartbeat, one after another, until the horizon lifts; the weight of Joey against your shoulder as you drag him through a collapsing gallery; the ridge visibly rising in the moonlight, an inch at a time; the tremor in your fingers as you arm fuses with blood on the brass.
+ACT 6 (1918 and after): the smell of afterdamp and the ghost of gas in the rescue; the soft grit of soil sifting from the roof onto your face in the bury; the weight of the timber that pinned your shoulder; the candle guttering, then dying; the tight band of crushed ribs when the rescue picks finally reach you; and last — the clean mineral smell of water in a reopened seam, which is the smell of the war ending.
+
+------------------------------------------------------------
+SECTION 4 — AUTHENTIC JARGON (24 terms, plant the 8 most evocative)
+1. Tally (lamp-check) — the brass token a collier trades at the lamp room for his lamp; his identity underground. User: colliers. Act 1. PLANT.
+2. Clay kicker — a tunneller who digs seated, feet braced against the clay, the phrase the men use for themselves. User: sappers. Act 2. PLANT.
+3. Camouflet — a counter-mine charge fired to collapse an enemy gallery without breaking the surface. User: officers and sappers. Act 3. PLANT.
+4. Knock code — tapping signals through timber and clay, the only reliable voice underground. User: all tunnellers. Act 2. PLANT.
+5. Listening gallery — a short dead-end gallery where men sit in the dark and count enemy picks. User: sappers. Act 2. PLANT.
+6. Firedamp — methane bleeding from the coal that can explode; a flame turning blue is the warning. User: colliers. Act 1. PLANT.
+7. Afterdamp — the poisonous gas that follows an explosion, deadlier than the blast. User: rescue men. Act 6. PLANT.
+8. Tulip — the upward swelling of earth that signals a mine about to blow. User: officers reading the ground. Act 5. PLANT.
+9. Camber — the arched curve given a gallery roof so it holds. User: sappers. Act 2.
+10. Spiling — timber or iron sheeting driven ahead of the face in soft ground. User: sappers. Act 2.
+11. Chamber — the widened head of a gallery where the main charge is packed. User: sappers. Act 3.
+12. Bore / borehole — the drilled hole for a charge. User: sappers. Act 3.
+13. Fuse — Bickford fuse, cut to burn a measured time; every man knows how long his own fuse runs. User: sappers. Act 3.
+14. Guncotton / ammonal — the main explosives packed into chambers. User: sappers. Act 3.
+15. Deputy — the pit official who inspects the roof before the men enter. User: colliers. Act 1.
+16. Overman — the senior pit official above the deputies. User: colliers. Act 1.
+17. Onsetter — the man who works the shaft bottom, loading the cage. User: colliers. Act 1.
+18. Banksman — the man who works the pit bank at the top of the shaft. User: colliers. Act 1.
+19. Putter — a boy who hauls coal tubs in the seam. User: colliers. Act 1.
+20. Goaf — the worked-out, collapsed area behind a face. User: colliers. Act 1.
+21. Face — the working wall of the seam. User: colliers. Act 1.
+22. Seam — the coal bed; the word that means home and means death. User: colliers. Act 1.
+23. Red Dragon — the crater the British fired at Givenchy; a name the men pass like a rumor. User: sappers. Act 3.
+24. "Swallowed" — the miners' word for a tunnel or a man taken by the earth; the word the women use at the pit bank. User: everyone. Act 6.
+PLANT the 8 flagged terms in the script; keep the rest as texture the Scriptwriter can reach for without dump.
+
+------------------------------------------------------------
+SECTION 5 — THE TOLL
+------------------------------------------------------------
+Real cost mapped to acts, framed as the official histories record:
+- Recruitment and scale: by the end of the war the Royal Engineers fielded tens of tunnelling companies drawn overwhelmingly from British coalfields — the navy's loss was the army's gain, and the collier's body was a military asset. ACT 1.
+- Casualties: the tunnelling companies took casualties at a rate that competed with the infantry, in darkness, from counter-mines, collapses, and afterdamp. Approximate figures from the official histories put several thousand tunnellers dead across the war; the companies that held the clay longest burned through men fastest. ACT 3 and ACT 6.
+- The counter-mine arms race: on the Messines front in 1917 the British and German miners fought an underground war of chambers and camouflets; nineteen British mines fired on 7 June 1917 with roughly four hundred and fifty tons of ammonal, the largest man-made explosion of the war up to that date, reported as far away as London and Dublin. The ridge was taken in a day; the war continued for another year and a half. ACT 5.
+- Burnout: the paranoia of the listening post — men who sat for hours counting strokes they could not see — produced the collapse of judgment the histories call tunnel strain; men who could not trust a roof again were rotated home or kept until they broke. ACT 2 to ACT 6.
+- The medical bill: lung damage from dust and clay, chronic hearing loss, the amputations of the bury, and the hundreds of men whose bodies came up in pieces. By 1919 the term "shell shock" covered what the pits had always called the men the roof took. ACT 6.
+- The town's bill: every pit town lost its young men to either the battalions or the shafts; the women who ran the pit bank and the brickworks did not un-learn it afterward. ACT 6 and the epilogue.
+
+------------------------------------------------------------
+SECTION 6 — REAL CASES & UNWRITTEN RULES
+------------------------------------------------------------
+Real named individuals (kept as historical anchor; the protagonist, the named supporting cast, and the specific scenes are fictional):
+- Sir John Norton-Griffiths MP, "Empire Jack" — the engineer and former soldier who lobbied the War Office in early 1915 and raised the tunnelling companies, drawing on colliers and clay kickers from the British coalfields. The reason a Durham listener exists in uniform at all. ACT 1.
+- Captain William Hackett VC — a Royal Engineer sapper who, after a tunnel collapse at Givenchy in 1916, stayed with two wounded men and his own wounded crew instead of saving himself, and died with them when the gallery could not be reopened. His is the historical face of the stay-behind choice this story makes personal in Act 5 and redeems in Act 6. ACT 5 reference.
+- General Sir Herbert Plumer — the commander who planned the Messines attack around the nineteen mines, and who said he did not know whether he was changing history or not, but he intended to change geography. The date-fixing career man who is the template Saltmarsh twists. ACT 5.
+Unwritten rules, one per act:
+- ACT 1 (the pit): "You never whistle in the seam, and a deputy never wishes a man good luck going down." To do it is to invite the roof.
+- ACT 2 (the tunnels): "Near a listening post you do not strike steel on steel, you do not cough, you do not breathe like a man who is in a hurry." Silence is the ammunition.
+- ACT 3 (the crater): "You never fire a mine while a friend is still forward of the lip." The order to wait is an order that can get you killed, and men wait anyway.
+- ACT 4 (leave): "A man home on leave does not tell the town what the tunnels look like." The town reads the papers; the man watches the roof of his own mother's kitchen.
+- ACT 5 (Messines): "Before a big firing there is no mail, no leave, and no man leaves the line." One word to the wrong ear and the enemy counter-mines under you.
+- ACT 6 (after): "You never count the dead by name at the winding house." The names wait for the chapel porch, where the lists are pinned.
+
+------------------------------------------------------------
+SECTION 7 — CONTENT DENSITY SELF-AUDIT
+------------------------------------------------------------
+Counting per act: named objects/tools, concrete figures, named people/institutions, sensory details, pivotal scenes, voice lines, micro-hooks, tension compliance. Minimum per act: 10 across the first four categories, 1 pivotal, 2 voice lines, 2 micro-hooks, tension never below 5 except resolution.
+
+ACT 1 (NAR-006 to NAR-010)
+Named objects: tally, Davy lamp, winding chain, screen belt, lamp room, B seam, pit bank. Concrete figures: number seven, 1916, twenty-one years old, 1909 (the tally gift). Named: Ellen Crowther, Joey Pickering, Captain Saltmarsh, Marnley, Durham, Royal Engineers. Sensory: coal dust, lamp oil, winding-chain rattle, lamp weight, chapped knuckles. Total first four categories: 21. Pivotal scene: 1 (the boarding-up choice). Voice lines: 2 (R8 tally line, R1 clay line). Micro-hooks: 2 (tally NAR-006, Joey's laugh NAR-007). Tension: 5-6. PASS.
+
+ACT 2 (NAR-011 to NAR-016)
+Named objects: lacquered map case, felt-muffled picks, fuse, candle, knock code, spiling, clay kicker. Concrete figures: twelve strokes, pause, thirteen; the twenty-five percent mark for the antagonist reveal. Named: Gray, Saltmarsh, the Armentieres sector. Sensory: wet clay, sour sweat, waterlogged greatcoat, flat candle flame, fuse burn. Total: 17. Pivotal scene: 1 (digging out the clay-kicker, burning the shirt). Voice lines: 3 (R2 rhythm, R6 hunter, R7 spiling). Micro-hooks: 3 (map case NAR-011, knock code NAR-012, clay smell NAR-006 carried). Tension: 6-7. PASS.
+
+ACT 3 (NAR-017 to NAR-023)
+Named objects: camouflet, ammonal, guncotton, chamber, borehole, crater, photograph, tally crack. Concrete figures: 1 July 1916, Lochnagar, sixty thousand pounds of ammonal (the source's number-style retention), nineteen minutes of fuse. Named: the Lancashire battalion (unnamed soldier), the German sapper, Saltmarsh, Gray. Sensory: ammonal smell, throat-shake, soaked tunic, trembling ground, ringing ear. Total: 19. Pivotal scene: 1 (the cold open decision, NAR-003/NAR-022). Voice lines: 3 (R1 knuckles, R5 heartbeat, R2 camouflet). Micro-hooks: 3 (singer NAR-017, photograph NAR-019, tally crack NAR-022). Tension: 8-9. PASS.
+
+ACT 4 (NAR-024 to NAR-028)
+Named objects: the lacquered map case (opened), the falsified returns, the greatcoat given away, the brown shawl, the held letters. Concrete figures: fifty percent mark, seven (the crack), the widow's coin. Named: Ellen, Joey, Gray (confession), Saltmarsh, Marnley. Sensory: coal smoke, baking bread, chapel bell, father's hand, tally crack under the thumb. Total: 16. Pivotal scene: 1 (stay or go back, NAR-026). Voice lines: 2 (R4 cynic, R3 water). Micro-hooks: 3 (letters stop NAR-025, map case payoff, Saltmarsh payoff). Tension: 8 (twist) to 7. PASS.
+
+ACT 5 (NAR-029 to NAR-035)
+Named objects: nineteen mines, four hundred and fifty tons of ammonal, fuses, the boy's candle, chalk, Joey's hands. Concrete figures: 7 June 1917, Messines Ridge, nineteen mines, four hundred and fifty tons, the ridge in a day. Named: Plumer, Saltmarsh, Joey, the boy (unnamed). Sensory: cordite, crushed chalk, the nineteen-count heartbeat, the lifting ridge, trembling fingers. Total: 18. Pivotal scene: 1 (drag the boy out, then stay with Joey, NAR-033). Voice lines: 3 (R5 zero hour, R6 tired digger, R7 knock code). Micro-hooks: 3 (singer payoff NAR-033, candle NAR-030, Joey payoff NAR-036 pending). Tension: 9. PASS.
+
+ACT 6 (NAR-036 to NAR-046)
+Named objects: afterdamp, the bury timber, the last candle, the knock code, the tally worn smooth, the reopened seam, clean water. Concrete figures: March 1918, 11 November 1918, twenty-six years old, three taps. Named: Otto Berlinger, Ellen, Joey (hospital), the father. Sensory: afterdamp, sifting grit, timber weight, dying candle, crushed ribs, clean mineral water. Total: 18. Pivotal scene: 1 (tap or burn the candle, NAR-041). Voice lines: 3 (R8 tally, R3 rain, R1 clay). Micro-hooks: 4 (Joey's laugh payoff, letters payoff, shawl payoff, clay smell payoff, tally payoff). Tension: 10 (peak) to 4 (resolution). PASS.
+
+AUDIT RESULT: all six acts pass density, pivotal, voice, micro-hook, and tension checks. Every act carries 15+ concrete counts, 2-3 voice lines, 2-4 micro-hooks, and exactly one pivotal scene. No flat acts.
+
+------------------------------------------------------------
+PRE-COMMIT QUALITY GATE
+------------------------------------------------------------
+[x] OUTPUT_MODE declared (A) and justified for a 12-15 min runtime.
+[x] SOURCE_MODE: ACTIVE header present; "skeleton kept" and "what was twisted" documented in the header.
+[x] SOURCE MODE spot-check: no character name, location, prop, or full sentence from 00_SOURCE_SCRIPT.txt is reproduced. Source names (Turner, Edith, May, Nora, Harry, Collins, Evans, Shaw) do not appear. The rivet, the shipyard, the Tyne, the mole, and the little ships are all replaced. Paraphrase only.
+[x] 0A complete: specific trigger (B seam floods, Saltmarsh's cellar test), ironic trait (the ear), non-banned motivation (Coerced Specialist + Honor-Bound).
+[x] 0B ironic loop in one paragraph, first-compromise reveal defined.
+[x] 0C central symbol (tally No. 7) appears in all 6 acts, single-direction degrade.
+[x] 0D exactly 4 named characters, each with one defining physical detail.
+[x] 0E one escalating physical cost per act.
+[x] 0F pivotal scene per act, each a choice between two deadly options.
+[x] 0G cold open: action verb in first 6 words, 68 words, ends on exactly one approved pivot line, original wording.
+[x] 0H open loop architecture: 1 primary + 4 micro, plant and payoff segments assigned.
+[x] 0I mid-point twist defined at the 50% mark (NAR-024) with assumption/breaking/revealer.
+[x] 0J mirror ending drafted; the final body line echoes the cold open's "stop counting."
+[x] 0K voice bible: 18 lines across 8 registers, no register repeats 4x, no sentence over 20 words.
+[x] 0L tension curve plotted across 6 acts; no flat acts; only the resolution drops below 5.
+[x] 0M micro-hook plant schedule: 12 hooks, one every 60-90 seconds.
+[x] 0N-1 causal spine complete; every act consequence feeds the next; no "and then"; time intervals consistent (1916-1918).
+[x] 0N-2 prop ledger complete; no prop used before INTRODUCED; no LOST/DESTROYED prop revived without RECOVERED; cold-open props (tally, lamp) exist by Act 3; symbol degrades one direction only.
+[x] 0N-3 antagonist clarity: one named antagonist (Saltmarsh), single chain of command, motive plus personal wound, on-screen reveal at NAR-011 (Act 2, well inside the 25% mark), one primary capture mechanism (records).
+[x] 0N-4 twist setup triplet: plant (NAR-011), reinforce (NAR-019/022), shatter (NAR-024); cause precedes effect; PASS.
+[x] 0N-5 character function table: 4 named characters, each with one plot job; no dead weight.
+[x] 0N-6 chekhov ledger: 11 plants, all with payoff segments, no orphans.
+[x] Sections 1-6 complete (topic, setting, sensory, jargon, toll, real cases and unwritten rules).
+[x] Section 7 self-audit run; all six acts PASS.
+[x] Zero JSON, zero markdown tables in story content, zero audio reference notes. All ledgers are pipe-delimited plain-text lines, not tables.
+
+Output delivered to %PROJECT_DIR%/00_RESEARCH_NOTES.txt.
+
