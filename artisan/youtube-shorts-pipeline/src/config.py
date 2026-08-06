@@ -140,9 +140,10 @@ class Config:
         # The blurred-backdrop fill was the single most expensive filter in
         # the chain (full-res gblur every frame). 'cheap' downscales before
         # blurring for a visually identical result at a fraction of the cost.
-        self.background_mode = (os.getenv('BACKGROUND_MODE') or 'cheap').lower()
+        # Use 'crop' to fill frame without bars, 'black' for solid bars, or 'cheap'/'blur' for blurred bars
+        self.background_mode = (os.getenv('BACKGROUND_MODE') or 'crop').lower()
         if self.background_mode not in ('cheap', 'blur', 'black', 'crop'):
-            self.background_mode = 'cheap'
+            self.background_mode = 'crop'
         # How many clips to keep in the persisted plan. Rendering is capped by
         # max_clips_per_video, but keeping a deep ranked list means "give me
         # 10 more clips" costs no download and no transcription.
