@@ -1,0 +1,63 @@
+=== SEGMENT MANIFEST ===
+VIDEO_ID: MM-RENTBUY-2026-001
+CONTENT_MODE: EDUCATIONAL
+TARGET_RUNTIME: 8-12min
+TARGET_WORDCOUNT: 1500-2000
+TOTAL_SEGMENTS: 33
+=== COLUMNS ===
+ID | ROLE | IMG | AUD | DUR | SUMMARY
+=== END MANIFEST ===
+
+H-OPEN | HEADER | NO | NO | 6 | Title card: RENT VS BUY — The 20-Year Experiment
+
+H-A | HEADER | NO | NO | 6 | Part A — The Data Bomb
+
+N01 | NARRATOR | YES | YES | 22 | Two people. Same age. Same income. Same savings. Twenty years later, one has seven hundred fifty thousand dollars. The other has six hundred thousand. The difference wasn't luck. It was one decision at age thirty-two. Rent or buy.
+
+N02 | NARRATOR | YES | YES | 25 | A thirty-two-year-old earning eighty thousand dollars with eighty thousand saved faces the classic American dilemma. Rent for two thousand a month. Or buy a three hundred fifty thousand dollar home with a seven percent mortgage. The internet says renting is throwing money away. The math says something else entirely.
+
+H-B | HEADER | NO | NO | 6 | Part B — Why This Matters To You
+
+N03 | NARRATOR | YES | YES | 20 | You are probably Ryan or Steve. You want stability and a place to call your own. Or you value flexibility and keeping your options open. Either way, the financial stakes are massive. We are talking about half a million dollars in net worth difference over twenty years.
+
+N04 | NARRATOR | YES | YES | 25 | Most people decide based on what their parents did or what a realtor tells them. But the numbers don't care about tradition. They care about interest rates, appreciation, rent growth, investment returns, and the one variable no spreadsheet captures: human behavior.
+
+H-C | HEADER | NO | NO | 6 | Part C — The Mechanism: How The Math Actually Works
+
+N05 | NARRATOR | YES | YES | 30 | Ryan puts seventy thousand down and ten thousand in closing costs. His entire eighty thousand is gone before he moves in. His mortgage is twenty-eight hundred thousand at seven percent. Principal and interest: eighteen sixty-three. Add three fifty property taxes, one fifty insurance, two ninety maintenance. Total monthly: twenty-six fifty-three. In month one, only two thirty goes to equity. The other twenty-four twenty-three is the cost of owning.
+
+N06 | NARRATOR | YES | YES | 28 | Steve pays two thousand in rent. He keeps his eighty thousand in a broad stock market index fund at ten percent. Plus he invests the six fifty-three monthly difference. Year one: Ryan builds nine thousand equity. Steve's portfolio grows to one hundred thirty thousand. The renter is already ahead.
+
+N07 | NARRATOR | YES | YES | 25 | But here is the twist. Ryan's mortgage payment is fixed for thirty years. Steve's rent grows three percent annually. Two thousand becomes two thousand sixty, then twenty-one twenty-two. By year ten, Steve pays twenty-seven hundred. Ryan still pays eighteen sixty-three principal and interest. The fixed mortgage becomes a hedge against inflation.
+
+N08 | NARRATOR | YES | YES | 22 | At year ten, Ryan's home is worth four seventy to five eighteen. His equity: two thirty to two seventy-eight. Steve's portfolio: two ninety thousand. Steve still leads in liquid assets, but the gap is closing. Ryan's housing cost is now significantly lower than Steve's rent.
+
+N09 | NARRATOR | YES | YES | 25 | Year twenty. Ryan's home: six thirty-two to seven sixty-seven. Mortgage balance: one sixty. Equity: four seventy-two to six hundred six thousand. Steve's portfolio: seven fifty thousand. The renter wins on paper. But Steve pays thirty-six hundred in rent with no end date. Ryan has ten years left on his mortgage, then zero principal and interest.
+
+H-D | HEADER | NO | NO | 6 | Part D — The Four Factors That Decide The Winner
+
+N10 | NARRATOR | YES | YES | 28 | Factor one: Time horizon. If Ryan sells at year three, closing costs going in and selling costs coming out wipe out his equity. Buying needs seven to ten years minimum to absorb transaction costs. The longer you stay, the more the fixed mortgage works in your favor.
+
+N11 | NARRATOR | YES | YES | 25 | Factor two: Price-to-rent ratio. Three fifty thousand home divided by twenty-four thousand annual rent equals fourteen point six. Below fifteen favors buying. Above twenty favors renting. This single number captures whether home prices are reasonable relative to rents in your market.
+
+N12 | NARRATOR | YES | YES | 28 | Factor three: Discipline. Steve's seven fifty thousand portfolio assumes he invested the difference every month for twenty years. Through crashes. Through panic. Through lifestyle creep. Most people don't. Ryan's mortgage forces savings. The bank decides for him. Behavioral alpha is real.
+
+N13 | NARRATOR | YES | YES | 22 | Factor four: Mobility and concentration. Steve can move tomorrow. Ryan has a house to sell or rent out. Steve owns thousands of companies. Ryan owns one house on one street. If the local economy tanks, Steve rebalances. Ryan cannot sell the upstairs bathroom.
+
+H-E | HEADER | NO | NO | 6 | Part E — The Mistakes That Cost Six Figures
+
+N14 | NARRATOR | YES | YES | 28 | Mistake one: Buying with a short time horizon. Three years of ownership can leave you underwater after transaction costs. The five percent rule: if you might move within five years, rent. The math only works if you stay long enough for appreciation to overcome the entry and exit fees.
+
+N15 | NARRATOR | YES | YES | 25 | Mistake two: Renting but not investing. The entire renter advantage vanishes if you spend the monthly savings. A nicer car. A vacation. Lifestyle inflation eats the spread. The spreadsheet assumes discipline. Humans have other plans.
+
+N16 | NARRATOR | YES | YES | 22 | Mistake three: Ignoring total cost of ownership. Ryan's mortgage is eighteen sixty-three. His real monthly cost is twenty-six fifty-three. Taxes. Insurance. Maintenance. The roof that needs twelve thousand dollars. The water heater that dies on a Saturday. Buying is not just a mortgage payment.
+
+N17 | NARRATOR | YES | YES | 25 | Mistake four: Treating your home as an investment. It is an illiquid, concentrated asset with ongoing costs. You cannot sell the kitchen to fund retirement. Home equity is wealth, but it is not spendable wealth. Diversification matters.
+
+H-F | HEADER | NO | NO | 6 | Part F — Your Decision Framework
+
+N18 | NARRATOR | YES | YES | 25 | Ask yourself two questions. How long will you actually stay? Be honest. If the answer is less than seven years, rent. The math punishes short-term buyers. Second: will you genuinely invest the difference? If you rent, automate the investment. If you won't, buy. The forced savings of a mortgage beats the hypothetical returns of an undisciplined renter.
+
+N19 | NARRATOR | YES | YES | 22 | The winner isn't the homeowner. The winner isn't the renter. The winner is the person who understands the tradeoffs and acts consistently. Ryan needed to stay. Steve needed to invest. Twenty years later, the difference wasn't rent versus buy. It was discipline versus drift.
+
+H-CLOSE | HEADER | NO | NO | 8 | Subscribe to Money Matrix for more videos that turn financial complexity into simple action.
