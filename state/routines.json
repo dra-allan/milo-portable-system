@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1785975602.6977165,
+  "updated_at": 1785975674.061675,
   "routines": [
     {
       "name": "curate-skills",
@@ -23,9 +23,9 @@
       "builtin": true,
       "created_at": 1785745900.0468326,
       "last_run": 0.0,
-      "last_status": "",
+      "last_status": "skipped",
       "last_output": "",
-      "next_run": 1785805200.0,
+      "next_run": 1785978000.0,
       "runs": 0,
       "failures": 0
     },
@@ -78,9 +78,9 @@
       "builtin": true,
       "created_at": 1785745900.0449665,
       "last_run": 0.0,
-      "last_status": "",
+      "last_status": "skipped",
       "last_output": "",
-      "next_run": 1785746800.0449715,
+      "next_run": 1785975974.055178,
       "runs": 0,
       "failures": 0
     },
@@ -105,9 +105,9 @@
       "builtin": true,
       "created_at": 1785745900.054286,
       "last_run": 0.0,
-      "last_status": "",
+      "last_status": "skipped",
       "last_output": "",
-      "next_run": 1785746800.0542908,
+      "next_run": 1785975974.055178,
       "runs": 0,
       "failures": 0
     },
@@ -160,9 +160,9 @@
       "builtin": true,
       "created_at": 1785745900.0582633,
       "last_run": 0.0,
-      "last_status": "",
+      "last_status": "skipped",
       "last_output": "",
-      "next_run": 1785816000.0,
+      "next_run": 1785988800.0,
       "runs": 0,
       "failures": 0
     },
@@ -187,9 +187,9 @@
       "builtin": true,
       "created_at": 1785745900.0563133,
       "last_run": 0.0,
-      "last_status": "",
+      "last_status": "skipped",
       "last_output": "",
-      "next_run": 1785808800.0,
+      "next_run": 1785981600.0,
       "runs": 0,
       "failures": 0
     },
@@ -213,9 +213,9 @@
       "builtin": true,
       "created_at": 1785745900.0510957,
       "last_run": 0.0,
-      "last_status": "",
+      "last_status": "skipped",
       "last_output": "",
-      "next_run": 1785767500.0511024,
+      "next_run": 1785997274.055178,
       "runs": 0,
       "failures": 0
     }
