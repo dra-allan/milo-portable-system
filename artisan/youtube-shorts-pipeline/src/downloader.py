@@ -148,9 +148,12 @@ class YouTubeDownloader:
         height = int(getattr(config, 'download_height', 1080) or 1080)
         # Force a specific known-working format to avoid format selection issues
         # Format 18 is 640x360 mp4 with AAC audio - the only combined stream available
+        format_string = f'18/best[height<={height}]/best'
+        print(f"DEBUG: Height = {height}")
+        print(f"DEBUG: Format string = {format_string}")
         self.ydl_opts = {
             # Format selection: try specific format first, then fall back
-            'format': '18/best[height<={height}]/best',
+            'format': format_string,
             # Download straight to the id-prefixed name: no post-hoc rename,
             # so the file is findable by ID forever.
             'outtmpl': str(self.temp_dir / f'%(id)s{ID_SEPARATOR}%(title).80B.%(ext)s'),
