@@ -24,7 +24,7 @@ LGRAY  = (200, 200, 200)
 DMID   = (120, 130, 150)
 
 W, H = 1920, 1080
-FFMPEG = r"C:\Users\user\Desktop\AGENTIC WORK\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
+FFMPEG = r"C:\Users\user\Desktop\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
 
 
 def _font(font_size=32):
