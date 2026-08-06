@@ -43,6 +43,7 @@ build/
 artisan/youtube-shorts-pipeline/data/temp/
 artisan/youtube-shorts-pipeline/data/shorts/
 artisan/youtube-shorts-pipeline/data/logs/
+artisan/youtube-shorts-pipeline/data/transcripts/
 artisan/youtube-shorts-pipeline/data/library.json
 artisan/youtube-shorts-pipeline/data/*.db
 artisan/youtube-shorts-pipeline/config/.env
