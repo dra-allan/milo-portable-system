@@ -32,3 +32,24 @@ Thumbs.db
 /milo.py
 /MANIFEST.json
 /.env.template
+
+# pip build artifacts
+build/
+
+# Shorts pipeline local working data. Downloaded videos, rendered clips, the
+# media-library index and the SQLite tracking DB are machine-local state, not
+# source. Committing them would push gigabytes of video and leak which
+# channels were processed.
+artisan/youtube-shorts-pipeline/data/temp/
+artisan/youtube-shorts-pipeline/data/shorts/
+artisan/youtube-shorts-pipeline/data/logs/
+artisan/youtube-shorts-pipeline/data/library.json
+artisan/youtube-shorts-pipeline/data/*.db
+artisan/youtube-shorts-pipeline/config/.env
+artisan/youtube-shorts-pipeline/config/youtube_token.json
+
+# Long-form pipeline render scratch + outputs
+artisan/mm_pipeline/**/_work/
+artisan/mm_pipeline/**/*_FINAL.mp4
+artisan/mm_pipeline/**/*_FINAL.wav
+artisan/mm_pipeline/**/media_cache/
