@@ -141,6 +141,7 @@ class Config:
         # the chain (full-res gblur every frame). 'cheap' downscales before
         # blurring for a visually identical result at a fraction of the cost.
         # Use 'crop' to fill frame without bars, 'black' for solid bars, or 'cheap'/'blur' for blurred bars
+# Use 'smart' for intelligent person-aware cropping (face detection based)
         self.background_mode = (os.getenv('BACKGROUND_MODE') or 'crop').lower()
         if self.background_mode not in ('cheap', 'blur', 'black', 'crop'):
             self.background_mode = 'crop'
