@@ -200,17 +200,12 @@ echo 4. pop       - Pop & bounce (neon highlights, black outline)
 echo 5. kinetic   - Kinetic karaoke (word-by-word highlight)
 .
 set /p cap_choice="Select caption style (1-5): "
-if "%cap_choice%"=="1" (
-    set "new_style=default"
-) else if "%cap_choice%"=="2" (
-    set "new_style=hormozi"
-) else if "%cap_choice%"=="3" (
-    set "new_style=minimalist"
-) else if "%cap_choice%"=="4" (
-    set "new_style=pop"
-) else if "%cap_choice%"=="5" (
-    set "new_style=kinetic"
-) else (
+if "%cap_choice%"=="1" set "new_style=default"
+if "%cap_choice%"=="2" set "new_style=hormozi"
+if "%cap_choice%"=="3" set "new_style=minimalist"
+if "%cap_choice%"=="4" set "new_style=pop"
+if "%cap_choice%"=="5" set "new_style=kinetic"
+if not defined new_style (
     echo Invalid choice!
     pause
     goto set_caption
