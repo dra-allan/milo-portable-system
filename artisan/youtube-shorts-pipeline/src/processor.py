@@ -1,247 +1,335 @@
+"""Highlight detection for the shorts pipeline.
+
+Historical bug (fixed here): candidate clips were built as fixed 5-second
+sliding windows and then filtered with ``min_segment_length <= duration <=
+max_segment_length``.  With the shipped defaults (min=15s, max=60s) a 5s
+window can never satisfy the filter, so the selector returned an empty list
+for *every* video -- exactly the "Found 0 highlight segments from 723
+windows" seen in production logs.
+
+The rewrite builds variable-length candidates that grow along real
+transcript boundaries until they land inside the requested duration band, so
+the candidates are valid Shorts by construction.
+"""
+
 import re
-from typing import List, Dict, Tuple, Optional
-from utils import setup_logger
-from config import config
+from typing import Dict, List, Optional
+
+try:  # package-relative first (python -m src.main)
+    from .utils import setup_logger
+except ImportError:  # pragma: no cover - direct script execution
+    from utils import setup_logger
 
 logger = setup_logger(__name__)
 
+# Words that signal a hook / payoff moment rather than filler narration.
+HOOK_PHRASES = (
+    "the secret", "nobody tells you", "here is why", "here's why",
+    "the truth", "watch this", "look at this", "check this out",
+    "the problem is", "the trick is", "most people", "you need to",
+    "i can't believe", "i cannot believe", "no way", "oh my god",
+    "let me show you", "this is how", "the reason", "turns out",
+    "biggest mistake", "never do", "always do", "what happens",
+)
+
+FILLER_WORDS = ("um", "uh", "erm", "hmm", "like", "you know", "i mean", "kinda", "sorta")
+
+
 class ContentProcessor:
+    """Scores transcript regions and selects the best Shorts candidates."""
+
     def __init__(self):
-        """Initialize content processor with niche-specific settings"""
         pass
 
+    # ------------------------------------------------------------------
+    # Scoring
+    # ------------------------------------------------------------------
     def score_segment(self, segment: Dict, prev_segment: Optional[Dict] = None,
-                     next_segment: Optional[Dict] = None, niche_keywords: List[str] = None) -> float:
-        """
-        Score a transcript segment for "interestingness"
+                      next_segment: Optional[Dict] = None,
+                      niche_keywords: Optional[List[str]] = None) -> float:
+        """Score one candidate region for "interestingness".
 
-        Args:
-            segment: Dictionary with 'text', 'start', 'end', 'confidence' keys
-            prev_segment: Previous segment (for pause detection)
-            next_segment: Next segment (for pause detection)
-            niche_keywords: List of keywords relevant to the niche
-
-        Returns:
-            Score (higher = more interesting)
+        Returns a non-negative score. Kept backwards compatible with the
+        previous signature because tests and callers rely on it.
         """
         if niche_keywords is None:
             niche_keywords = []
+
+        raw_text = segment.get('text', '') or ''
+        text = raw_text.lower()
+        duration = float(segment['end']) - float(segment['start'])
+        if duration <= 0:
+            return 0.0
+
+        words = raw_text.split()
+        word_count = len(words)
+        if word_count == 0:
+            return 0.0
 
         score = 0.0
-        text = segment['text'].lower()
-        duration = segment['end'] - segment['start']
 
-        # 1. Speech density (words per second) - ideal range 2-4 wps
-        words = len(segment['text'].split())
-        if duration > 0:
-            wps = words / duration
-            # Optimal range: 2-4 words per second
-            if 2 <= wps <= 4:
-                score += wps * 2  # Bonus for good speech rate
-            elif wps < 2:
-                score += wps  # Penalize too slow
-            else:
-                score += max(0, 8 - wps)  # Penalize too fast (but cap)
+        # 1. Speech density. Silence and rambling both make bad Shorts.
+        wps = word_count / duration
+        if 2.0 <= wps <= 4.5:
+            score += 6.0
+        elif wps < 2.0:
+            score += wps * 1.5          # sparse speech, weak but not zero
+        else:
+            score += max(0.0, 6.0 - (wps - 4.5) * 2)
 
-        # 2. Keyword matches (niche-specific)
-        keyword_hits = sum(1 for kw in niche_keywords if kw.lower() in text)
-        score += keyword_hits * 3
+        # 2. Niche keywords. Normalised per-clip so a 60s clip full of the
+        #    same keyword cannot dwarf a tight 20s clip.
+        keyword_hits = sum(1 for kw in niche_keywords if kw and kw.lower() in text)
+        score += min(keyword_hits, 6) * 2.5
 
-        # 3. Enthusiasm signals (exclamations, questions, caps)
-        excited = text.count('!') + text.count('?') * 0.5
-        excited += sum(1 for word in segment['text'].split()
-                      if len(word) > 2 and word.isupper() and word.isalpha())
-        score += excited * 2
+        # 3. Hook phrases -- the strongest retention signal we can detect
+        #    from text alone.
+        hook_hits = sum(1 for phrase in HOOK_PHRASES if phrase in text)
+        score += min(hook_hits, 4) * 4.0
 
-        # 4. Pause boundaries (natural breaks)
+        # 4. Enthusiasm signals.
+        excited = raw_text.count('!') + raw_text.count('?') * 0.5
+        excited += sum(1 for w in words if len(w) > 2 and w.isupper() and w.isalpha())
+        score += min(excited, 6) * 1.5
+
+        # 5. Clean entry/exit on a natural pause.
         if prev_segment:
-            pause_gap = segment['start'] - prev_segment['end']
-            if 0.3 <= pause_gap <= 2.0:  # Natural breathing pause
-                score += 2
-            elif pause_gap < 0.3:
-                score -= 1  # Too rushed
-
+            gap = float(segment['start']) - float(prev_segment['end'])
+            if 0.25 <= gap <= 2.5:
+                score += 2.0
+            elif gap < 0.1:
+                score -= 1.5            # starts mid-sentence
         if next_segment:
-            pause_gap = next_segment['start'] - segment['end']
-            if 0.3 <= pause_gap <= 2.0:  # Natural breathing pause
-                score += 1
+            gap = float(next_segment['start']) - float(segment['end'])
+            if 0.25 <= gap <= 2.5:
+                score += 1.5
+            elif gap < 0.1:
+                score -= 1.0            # cuts off mid-sentence
 
-        # 5. Length preference (15-60 seconds ideal for Shorts)
-        if 15 <= duration <= 60:
-            score += 5
-        elif duration < 10:
-            score -= 2  # Too short
-        elif duration > 90:
-            score -= 3  # Too long (might need splitting)
+        # 6. Sentence completeness -- ending on punctuation reads far better.
+        stripped = raw_text.strip()
+        if stripped.endswith(('.', '!', '?')):
+            score += 2.0
+        if stripped[:1].isupper():
+            score += 1.0
 
-        # 6. Content richness (unique words ratio)
-        if words > 0:
-            unique_words = len(set(re.findall(r'\b[a-z]+\b', text)))
-            richness = unique_words / words
-            score += richness * 2  # Bonus for diverse vocabulary
+        # 7. Vocabulary richness.
+        unique_words = len(set(re.findall(r"[a-z']+", text)))
+        score += (unique_words / word_count) * 3.0
 
-        # 7. Avoid filler words (simple heuristic)
-        filler_words = ['um', 'uh', 'like', 'you know', 'so', 'well']
-        filler_count = sum(text.count(fw) for fw in filler_words)
-        if words > 0:
-            filler_ratio = filler_count / words
-            score -= filler_ratio * 3  # Penalize fillers
+        # 8. Filler penalty (token-accurate, not substring counting -- the old
+        #    version matched "like" inside "unlike" and "so" inside "also").
+        tokens = re.findall(r"[a-z']+", text)
+        filler_count = sum(1 for t in tokens if t in FILLER_WORDS)
+        filler_count += sum(text.count(p) for p in FILLER_WORDS if ' ' in p)
+        score -= (filler_count / word_count) * 8.0
 
-        return max(0, score)  # Ensure non-negative
+        # 9. Duration sweet spot for Shorts retention (20-45s).
+        if 20.0 <= duration <= 45.0:
+            score += 3.0
+        elif duration < 12.0:
+            score -= 2.0
+
+        return max(0.0, score)
+
+    # ------------------------------------------------------------------
+    # Candidate construction
+    # ------------------------------------------------------------------
+    def _build_candidates(self, transcript: List[Dict], niche_keywords: List[str],
+                          min_len: float, max_len: float) -> List[Dict]:
+        """Grow candidate clips from every transcript boundary.
+
+        A candidate starts at transcript[i] and absorbs following segments
+        until its duration reaches ``min_len``; every extension that still
+        fits inside ``max_len`` is emitted. This guarantees the duration
+        filter downstream can actually be satisfied.
+        """
+        candidates: List[Dict] = []
+        n = len(transcript)
+
+        # Emitting *every* valid extension of every start point is O(n * k)
+        # and produced >20k candidates on a 30-minute source. We only need a
+        # few well-spaced lengths per start point, so keep the first
+        # MAX_LENGTHS_PER_START valid extensions (shortest ones, which are
+        # the tightest cuts) and move on.
+        MAX_LENGTHS_PER_START = 4
+
+        for i in range(n):
+            start = float(transcript[i]['start'])
+            texts: List[str] = []
+            emitted = 0
+
+            for j in range(i, n):
+                seg = transcript[j]
+                texts.append((seg.get('text') or '').strip())
+                end = float(seg['end'])
+                duration = end - start
+
+                if duration > max_len:
+                    break
+                if duration < min_len:
+                    continue
+                if emitted >= MAX_LENGTHS_PER_START:
+                    break
+
+                prev_seg = transcript[i - 1] if i > 0 else None
+                next_seg = transcript[j + 1] if j + 1 < n else None
+
+                candidate = {
+                    'start': start,
+                    'end': end,
+                    'text': ' '.join(t for t in texts if t),
+                    'first_index': i,
+                    'last_index': j,
+                }
+                candidate['score'] = self.score_segment(
+                    candidate, prev_seg, next_seg, niche_keywords
+                )
+                candidates.append(candidate)
+                emitted += 1
+
+        return candidates
 
     def find_highlight_segments(self, transcript: List[Dict],
-                               niche_keywords: List[str] = None,
-                               min_segment_length: int = 15,
-                               max_segment_length: int = 60,
-                               min_gap_between: int = 30) -> List[Dict]:
-        """
-        Find interesting segments in a transcript using sliding window scoring
+                                niche_keywords: Optional[List[str]] = None,
+                                min_segment_length: int = 15,
+                                max_segment_length: int = 60,
+                                min_gap_between: int = 30,
+                                max_clips: int = 8,
+                                min_score: float = 0.0) -> List[Dict]:
+        """Select the best non-overlapping Shorts candidates.
 
         Args:
-            transcript: List of transcript segments from Whisper
-            niche_keywords: Keywords boost score for this niche
-            min_segment_length: Minimum clip length in seconds
-            max_segment_length: Maximum clip length in seconds
-            min_gap_between: Minimum gap between selected clips (seconds)
+            transcript: Whisper segments with 'text', 'start', 'end'.
+            niche_keywords: Keywords that boost a clip's score.
+            min_segment_length: Shortest acceptable clip, seconds.
+            max_segment_length: Longest acceptable clip, seconds.
+            min_gap_between: Minimum spacing between two chosen clips.
+            max_clips: Hard cap on clips returned per source video.
+            min_score: Score floor; ignored if it would return nothing.
 
         Returns:
-            List of selected segments with 'start', 'end', 'text', 'score' keys
+            Chronologically sorted list of clips with start/end/text/score.
         """
         if niche_keywords is None:
             niche_keywords = []
-
-        if not transcript or len(transcript) == 0:
+        if not transcript:
+            logger.warning("Empty transcript, no highlights to find")
             return []
 
-        # Create 5-second sliding windows with 2.5 second step
-        window_size = 5.0  # seconds
-        step_size = 2.5   # seconds
+        transcript = sorted(
+            (s for s in transcript if s.get('end') is not None and s.get('start') is not None),
+            key=lambda s: float(s['start']),
+        )
 
-        # Get video duration from last segment
-        video_end = transcript[-1]['end'] if transcript else 0
+        min_len = float(min_segment_length)
+        max_len = float(max_segment_length)
+        if min_len > max_len:
+            logger.warning(
+                "min_segment_length (%.1f) > max_segment_length (%.1f); swapping",
+                min_len, max_len,
+            )
+            min_len, max_len = max_len, min_len
 
-        # Generate sliding windows
-        windows = []
-        start_time = 0
-        while start_time < video_end:
-            end_time = min(start_time + window_size, video_end)
-
-            # Find segments that overlap with this window
-            overlapping_segments = [
-                seg for seg in transcript
-                if not (seg['end'] <= start_time or seg['start'] >= end_time)
-            ]
-
-            if overlapping_segments:
-                # Combine text from overlapping segments
-                combined_text = ' '.join([seg['text'] for seg in overlapping_segments])
-
-                # Calculate average confidence
-                avg_confidence = sum([seg.get('confidence', 0) for seg in overlapping_segments]) / len(overlapping_segments)
-
-                # Create window segment
-                window_segment = {
-                    'text': combined_text,
-                    'start': start_time,
-                    'end': end_time,
-                    'confidence': avg_confidence
-                }
-
-                # Score this window (need previous and next windows for pause detection)
-                prev_window = windows[-1] if windows else None
-                # Next window unknown yet, will be set in next iteration
-
-                score = self.score_segment(
-                    window_segment,
-                    prev_window,
-                    None,  # Next window unknown yet
-                    niche_keywords
-                )
-
-                window_segment['score'] = score
-                windows.append(window_segment)
-
-            start_time += step_size
-
-        # Now go back and set proper next_window references for scoring
-        for i, window in enumerate(windows):
-            prev_window = windows[i-1] if i > 0 else None
-            next_window = windows[i+1] if i < len(windows)-1 else None
-
-            window['score'] = self.score_segment(
-                window,
-                prev_window,
-                next_window,
-                niche_keywords
+        total_span = float(transcript[-1]['end']) - float(transcript[0]['start'])
+        if total_span < min_len:
+            # Source is shorter than one clip; relax so short sources still work.
+            min_len = max(3.0, total_span * 0.6)
+            logger.info(
+                "Source span %.1fs is shorter than min clip length; relaxing min to %.1fs",
+                total_span, min_len,
             )
 
-        # Sort windows by score (descending)
-        windows.sort(key=lambda x: x['score'], reverse=True)
+        candidates = self._build_candidates(transcript, niche_keywords, min_len, max_len)
+        if not candidates:
+            logger.warning(
+                "No candidate clips could be built from %d transcript segments "
+                "(span %.1fs, band %.1f-%.1fs)",
+                len(transcript), total_span, min_len, max_len,
+            )
+            return []
 
-        # Select non-overlapping windows using greedy algorithm
-        selected_windows = []
-        for window in windows:
-            # Check if this window overlaps with any already selected window
-            overlaps = False
-            for selected in selected_windows:
-                # Check for overlap considering minimum gap
-                # Two windows are too close if:
-                # window starts before selected ends + min_gap AND selected starts before window ends + min_gap
-                if window['start'] < selected['end'] + min_gap_between and \
-                   selected['start'] < window['end'] + min_gap_between:
-                    overlaps = True
+        # Prefer higher score, then longer clip as tie-break.
+        candidates.sort(key=lambda c: (c['score'], c['end'] - c['start']), reverse=True)
+
+        selected = self._select_non_overlapping(
+            candidates, min_gap_between, max_clips, min_score
+        )
+
+        # Never return zero clips just because the score floor was too strict:
+        # a run that downloads and transcribes a 30-minute video and then
+        # produces nothing is the failure mode we are fixing.
+        if not selected and min_score > 0:
+            logger.warning(
+                "No clip cleared min_score=%.2f; falling back to top-scoring clips",
+                min_score,
+            )
+            selected = self._select_non_overlapping(
+                candidates, min_gap_between, max_clips, 0.0
+            )
+
+        selected.sort(key=lambda c: c['start'])
+        logger.info(
+            "Selected %d highlight clips from %d candidates (%d transcript segments)",
+            len(selected), len(candidates), len(transcript),
+        )
+        for idx, clip in enumerate(selected, 1):
+            logger.info(
+                "  clip %d: %.1f-%.1fs (%.1fs) score=%.2f | %s",
+                idx, clip['start'], clip['end'], clip['end'] - clip['start'],
+                clip['score'], clip['text'][:70].replace('\n', ' '),
+            )
+        return selected
+
+    def _select_non_overlapping(self, candidates: List[Dict], min_gap: float,
+                                max_clips: int, min_score: float) -> List[Dict]:
+        """Greedy non-maximum suppression over scored candidates."""
+        selected: List[Dict] = []
+
+        for cand in candidates:
+            if len(selected) >= max_clips:
+                break
+            if cand['score'] < min_score:
+                continue
+
+            conflict = False
+            for chosen in selected:
+                # Reject if the clips overlap, or sit closer than min_gap.
+                if (cand['start'] < chosen['end'] + min_gap
+                        and chosen['start'] < cand['end'] + min_gap):
+                    conflict = True
                     break
+            if conflict:
+                continue
 
-            # Also check length constraints
-            duration = window['end'] - window['start']
-            if min_segment_length <= duration <= max_segment_length and not overlaps:
-                selected_windows.append({
-                    'start': window['start'],
-                    'end': window['end'],
-                    'text': window['text'],
-                    'score': window['score']
-                })
+            selected.append({
+                'start': cand['start'],
+                'end': cand['end'],
+                'text': cand['text'],
+                'score': cand['score'],
+            })
 
-        # Sort selected windows by start time
-        selected_windows.sort(key=lambda x: x['start'])
+        return selected
 
-        logger.info(f"Found {len(selected_windows)} highlight segments from {len(windows)} windows")
-        return selected_windows
-
+    # ------------------------------------------------------------------
     def merge_close_segments(self, segments: List[Dict], max_gap: float = 5.0) -> List[Dict]:
-        """
-        Merge segments that are close together to create longer clips
-
-        Args:
-            segments: List of segments with 'start', 'end' keys
-            max_gap: Maximum gap between segments to merge (seconds)
-
-        Returns:
-            List of merged segments
-        """
+        """Merge segments separated by less than ``max_gap`` seconds."""
         if not segments:
             return []
 
-        # Sort by start time
-        segments.sort(key=lambda x: x['start'])
+        ordered = sorted(segments, key=lambda x: float(x['start']))
+        merged: List[Dict] = []
+        current = dict(ordered[0])
 
-        merged = []
-        current = segments[0].copy()
-
-        for next_seg in segments[1:]:
-            # If gap is small enough, merge
-            if next_seg['start'] - current['end'] <= max_gap:
-                # Extend current segment
-                current['end'] = next_seg['end']
-                current['text'] += ' ' + next_seg['text']
-                # Average the scores
-                current['score'] = (current['score'] + next_seg['score']) / 2
+        for nxt in ordered[1:]:
+            if float(nxt['start']) - float(current['end']) <= max_gap:
+                current['end'] = max(float(current['end']), float(nxt['end']))
+                current['text'] = f"{current.get('text', '')} {nxt.get('text', '')}".strip()
+                if 'score' in current and 'score' in nxt:
+                    current['score'] = (current['score'] + nxt['score']) / 2
             else:
-                # No overlap, add current and move to next
                 merged.append(current)
-                current = next_seg.copy()
+                current = dict(nxt)
 
-        # Don't forget the last segment
         merged.append(current)
-
         return merged
