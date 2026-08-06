@@ -15,6 +15,7 @@ Modes:
   test      -- verify ffmpeg/deps/config/credentials, no downloads
   once      -- process one video (URL or ID), or sweep configured niches
   library   -- list/process videos already downloaded to data/temp
+  stats     -- fetch YouTube metrics for uploaded shorts (feedback loop)
   schedule  -- run on the configured cron times until interrupted
 
 RESUMABILITY
@@ -486,6 +487,20 @@ class ShortsPipeline:
                 logger.info("Uploaded clip %d as %s", item['index'], short_id)
                 self.stats['shorts_uploaded'] += 1
                 self.db.mark_short_uploaded(video_id, item['index'], short_id)
+                # Snapshot stats immediately: YouTube returns view counts that
+                # start near zero, but having the row exist means later
+                # --mode stats runs can compare growth over time.
+                try:
+                    stats = uploader.fetch_statistics(short_id)
+                    if stats:
+                        self.db.record_performance(
+                            short_id, video_id, item['index'],
+                            views=stats['views'], likes=stats['likes'],
+                            comments=stats['comments'], favorites=stats['favorites'],
+                        )
+                        logger.info("Recorded initial stats for %s", short_id)
+                except Exception as exc:
+                    logger.warning("Could not snapshot stats for %s: %s", short_id, exc)
             else:
                 logger.error("Upload failed for clip %d (kept locally)", item['index'])
                 self.stats['errors'] += 1
@@ -536,6 +551,74 @@ class ShortsPipeline:
             self.stats['shorts_uploaded'], self.stats['errors'],
         )
         return dict(self.stats)
+
+
+def run_stats_mode(pipeline: 'ShortsPipeline', args) -> int:
+    """Fetch current YouTube metrics for every uploaded short and record them.
+
+    This is the feedback loop, runnable as often as you like: each run updates
+    short_performance rows for clips whose last fetch is older than
+    --stats-age-hours (default 24), then prints the current top performers.
+    """
+    try:
+        uploader = pipeline.uploader
+    except Exception as exc:
+        logger.error("Cannot start the YouTube client for stats: %s", exc)
+        print("Stats mode needs YouTube credentials (YOUTUBE_API_KEY or OAuth).")
+        return 1
+
+    pending = pipeline.db.shorts_needing_stats(
+        limit=args.limit, max_age_hours=args.stats_age_hours,
+    )
+    if not pending:
+        print("No uploaded shorts need a stats refresh (all fetched within "
+              f"{args.stats_age_hours}h, or none uploaded yet).")
+    else:
+        print(f"Fetching stats for {len(pending)} uploaded short(s)...")
+        updated = 0
+        for short in pending:
+            short_id = short['youtube_short_id']
+            try:
+                stats = uploader.fetch_statistics(short_id)
+            except Exception as exc:
+                logger.warning("Stats fetch failed for %s: %s", short_id, exc)
+                continue
+            if not stats:
+                logger.warning("No stats returned for %s", short_id)
+                continue
+            pipeline.db.record_performance(
+                short_id, short['source_video_id'], short['segment_index'],
+                views=stats['views'], likes=stats['likes'],
+                comments=stats['comments'], favorites=stats['favorites'],
+            )
+            updated += 1
+            logger.info(
+                "Recorded %s: %d views / %d likes / %d comments",
+                short_id, stats['views'], stats['likes'], stats['comments'],
+            )
+        print(f"Updated {updated} short(s).")
+
+    # Always show the current leaderboard, even with nothing new to fetch.
+    summary = pipeline.db.performance_summary()
+    print(f"\nTracked clips: {summary['tracked']} | "
+          f"with views: {summary['with_views']} | "
+          f"total views: {summary['total_views']} | "
+          f"avg views/clip: {summary['avg_views']}")
+
+    report = pipeline.db.performance_report(limit=args.top)
+    if report:
+        print(f"\nTop {len(report)} clips by views:")
+        for r in report:
+            print(
+                f"  {r['views']:>7} views | {r['likes']:>5} likes | "
+                f"{r['comments']:>4} cmts | "
+                f"seg {r['segment_index']} ({r['start_time']:.0f}-{r['end_time']:.0f}s) | "
+                f"{str(r['title'])[:44]}"
+            )
+    else:
+        print("\nNo performance data yet. Upload some Shorts and run this again.")
+
+    return 0
 
 
 # ----------------------------------------------------------------------
@@ -642,10 +725,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument('target', nargs='?', default=None,
                         help='YouTube URL or 11-character video ID')
-    parser.add_argument('--mode', choices=['once', 'schedule', 'test', 'library'],
+    parser.add_argument('--mode', choices=['once', 'schedule', 'test', 'library', 'stats'],
                         default='once',
                         help="'library' lists videos already downloaded and can "
-                             "process them without touching the network")
+                             "process them without touching the network; "
+                             "'stats' fetches YouTube metrics for uploaded shorts")
     parser.add_argument('--niche', default=None,
                         help='Niche name from config/niches.yaml (default: auto-detect)')
     parser.add_argument('--videos', type=int, default=1,
@@ -666,6 +750,13 @@ def build_parser() -> argparse.ArgumentParser:
                         help='Whisper model size (tiny/base/small/medium/large)')
     parser.add_argument('--clean', action='store_true',
                         help='Delete temp files older than 24h before running')
+    parser.add_argument('--limit', type=int, default=50,
+                        help='With --mode stats: max shorts to refresh (default 50)')
+    parser.add_argument('--stats-age-hours', type=int, default=24,
+                        help='With --mode stats: refresh clips last fetched more '
+                             'than N hours ago (default 24)')
+    parser.add_argument('--top', type=int, default=10,
+                        help='With --mode stats: show top N clips by views (default 10)')
     return parser
 
 
@@ -687,6 +778,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
 
     pipeline = ShortsPipeline(upload=args.upload, whisper_model=args.model)
+
+    if args.mode == 'stats':
+        return run_stats_mode(pipeline, args)
 
     if args.mode == 'schedule':
         return _run_schedule(pipeline, args)
@@ -806,6 +900,19 @@ def _run_schedule(pipeline: 'ShortsPipeline', args) -> int:
             sched.add_daily_job(job, cron, job_id=f'shorts_pipeline_{i}')
         except Exception as exc:
             logger.error("Bad cron entry %r: %s", cron, exc)
+
+    # Feedback loop: refresh YouTube metrics once a day on top of the runs.
+    stats_cron = os.getenv('STATS_RUN_TIME', '0 8 * * *')
+    try:
+        def stats_job():
+            try:
+                run_stats_mode(pipeline, args)
+            except Exception as exc:
+                logger.error("Scheduled stats refresh failed: %s", exc)
+        sched.add_daily_job(stats_job, stats_cron, job_id='short_stats_refresh')
+        logger.info("Stats refresh scheduled at %s", stats_cron)
+    except Exception as exc:
+        logger.error("Bad STATS_RUN_TIME cron %r: %s", stats_cron, exc)
 
     sched.start()
     logger.info("Scheduler running (%s). Press Ctrl+C to stop.", ', '.join(run_times))
