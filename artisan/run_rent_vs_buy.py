@@ -70,6 +70,7 @@ def run_tts():
         "--audio-dir", str(audio_dir),
         "--format", "wav",
         "--voice", "Charon",
+        "--force",
     ]
     
     env = os.environ.copy()
