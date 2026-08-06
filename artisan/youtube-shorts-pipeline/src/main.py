@@ -14,13 +14,29 @@ scheduler, database) without changing their public APIs.
 Modes:
   test      -- verify ffmpeg/deps/config/credentials, no downloads
   once      -- process one video (URL or ID), or sweep configured niches
+  library   -- list/process videos already downloaded to data/temp
   schedule  -- run on the configured cron times until interrupted
+
+RESUMABILITY
+------------
+Every expensive stage is cached on disk and skipped on a re-run, because the
+failure Allan hit was "it keeps failing even after downloading a full video"
+and each retry paid for the download and the transcription again:
+
+  download    -> data/temp + data/library.json  (downloader.find_local_video)
+  transcript  -> data/transcripts/<video_id>.json
+  rendered    -> data/shorts/<title>/NN_<title>.mp4  (existing files reused)
+
+So a crash in rendering costs only the rendering on the next run, and
+``--force`` is the only thing that redoes finished work.
 """
 
 import argparse
+import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -106,6 +122,8 @@ class ShortsPipeline:
         self.processor = ContentProcessor()
         self.db = PipelineDatabase()
         self.upload_enabled = config.upload_enabled if upload is None else upload
+        self.transcript_dir = Path(config.data_dir) / 'transcripts'
+        self.transcript_dir.mkdir(parents=True, exist_ok=True)
 
         # Heavy/optional components are created lazily so that `--mode test`
         # and a no-upload run don't require every dependency to be installed.
@@ -166,12 +184,70 @@ class ShortsPipeline:
             self._uploader = YouTubeUploader()
         return self._uploader
 
+    # -- transcript cache ------------------------------------------------
+    def _transcript_cache_path(self, video_id: str) -> Path:
+        return self.transcript_dir / f"{video_id}.json"
+
+    def load_cached_transcript(self, video_id: str) -> Optional[List[Dict]]:
+        """Return a previously saved transcript, or None.
+
+        Transcription is by far the slowest stage (minutes on CPU). Caching it
+        means a failure in a later stage no longer costs a re-transcribe.
+        """
+        path = self._transcript_cache_path(video_id)
+        if not path.exists():
+            return None
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                payload = json.load(f)
+            segments = payload.get('segments') if isinstance(payload, dict) else payload
+            if not isinstance(segments, list) or not segments:
+                return None
+            # Reject a cache written by a partial/failed run.
+            for seg in segments:
+                if 'start' not in seg or 'end' not in seg or 'text' not in seg:
+                    logger.warning("Cached transcript for %s is malformed; ignoring", video_id)
+                    return None
+            logger.info(
+                "Resume: reusing cached transcript for %s (%d segments) -- skipping Whisper",
+                video_id, len(segments),
+            )
+            return segments
+        except Exception as exc:
+            logger.warning("Could not read cached transcript %s: %s", path.name, exc)
+            return None
+
+    def save_transcript(self, video_id: str, segments: List[Dict],
+                        title: str = '') -> None:
+        path = self._transcript_cache_path(video_id)
+        try:
+            tmp = path.with_suffix('.json.tmp')
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'video_id': video_id,
+                    'title': title,
+                    'model': self._whisper_model,
+                    'created_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+                    'segments': segments,
+                }, f, ensure_ascii=False)
+            os.replace(str(tmp), str(path))
+            logger.info("Cached transcript -> %s", path.name)
+        except Exception as exc:
+            logger.warning("Could not cache transcript for %s: %s", video_id, exc)
+
     # ------------------------------------------------------------------
     def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
-                                 force: bool = False) -> bool:
+                                 force: bool = False,
+                                 local_only: bool = False) -> bool:
         """Download -> transcribe -> find highlights -> render -> (upload).
 
-        Returns True if at least one Short was produced on disk.
+        Every stage is resumable: an existing download, transcript or rendered
+        clip is reused instead of being redone. Returns True if at least one
+        Short is on disk when we finish.
+
+        Args:
+            local_only: never download; fail if the video is not already in
+                the local library. Used by --from-library.
         """
         video_id = extract_video_id(video_id) or video_id
         logger.info("Starting processing for video %s", video_id)
@@ -184,18 +260,40 @@ class ShortsPipeline:
 
         audio_path = None
         try:
-            # -- 1. download ------------------------------------------------
-            logger.info("Step 1/6: Downloading video")
-            metadata = self.downloader.download_video(video_id)
+            # -- 1. download (or reuse) -------------------------------------
+            logger.info("Step 1/6: Fetching video (reusing an existing download if present)")
+            if local_only:
+                existing = self.downloader.find_local_video(video_id)
+                if not existing:
+                    logger.error(
+                        "No local copy of %s in %s. Drop the file there or run "
+                        "without --from-library to download it.",
+                        video_id, self.config.temp_dir,
+                    )
+                    self.stats['errors'] += 1
+                    return False
+                metadata = self.downloader._metadata_from_cache(video_id, existing)
+            else:
+                metadata = self.downloader.download_video(video_id)
+
             if not metadata or not metadata.get('video_path'):
-                logger.error("Failed to download video %s", video_id)
+                logger.error("Could not obtain video %s", video_id)
                 self.stats['errors'] += 1
                 return False
 
             video_path = metadata['video_path']
+            if not Path(video_path).exists():
+                logger.error("Video file vanished: %s", video_path)
+                self.stats['errors'] += 1
+                return False
+
             title = metadata.get('title') or video_id
             duration = metadata.get('duration') or 0
-            logger.info("Downloaded: '%s' (%ss)", title, duration)
+            logger.info(
+                "%s: '%s' (%ss)",
+                "Reused existing download" if metadata.get('from_cache') else "Downloaded",
+                title, duration,
+            )
 
             if niche is None:
                 niche = guess_niche(metadata)
@@ -206,20 +304,26 @@ class ShortsPipeline:
                 niche, len(niche_keywords), niche_keywords[:5],
             )
 
-            # -- 2. transcribe ---------------------------------------------
-            logger.info("Step 2/6: Extracting audio and transcribing")
-            audio_path = self.transcriber.extract_audio_from_video(video_path)
-            if not audio_path:
-                logger.error("Failed to extract audio from %s", video_path)
-                self.stats['errors'] += 1
-                return False
+            # -- 2. transcribe (or reuse the cache) -------------------------
+            logger.info("Step 2/6: Transcribing (cached transcripts are reused)")
+            transcript = None if force else self.load_cached_transcript(video_id)
 
-            transcript = self.transcriber.transcribe_audio(audio_path)
-            if not transcript:
-                logger.error("Transcription produced nothing for %s", audio_path)
-                self.stats['errors'] += 1
-                return False
-            logger.info("Transcribed audio into %d segments", len(transcript))
+            if transcript is None:
+                audio_path = self.transcriber.extract_audio_from_video(video_path)
+                if not audio_path:
+                    logger.error("Failed to extract audio from %s", video_path)
+                    self.stats['errors'] += 1
+                    return False
+
+                transcript = self.transcriber.transcribe_audio(audio_path)
+                if not transcript:
+                    logger.error("Transcription produced nothing for %s", audio_path)
+                    self.stats['errors'] += 1
+                    return False
+                logger.info("Transcribed audio into %d segments", len(transcript))
+                # Save before anything downstream can fail, so a later crash
+                # never costs the transcription again.
+                self.save_transcript(video_id, transcript, title)
 
             # -- 3. find highlights ----------------------------------------
             logger.info("Step 3/6: Finding highlight segments")
@@ -252,6 +356,26 @@ class ShortsPipeline:
 
             created: List[Dict] = []
             for i, highlight in enumerate(highlights, start=1):
+                output_path = str(shorts_dir / f"{i:02d}_{safe_title}.mp4")
+                existing = Path(output_path)
+
+                # Resume: a clip already rendered on a previous run is kept.
+                # Rendering is minutes of CPU per clip, so redoing clips 1-4
+                # because clip 5 failed is exactly the waste we are removing.
+                if not force and existing.exists() and existing.stat().st_size > 64 * 1024:
+                    logger.info(
+                        "Resume: clip %d/%d already rendered (%.1f MB) -- skipping",
+                        i, len(highlights), existing.stat().st_size / (1024 * 1024),
+                    )
+                    self.stats['shorts_created'] += 1
+                    created.append({'index': i, 'path': output_path, 'highlight': highlight})
+                    self.db.record_short(
+                        video_id, i, highlight['start'], highlight['end'],
+                        title=title, local_path=output_path,
+                        score=highlight.get('score'),
+                    )
+                    continue
+
                 logger.info(
                     "Rendering clip %d/%d: %.1f-%.1fs (score %.2f)",
                     i, len(highlights), highlight['start'], highlight['end'],
@@ -264,7 +388,6 @@ class ShortsPipeline:
                             or seg['start'] >= highlight['end'])
                 ]
 
-                output_path = str(shorts_dir / f"{i:02d}_{safe_title}.mp4")
                 ok = self.video_editor.create_short_from_segment(
                     video_path=video_path,
                     start_time=highlight['start'],
@@ -519,7 +642,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument('target', nargs='?', default=None,
                         help='YouTube URL or 11-character video ID')
-    parser.add_argument('--mode', choices=['once', 'schedule', 'test'], default='once')
+    parser.add_argument('--mode', choices=['once', 'schedule', 'test', 'library'],
+                        default='once',
+                        help="'library' lists videos already downloaded and can "
+                             "process them without touching the network")
     parser.add_argument('--niche', default=None,
                         help='Niche name from config/niches.yaml (default: auto-detect)')
     parser.add_argument('--videos', type=int, default=1,
@@ -529,7 +655,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--no-upload', dest='upload', action='store_false',
                         help='Never upload, just render locally')
     parser.add_argument('--force', action='store_true',
-                        help='Reprocess a video even if it is already in the database')
+                        help='Redo finished work: ignore the DB dedup entry, the '
+                             'cached transcript and any already-rendered clips')
+    parser.add_argument('--from-library', action='store_true',
+                        help='Only use an already-downloaded video; never download '
+                             '(works offline / when YouTube is rate-limiting)')
+    parser.add_argument('--all', action='store_true',
+                        help='With --mode library: process every downloaded video')
     parser.add_argument('--model', default=None,
                         help='Whisper model size (tiny/base/small/medium/large)')
     parser.add_argument('--clean', action='store_true',
@@ -559,6 +691,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.mode == 'schedule':
         return _run_schedule(pipeline, args)
 
+    if args.mode == 'library':
+        return _run_library(pipeline, args)
+
     # --- once ---
     if args.target:
         video_id = extract_video_id(args.target)
@@ -568,7 +703,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "a youtu.be/shorts link, or a bare 11-character ID.", args.target
             )
             return 2
-        pipeline.process_video_for_shorts(video_id, args.niche, force=args.force)
+        pipeline.process_video_for_shorts(video_id, args.niche, force=args.force,
+                                          local_only=args.from_library)
     else:
         niches = [args.niche] if args.niche else config.niche_names()
         if not niches:
@@ -576,6 +712,67 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 2
         for niche in niches:
             pipeline.run_niche(niche, max_videos=args.videos)
+
+    stats = pipeline.report()
+    return 0 if stats['videos_processed'] > 0 else 1
+
+
+def _run_library(pipeline: 'ShortsPipeline', args) -> int:
+    """List (and optionally process) videos already downloaded to data/temp.
+
+    This is the resume entry point: it never downloads. run_pipeline.bat's
+    "Process from Library" option used to shell out to a fragile inline
+    PowerShell script that parsed .info.json files by hand; this replaces it
+    with a real code path.
+    """
+    entries = pipeline.downloader.list_library()
+    if not entries:
+        print(f"No downloaded videos found in {config.temp_dir}")
+        print("Run: python -m src.main --mode once \"<YouTube URL>\" to download one.")
+        return 1
+
+    print(f"\nDownloaded videos in {config.temp_dir}:")
+    print("-" * 72)
+    for i, entry in enumerate(entries, 1):
+        mins = (entry['duration'] or 0) / 60
+        cached = "transcript cached" if pipeline._transcript_cache_path(
+            entry['id']).exists() else "no transcript yet"
+        print(f"  {i:2d}. {entry['title'][:44]:<44s} {mins:5.1f}min "
+              f"{entry['size_mb']:7.1f}MB  [{cached}]")
+    print("-" * 72)
+
+    targets: List[Dict] = []
+    if args.all:
+        targets = entries
+    elif args.target:
+        wanted = extract_video_id(args.target) or args.target
+        targets = [e for e in entries if e['id'] == wanted]
+        if not targets:
+            logger.error("Video %s is not in the local library", wanted)
+            return 2
+    else:
+        try:
+            raw = input("\nEnter a number to process (0 to cancel): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+        if not raw or raw == '0':
+            return 0
+        try:
+            choice = int(raw)
+        except ValueError:
+            logger.error("Not a number: %r", raw)
+            return 2
+        if not 1 <= choice <= len(entries):
+            logger.error("Choice out of range: %d", choice)
+            return 2
+        targets = [entries[choice - 1]]
+
+    for entry in targets:
+        print()
+        pipeline.process_video_for_shorts(
+            entry['id'], args.niche, force=args.force, local_only=True,
+        )
 
     stats = pipeline.report()
     return 0 if stats['videos_processed'] > 0 else 1
