@@ -3,8 +3,12 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
-from utils import get_temp_dir, setup_logger, sanitize_filename
-from config import config
+try:  # package-relative first (python -m src.main)
+    from .utils import get_temp_dir, setup_logger, sanitize_filename
+    from .config import config
+except ImportError:  # pragma: no cover - direct script execution
+    from utils import get_temp_dir, setup_logger, sanitize_filename
+    from config import config
 
 logger = setup_logger(__name__)
 
