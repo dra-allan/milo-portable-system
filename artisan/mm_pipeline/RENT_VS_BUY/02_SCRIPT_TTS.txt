@@ -6,8 +6,6 @@ TARGET_WORDCOUNT: 1500-2000
 TOTAL_SEGMENTS: 33
 === COLUMNS ===
 ID | ROLE | IMG | AUD | DUR | SUMMARY
-=== END MANIFEST ===
-
 H-OPEN | HEADER | NO | NO | 6 | Title card: RENT VS BUY — The 20-Year Experiment
 H-A | HEADER | NO | NO | 6 | Part A — The Data Bomb
 N01 | NARRATOR | YES | YES | 22 | Two people. Same age. Same income. Same savings. Twenty years later, one has SEVEN HUNDRED FIFTY thousand dollars. The other has SIX HUNDRED thousand. The difference wasn't luck. It was ONE decision at age thirty-two. Rent or buy.
