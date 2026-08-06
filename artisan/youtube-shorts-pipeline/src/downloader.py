@@ -147,8 +147,8 @@ class YouTubeDownloader:
 
         height = int(getattr(config, 'download_height', 1080) or 1080)
         self.ydl_opts = {
-            # More robust format selection: prefer combined formats, then fallback to separate
-            'format': f'best[height<={height}][ext=mp4]/best[height<={height}]/bestvideo[height<={height}]+bestaudio/best[height<={height}]/best',
+            # Use Android client which is often less restricted than web
+            'format': f'best[height<={height}]/best',
             # Download straight to the id-prefixed name: no post-hoc rename,
             # so the file is findable by ID forever.
             'outtmpl': str(self.temp_dir / f'%(id)s{ID_SEPARATOR}%(title).80B.%(ext)s'),
@@ -162,22 +162,22 @@ class YouTubeDownloader:
             'noprogress': True,
             'quiet': True,
             'no_warnings': True,
-            # Add headers to make yt-dlp less detectable as a bot
+            # Use Android client to avoid web restrictions
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android'],
+                }
+            },
+            # Basic headers that work
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-us,en;q=0.5',
-                'Accept-Encoding': 'gzip,deflate',
-                'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
-                'Keep-Alive': '300',
-                'Connection': 'keep-alive',
+                'User-Agent': 'com.google.android.youtube/17.36.4 (Linux; U; Android 12) gzip',
             },
             # Additional options to avoid detection and handle restrictions
-            'extractor_retries': 5,
-            'fragment_retries': 5,
-            'retry_sleep': lambda n: min(60, 5 * (2 ** n)),  # exponential backoff, max 60 sec
+            'extractor_retries': 3,
+            'fragment_retries': 3,
+            'retry_sleep': lambda n: min(30, 2 ** n),  # exponential backoff
             'sleep_interval': 1,
-            'max_sleep_interval': 5,
+            'max_sleep_interval': 3,
             # Try to bypass age restrictions and regional blocks
             'age_limit': None,
             'bypass_geoblock': True,
