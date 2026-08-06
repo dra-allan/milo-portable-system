@@ -85,6 +85,69 @@ class Config:
         self.whisper_model = os.getenv('WHISPER_MODEL', 'base')
         self.whisper_device = os.getenv('WHISPER_DEVICE', 'cpu')
 
+        # --- Transcription tuning (the 85%-of-runtime stage) -------------
+        # Two passes with different tradeoffs:
+        #   discovery -- fast + cheap, only used to FIND highlights.
+        #   caption   -- accurate + word-level, run on only the chosen clips.
+        # The old code hardcoded beam_size=5 + word_timestamps=True for the
+        # whole file, which is what OOMs on a 4 GB box and forces the slow
+        # chunked fallback.
+        self.transcribe_model = os.getenv('TRANSCRIBE_MODEL') or 'tiny'
+        self.transcribe_beam = self._int('TRANSCRIBE_BEAM', 1, minimum=1)
+        self.transcribe_word_timestamps = self._bool('TRANSCRIBE_WORD_TIMESTAMPS', False)
+        self.transcribe_vad = self._bool('TRANSCRIBE_VAD', True)
+        # 0 = transcribe the whole source. N = only the first N minutes.
+        # Default 0: truncating the source throws away clips, and the goal is
+        # "as many good clips as possible". Opt in for fast discovery runs.
+        self.transcribe_max_minutes = self._int('TRANSCRIBE_MAX_MINUTES', 0, minimum=0)
+        # Window size for the memory-safe long-file path. faster-whisper
+        # builds a full-file mel array, so a hard cap on how much audio is in
+        # flight is what actually prevents the OOM.
+        self.transcribe_window_minutes = self._int(
+            'TRANSCRIBE_WINDOW_MINUTES', 15, minimum=1
+        )
+        self.transcribe_threads = self._int('TRANSCRIBE_THREADS', 0, minimum=0)
+
+        # Caption pass: only ever runs on the selected clips (a few minutes of
+        # audio total), so it can afford to be accurate.
+        self.caption_model = os.getenv('CAPTION_MODEL') or 'base'
+        self.caption_beam = self._int('CAPTION_BEAM', 5, minimum=1)
+        # Master switch for the two-pass design. Off => captions come from the
+        # discovery transcript (faster, less precise).
+        self.two_pass_captions = self._bool('TWO_PASS_CAPTIONS', True)
+
+        # --- Download tuning ---------------------------------------------
+        # Audio-only discovery fetch: ~40 MB for an hour instead of 1-2 GB.
+        self.download_audio_only = self._bool('DOWNLOAD_AUDIO_ONLY', True)
+        # Fetch only the chosen clip ranges as separate small files rather
+        # than the entire source video.
+        self.download_sections = self._bool('DOWNLOAD_SECTIONS', True)
+        # Padding around each section so a later timing nudge needs no
+        # re-download, and so keyframe drift lands inside slack we own.
+        self.section_padding = self._float('SECTION_PADDING', 8.0, minimum=0.0)
+        self.download_height = self._int('DOWNLOAD_HEIGHT', 1080, minimum=240)
+        self.download_concurrency = self._int('DOWNLOAD_CONCURRENCY', 2, minimum=1)
+
+        # --- Render tuning -----------------------------------------------
+        # Measured (see BENCHMARKS.md): parallel ffmpeg encodes give only
+        # 1.02-1.06x on a 2-core box, because libx264 already saturates every
+        # core -- two encodes just split the same CPU and double the memory.
+        # So scale with core count instead of blindly defaulting to 2, which
+        # is what the original plan called for.
+        self.render_workers = self._int(
+            'RENDER_WORKERS', max(1, min(2, (os.cpu_count() or 2) // 2)), minimum=1
+        )
+        # The blurred-backdrop fill was the single most expensive filter in
+        # the chain (full-res gblur every frame). 'cheap' downscales before
+        # blurring for a visually identical result at a fraction of the cost.
+        self.background_mode = (os.getenv('BACKGROUND_MODE') or 'cheap').lower()
+        if self.background_mode not in ('cheap', 'blur', 'black', 'crop'):
+            self.background_mode = 'cheap'
+        # How many clips to keep in the persisted plan. Rendering is capped by
+        # max_clips_per_video, but keeping a deep ranked list means "give me
+        # 10 more clips" costs no download and no transcription.
+        self.max_candidates = self._int('MAX_CANDIDATES', 30, minimum=1)
+
         # --- Upload behaviour --------------------------------------------
         # Default to NOT uploading: an unattended pipeline that publishes to a
         # live channel on its first successful run is a footgun.
@@ -128,6 +191,21 @@ class Config:
                 value = default
         if minimum is not None and value < minimum:
             value = minimum
+        return value
+
+    @staticmethod
+    def _float(name: str, default: float, minimum: float = None) -> float:
+        raw = os.getenv(name)
+        if raw is None or str(raw).strip() == '':
+            value = float(default)
+        else:
+            cleaned = str(raw).split('#')[0].strip()
+            try:
+                value = float(cleaned)
+            except (TypeError, ValueError):
+                value = float(default)
+        if minimum is not None and value < minimum:
+            value = float(minimum)
         return value
 
     @staticmethod
