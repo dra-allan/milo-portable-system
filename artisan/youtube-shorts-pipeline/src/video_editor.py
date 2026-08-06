@@ -2,8 +2,12 @@ import subprocess
 import os
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
-from utils import setup_logger, format_timestamp, sanitize_filename
-from config import config
+try:  # package-relative first (python -m src.main)
+    from .utils import setup_logger, format_timestamp, sanitize_filename
+    from .config import config
+except ImportError:  # pragma: no cover - direct script execution
+    from utils import setup_logger, format_timestamp, sanitize_filename
+    from config import config
 
 logger = setup_logger(__name__)
 
