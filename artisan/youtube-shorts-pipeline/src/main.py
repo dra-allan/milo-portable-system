@@ -511,6 +511,53 @@ class ShortsPipeline:
                 except OSError:
                     pass
 
+    def _generate_unique_title(self, hook_text: str, niche: str, clip_index: int) -> str:
+        """Generate a unique title based on the short content"""
+        if not hook_text:
+            return f"{niche} clip #{clip_index} #Shorts"
+
+        # Clean the hook text
+        cleaned_text = ' '.join(hook_text.split())  # Remove extra whitespace
+
+        # Extract key phrases or interesting parts
+        words = cleaned_text.split()
+
+        # For very short hooks, use them directly
+        if len(words) <= 5:
+            base_title = cleaned_text
+        else:
+            # Try to find a compelling segment
+            # Look for questions, exclamations, or interesting phrases
+            base_title = cleaned_text
+
+            # If it's too long, truncate intelligently
+            if len(base_title) > 60:
+                # Try to break at a sentence boundary
+                if '.' in base_title[:50]:
+                    breakpoint = base_title.find('.', 20, 50)
+                    if breakpoint != -1:
+                        base_title = base_title[:breakpoint+1]
+                    else:
+                        base_title = base_title[:57] + "..."
+                elif '!' in base_title[:50]:
+                    breakpoint = base_title.find('!', 20, 50)
+                    if breakpoint != -1:
+                        base_title = base_title[:breakpoint+1]
+                    else:
+                        base_title = base_title[:57] + "..."
+                elif '?' in base_title[:50]:
+                    breakpoint = base_title.find('?', 20, 50)
+                    if breakpoint != -1:
+                        base_title = base_title[:breakpoint+1]
+                    else:
+                        base_title = base_title[:57] + "..."
+                else:
+                    # Just truncate and add ellipsis
+                    base_title = base_title[:57] + "..."
+
+        # Add niche and Shorts hashtag
+        return f"{base_title.strip()} #{niche} #Shorts"
+
     def _upload_clips(self, created: List[Dict], video_id: str, niche: str,
                       niche_keywords: List[str]) -> None:
         try:
@@ -525,7 +572,7 @@ class ShortsPipeline:
         for item in created:
             highlight = item['highlight']
             hook = (highlight.get('text') or '').strip().replace('\n', ' ')
-            short_title = f"{hook[:60]} #Shorts" if hook else f"{niche} clip #Shorts"
+            short_title = self._generate_unique_title(hook, niche, item['index'])
             description = (
                 f"Full video: https://youtube.com/watch?v={video_id}\n\n"
                 f"Follow for more {niche} content!\n"
