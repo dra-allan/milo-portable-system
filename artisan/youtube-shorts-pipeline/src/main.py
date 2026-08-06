@@ -907,7 +907,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _run_schedule(pipeline, args)
 
     if args.mode == 'library':
-        return _run_library(pipeline, args)
+        # For library mode, we extract video_id from target if provided, else use falsy to list all
+        video_id = extract_video_id(args.target) if args.target else None
+        return _render_more_from_plan(pipeline, video_id, 0, args.force, args)
 
     # --- render-more: render additional clips from cached clip plan ---
     if args.render_more > 0:
@@ -918,7 +920,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not video_id:
             logger.error("Could not read video ID from %r", args.target)
             return 2
-        return _render_more_from_plan(pipeline, video_id, args.render_more, args.force)
+        return _render_more_from_plan(pipeline, video_id, args.render_more, args.force, args)
 
     # --- once ---
     if args.target:
@@ -944,7 +946,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 
 def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
-                           count: int, force: bool = False) -> int:
+                           count: int, force: bool = False, args=None) -> int:
     """List (and optionally process) videos already downloaded to data/temp.
 
     This is the resume entry point: it never downloads. run_pipeline.bat's
@@ -967,6 +969,16 @@ def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
         print(f"  {i:2d}. {entry['title'][:44]:<44s} {mins:5.1f}min "
               f"{entry['size_mb']:7.1f}MB  [{cached}]")
     print("-" * 72)
+
+    # Handle case where args might be None (for safety)
+    if args is None:
+        # Create a simple object with default values
+        class DefaultArgs:
+            all = False
+            target = None
+            niche = None
+            force = False
+        args = DefaultArgs()
 
     targets: List[Dict] = []
     if args.all:
