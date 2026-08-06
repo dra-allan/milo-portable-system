@@ -12,7 +12,11 @@ venv/
 .env
 .env.local
 *.local.json
-state/
+# NOTE: `state/` is the backup snapshot dir and MUST stay unignored.
+# `milo backup` writes the brain there and `git push` ships it to GitHub.
+# If you are tempted to ignore it, the backup stops leaving the machine.
+# The snapshot is leak-scanned before every push (env.template has empty
+# values; env.real only appears in offline .tar.gz archives).
 logs/
 *.log
 

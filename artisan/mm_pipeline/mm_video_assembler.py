@@ -24,22 +24,7 @@ LGRAY  = (200, 200, 200)
 DMID   = (120, 130, 150)
 
 W, H = 1920, 1080
-LEGACY_FFMPEG = r"C:\Users\user\Desktop\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
-
-
-def _find_ffmpeg():
-    env_path = os.environ.get("MILO_FFMPEG", "").strip()
-    if env_path and Path(env_path).exists():
-        return env_path
-    found = shutil.which("ffmpeg")
-    if found:
-        return found
-    if os.path.exists(LEGACY_FFMPEG):
-        return LEGACY_FFMPEG
-    return "ffmpeg"
-
-
-FFMPEG = _find_ffmpeg()
+FFMPEG = r"C:\Users\user\Desktop\AGENTIC WORK\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
 
 
 def _font(font_size=32):
@@ -617,22 +602,12 @@ def assemble_video(project_dir, output_path=None, music_path=None):
         output_path = str(proj / f"{proj.name}_FINAL.mp4")
 
     visuals_path = proj / "03_VISUALS.txt"
-    
-    # Extract VIDEO_ID from script
-    script_path = proj / "02_SCRIPT_TTS.txt"
-    video_id = "MM-2026-001"  # default fallback
-    if script_path.exists():
-        for line in script_path.read_text(encoding="utf-8").splitlines():
-            if line.startswith("VIDEO_ID:"):
-                video_id = line.split(":", 1)[1].strip()
-                break
-    
-    tts_dir = proj / "tts_segments" / video_id
+    tts_dir = proj / "tts_segments" / "MM-2026-001"
     work = proj / "_work"
     if work.exists(): shutil.rmtree(work)
     work.mkdir(parents=True)
 
-    print(f"[MM-VideoAssembler] {proj.name} (VIDEO_ID: {video_id})")
+    print(f"[MM-VideoAssembler] {proj.name}")
 
     entries = parse_visuals(str(visuals_path))
     groups = OrderedDict()
@@ -734,12 +709,6 @@ if __name__ == "__main__":
             music = args.pop(i+1)
             args.pop(i)
             break
-    project = args[0] if args else os.path.join(
-        os.environ.get(
-            "MILO_MM_PROJECTS",
-            os.path.join(str(Path.home()), "Desktop", "Milo Video Factory", "projects", "money_matrix"),
-        ),
-        "INDEX_FUNDS",
-    )
+    project = args[0] if args else r"C:\Users\user\Desktop\milo\command\milo\artisan\mm_pipeline\INDEX_FUNDS"
     out = args[1] if len(args) > 1 else None
     assemble_video(project, out, music)
