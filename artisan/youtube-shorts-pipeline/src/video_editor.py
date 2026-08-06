@@ -1,1076 +1,447 @@
-"""FFmpeg rendering for vertical Shorts.
-
-Bugs fixed in this rewrite (all reproduced against a real 40s test source):
-
-1. Cross-device rename. The final step did ``Path(tmp).rename(output)``, which
-   raises ``OSError: [Errno 18] Invalid cross-device link`` whenever data/temp
-   and the output directory live on different filesystems. The whole render
-   succeeded and was then thrown away. Now uses shutil.move.
-
-2. Captions were never in sync. Segment timestamps are absolute (source
-   timeline), but after extracting a clip the timeline restarts at 0. The ASS
-   file was written with the absolute times, so a clip cut at 10:00 had no
-   captions for its first 10 minutes and the rest landed past the end.
-   Timestamps are now rebased onto the clip.
-
-3. Sub-second truncation. Cut points went through format_timestamp(), which
-   returns HH:MM:SS and floors the fraction, so every clip drifted up to 1s
-   from its scored boundary and could clip a word. Now passes float seconds.
-
-4. Four sequential re-encodes (extract -> crop -> caption -> loudnorm), each
-   decoding and encoding the video again: 4x the time and 4x generation loss.
-   Now one filter chain, one encode.
-
-5. Fixed 30-60s subprocess timeouts. A 60s 1080p clip cannot encode in 30s on
-   a laptop CPU, so long clips were killed and reported as failures. Timeouts
-   now scale with clip length.
-
-6. Output was a crop of the source, so a 1280x720 input produced a 405x720
-   video. YouTube Shorts wants 1080x1920. Now scales and pads to exactly
-   1080x1920 with a blurred fill, so nothing is cropped away and the frame is
-   always correct.
-
-7. ASS escaping wrote a literal '\\n' into every caption line and did not
-   escape the text properly.
-"""
-
-import os
-import re
-import shutil
 import subprocess
+import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-
-try:  # package-relative first (python -m src.main)
-    from .utils import setup_logger, sanitize_filename
-    from .config import config
-    from . import captions as captions_mod
-    from . import smart_crop
-except ImportError:  # pragma: no cover - direct script execution
-    from utils import setup_logger, sanitize_filename
-    from config import config
-    import captions as captions_mod
-    import smart_crop
+from typing import List, Dict, Optional, Tuple
+from utils import setup_logger, format_timestamp, sanitize_filename
+from config import config
 
 logger = setup_logger(__name__)
 
-SHORT_WIDTH = 1080
-SHORT_HEIGHT = 1920
-
-
-# The reference blur strength, applied at full 1080x1920 by the original code.
-# Every cheaper backdrop mode is calibrated to look like this one.
-REFERENCE_BLUR_SIGMA = 28.0
-# Downscale factor for the 'cheap' backdrop. Measured at k=8 (136x240):
-# SSIM 0.975 against the full-resolution blur, filter stage 3.07x faster.
-CHEAP_BACKDROP_DIVISOR = 8
-
-
-def build_background_filters(mode: str, width: int = SHORT_WIDTH,
-                             height: int = SHORT_HEIGHT,
-                             scaler: Optional[str] = None):
-    """Build the scale/pad filter graph, returning (filters, output_label).
-
-    Why this is worth its own function: ``gblur=sigma=28`` over a full
-    1080x1920 frame was the most expensive operation in the entire pipeline --
-    measured at 19.87s of filtering for a 20s clip, more than the H.264 encode
-    itself (see BENCHMARKS.md).
-
-    A Gaussian blur is scale-invariant: blurring an image downscaled by k with
-    sigma S/k looks like blurring the original with sigma S. Since the
-    backdrop is deliberately out of focus, it can be blurred at a fraction of
-    the resolution and scaled back up. Deriving sigma from the divisor matters
-    -- an earlier hand-picked sigma scored SSIM 0.870 and looked visibly
-    wrong, while the derived value scores 0.975.
-
-    **Scaler choice (quality fix).** Every scale in here used to be
-    ``flags=fast_bilinear``, including the one that produces the *sharp
-    foreground* -- the part the viewer actually looks at. fast_bilinear is the
-    lowest-quality scaler swscale offers; on the resize that lands the source
-    into a 1080x1920 frame it visibly softens edges and text. It is now used
-    only for the blurred backdrop, where by definition no detail survives, and
-    the foreground uses ``scaler`` (lanczos by default).
-    """
-    mode = (mode or 'cheap').lower()
-    fg_flags = (scaler or 'lanczos').strip() or 'lanczos'
-    # Only the backdrop keeps the cheap scaler: it is about to be Gaussian
-    # blurred, so scaler quality is unobservable and the speed is free.
-    bg_flags = 'fast_bilinear'
-
-    fg = (f"[fg]scale={width}:{height}:force_original_aspect_ratio=decrease"
-          f":flags={fg_flags}[fgs]")
-
-    if mode == 'black':
-        # No backdrop at all: flat bars. Fastest (2.01x) but a different look.
-        return ([f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease"
-                 f":flags={fg_flags},"
-                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[padded]"],
-                'padded')
-
-    if mode == 'crop':
-        # Fill the frame by cropping the sides. No bars, but loses the edges.
-        return ([f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase"
-                 f":flags={fg_flags},crop={width}:{height},setsar=1[padded]"],
-                'padded')
-
-    if mode == 'smart':
-        # Person-aware framing needs the source file to inspect, so it cannot
-        # be built here. VideoEditor._build_smart_background_filters() handles
-        # 'smart' before this function is ever reached; this branch only exists
-        # so a stray direct call degrades to a sane centre-fill instead of
-        # raising. (It used to return letterboxed bars, which silently looked
-        # nothing like the mode the user asked for.)
-        return build_background_filters('crop', width, height, scaler=fg_flags)
-
-    if mode == 'blur':
-        # The original, kept as the reference look for anyone who wants it.
-        return ([
-            "[0:v]split=2[bg][fg]",
-            f"[bg]scale={width}:{height}:force_original_aspect_ratio=increase"
-            f":flags={bg_flags},"
-            f"crop={width}:{height},gblur=sigma={REFERENCE_BLUR_SIGMA:g}[bgb]",
-            fg,
-            "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1[padded]",
-        ], 'padded')
-
-    # 'cheap' (default): blur small, then scale up.
-    k = CHEAP_BACKDROP_DIVISOR
-    bw = max(2, (width // k) // 2 * 2)
-    bh = max(2, (height // k) // 2 * 2)
-    sigma = REFERENCE_BLUR_SIGMA / k
-    return ([
-        "[0:v]split=2[bg][fg]",
-        f"[bg]scale={bw}:{bh}:force_original_aspect_ratio=increase"
-        f":flags={bg_flags},crop={bw}:{bh},gblur=sigma={sigma:g},"
-        f"scale={width}:{height}:flags={bg_flags}[bgb]",
-        fg,
-        "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1[padded]",
-    ], 'padded')
-
-
 class VideoEditor:
-    # Populated once per process by available_fonts(); see the note there on
-    # libass' silent font substitution.
-    _font_cache = None
-    # Result of the one-time hardware-encoder probe. None means "not probed
-    # yet", a string is the chosen encoder name. Cached on the class because
-    # the answer is a property of the machine, not of an instance, and renders
-    # now run concurrently -- probing per render would spawn an ffmpeg process
-    # per clip for an answer that cannot change.
-    _encoder_cache = None
-
     def __init__(self):
-        self.ffmpeg = os.getenv('MILO_FFMPEG') or shutil.which('ffmpeg') or 'ffmpeg'
-        self.ffprobe = os.getenv('MILO_FFPROBE') or shutil.which('ffprobe') or 'ffprobe'
+        """Initialize video editor"""
+        # Check if FFmpeg is available
         try:
-            result = subprocess.run([self.ffmpeg, '-version'],
-                                    capture_output=True, text=True, timeout=15)
+            result = subprocess.run(['ffmpeg', '-version'],
+                                  capture_output=True, text=True, timeout=10)
             if result.returncode != 0:
-                raise RuntimeError('ffmpeg returned a non-zero exit status')
-            first = (result.stdout or '').splitlines()[:1]
-            logger.info("FFmpeg ready: %s", first[0] if first else 'unknown version')
-        except FileNotFoundError:
-            logger.error(
-                "FFmpeg not found. Install it and make sure 'ffmpeg' is on PATH "
-                "(or set MILO_FFMPEG to its full path)."
-            )
-            raise
-        except Exception as exc:
-            logger.error("Failed to initialise FFmpeg: %s", exc)
+                raise RuntimeError("FFmpeg not found")
+            logger.info("FFmpeg video editor initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize FFmpeg: {str(e)}")
             raise
 
-    # ------------------------------------------------------------------
-    def probe_dimensions(self, path: str):
-        """Return (width, height) or None."""
-        try:
-            result = subprocess.run(
-                [self.ffprobe, '-v', 'error', '-select_streams', 'v:0',
-                 '-show_entries', 'stream=width,height', '-of', 'csv=p=0', path],
-                capture_output=True, text=True, timeout=30,
-            )
-            if result.returncode != 0:
-                logger.error("ffprobe failed on %s: %s", path, result.stderr.strip())
-                return None
-            parts = [p for p in re.split(r'[,\sx]+', result.stdout.strip()) if p]
-            if len(parts) < 2:
-                return None
-            return int(parts[0]), int(parts[1])
-        except Exception as exc:
-            logger.error("Could not probe %s: %s", path, exc)
-            return None
-
-    def probe_fps(self, path: str) -> Optional[float]:
-        """Source framerate as a float, or None if it cannot be determined.
-
-        Reads ``r_frame_rate``, which ffprobe reports as a rational such as
-        ``30000/1001``. Parsing the fraction rather than rounding is what keeps
-        29.97 from being reported as 30 and then resampled -- a resample that
-        duplicates or drops one frame per second and shows up as a visible
-        stutter on panning shots.
+    def create_vertical_crop(self, input_path: str, output_path: str,
+                           x_offset: int = 0, y_offset: int = 0) -> bool:
         """
-        try:
-            result = subprocess.run(
-                [self.ffprobe, '-v', 'error', '-select_streams', 'v:0',
-                 '-show_entries', 'stream=r_frame_rate', '-of',
-                 'default=nw=1:nk=1', path],
-                capture_output=True, text=True, timeout=30,
-            )
-            raw = (result.stdout or '').strip().splitlines()
-            if result.returncode != 0 or not raw:
-                return None
-            value = raw[0].strip()
-            if '/' in value:
-                num, den = value.split('/', 1)
-                den_f = float(den)
-                if den_f == 0:
-                    return None
-                fps = float(num) / den_f
-            else:
-                fps = float(value)
-            return fps if 1.0 <= fps <= 240.0 else None
-        except Exception as exc:
-            logger.debug("Could not probe framerate of %s: %s", path, exc)
-            return None
-
-    # ------------------------------------------------------------------
-    # Encoder selection
-    # ------------------------------------------------------------------
-    # Hardware H.264 encoders in preference order. They do NOT share libx264's
-    # -crf/-preset vocabulary, which is why each needs its own flag mapping
-    # below instead of a blanket substitution.
-    _HW_ENCODERS = ('h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox')
-
-    def _resolve_encoder(self) -> str:
-        """Pick the H.264 encoder to use, probing ffmpeg once.
-
-        Encoding on the CPU competes with transcription for the same cores, and
-        transcription is the pipeline's real bottleneck. Handing the encode to a
-        GPU/fixed-function block is therefore worth more than the raw 5-10x
-        speedup suggests: it also gives the cores back.
-
-        Falls back to libx264 whenever a hardware encoder is absent or unusable,
-        so this can never make rendering fail.
-        """
-        if VideoEditor._encoder_cache is not None:
-            return VideoEditor._encoder_cache
-
-        setting = (getattr(config, 'video_encoder', 'auto') or 'auto').lower()
-        if setting in ('off', 'none', 'cpu', 'libx264', 'software'):
-            VideoEditor._encoder_cache = 'libx264'
-            return VideoEditor._encoder_cache
-
-        available = self._available_encoders()
-
-        if setting != 'auto':
-            # An explicit request is honoured only if ffmpeg actually has it;
-            # otherwise every render would die on "Unknown encoder".
-            if not available or setting in available:
-                VideoEditor._encoder_cache = setting
-            else:
-                logger.warning(
-                    "VIDEO_ENCODER=%s is not available in this ffmpeg build; "
-                    "falling back to libx264", setting,
-                )
-                VideoEditor._encoder_cache = 'libx264'
-            return VideoEditor._encoder_cache
-
-        chosen = 'libx264'
-        for name in self._HW_ENCODERS:
-            if name in available and self._encoder_works(name):
-                chosen = name
-                break
-
-        if chosen == 'libx264':
-            logger.info("No usable hardware H.264 encoder found; using libx264")
-        else:
-            logger.info("Hardware encoder selected: %s", chosen)
-        VideoEditor._encoder_cache = chosen
-        return chosen
-
-    def _available_encoders(self) -> set:
-        """Encoder names this ffmpeg build advertises."""
-        try:
-            result = subprocess.run([self.ffmpeg, '-hide_banner', '-encoders'],
-                                    capture_output=True, text=True, timeout=20)
-        except Exception as exc:
-            logger.debug("Could not list ffmpeg encoders: %s", exc)
-            return set()
-        if result.returncode != 0:
-            return set()
-        names = set()
-        for line in (result.stdout or '').splitlines():
-            parts = line.split()
-            # Lines look like " V....D h264_nvenc  NVIDIA NVENC H.264 encoder"
-            if len(parts) >= 2 and parts[0].startswith('V'):
-                names.add(parts[1])
-        return names
-
-    def _encoder_works(self, name: str) -> bool:
-        """Whether ``name`` can actually encode here, not just link.
-
-        Being listed by ``-encoders`` only proves ffmpeg was *built* with
-        support. The common failure is a build that lists h264_nvenc on a
-        machine with no NVIDIA driver -- it opens and then errors out. A
-        one-frame null encode settles it in well under a second and prevents
-        every clip in the sweep from dying on the same error.
-        """
-        cmd = [
-            self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
-            '-f', 'lavfi', '-i', 'color=c=black:s=256x256:d=0.1',
-            '-c:v', name, '-frames:v', '1', '-f', 'null', '-',
-        ]
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        except Exception as exc:
-            logger.debug("Probe for %s failed to run: %s", name, exc)
-            return False
-        if result.returncode != 0:
-            logger.debug("Encoder %s present but not usable: %s",
-                         name, (result.stderr or '').strip()[-200:])
-            return False
-        return True
-
-    def _video_encode_args(self, threads: Optional[int] = None) -> List[str]:
-        """``-c:v`` plus quality/colour flags for the resolved encoder.
-
-        Each family spells "constant quality" differently, so VIDEO_CRF is
-        translated to the nearest equivalent and keeps meaning the same thing
-        regardless of which encoder is selected.
-        """
-        encoder = self._resolve_encoder()
-        crf = int(getattr(config, 'video_crf', 20) or 20)
-        preset = getattr(config, 'video_preset', 'veryfast')
-
-        if encoder == 'h264_nvenc':
-            # NVENC: -cq is its constant-quality control, on the same 0-51
-            # scale as CRF. 'film' has no NVENC equivalent and -tune film
-            # would be rejected, so hq is used instead.
-            args = ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
-                    '-rc', 'vbr', '-cq', str(crf), '-b:v', '0']
-        elif encoder == 'h264_qsv':
-            args = ['-c:v', 'h264_qsv', '-global_quality', str(crf),
-                    '-preset', 'faster']
-        elif encoder == 'h264_amf':
-            # AMF has no CRF; constrained-QP is the closest analogue.
-            args = ['-c:v', 'h264_amf', '-rc', 'cqp',
-                    '-qp_i', str(crf), '-qp_p', str(crf),
-                    '-quality', 'balanced']
-        elif encoder == 'h264_videotoolbox':
-            # VideoToolbox exposes a 1-100 quality scale, inverted vs CRF.
-            quality = max(1, min(100, int(round((51 - crf) / 51 * 100))))
-            args = ['-c:v', 'h264_videotoolbox', '-q:v', str(quality)]
-        else:
-            args = ['-c:v', 'libx264', '-preset', preset, '-crf', str(crf),
-                    # Film tuning turns OFF x264's default psychovisual
-                    # over-smoothing, which otherwise deliberately blurs fine
-                    # detail (skin texture, fabric) to save bits and reads as
-                    # "low quality" even at a good CRF.
-                    '-tune', 'film',
-                    # Two consecutive B-frames: better compression at equal
-                    # quality, so the CRF budget buys more detail.
-                    '-bf', '2']
-            if threads and int(threads) > 0:
-                args += ['-threads', str(int(threads))]
-
-        # Profile/level and colour metadata are encoder-independent and stated
-        # explicitly: some mobile players and NLEs reject unconstrained
-        # combinations, and unlabelled BT.709 gets read as BT.601, which
-        # visibly shifts skin tones.
-        args += ['-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.2',
-                 '-g', '60',
-                 '-colorspace', 'bt709', '-color_primaries', 'bt709',
-                 '-color_trc', 'bt709', '-color_range', 'tv']
-        return args
-
-    # ------------------------------------------------------------------
-    def _choose_fps(self, path: str) -> Optional[float]:
-        """Output framerate: the source's own, capped at ``video_max_fps``.
-
-        Returns None to mean "pass the source rate through untouched", which is
-        strictly better than restating it -- no resampling filter is inserted at
-        all, so timestamps survive exactly.
-        """
-        cap = float(getattr(config, 'video_max_fps', 60) or 60)
-        fps = self.probe_fps(path)
-        if fps is None:
-            return None
-        if fps > cap + 0.01:
-            logger.info("Source is %.3f fps; capping output at %g fps", fps, cap)
-            return cap
-        # Within the cap: keep the source rate, don't touch it.
-        return None
-
-    def has_audio_stream(self, path: str) -> bool:
-        try:
-            result = subprocess.run(
-                [self.ffprobe, '-v', 'error', '-select_streams', 'a:0',
-                 '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', path],
-                capture_output=True, text=True, timeout=30,
-            )
-            return 'audio' in (result.stdout or '')
-        except Exception:
-            return False
-
-    # ------------------------------------------------------------------
-    @staticmethod
-    def _format_ass_time(seconds: float) -> str:
-        """ASS timestamps are H:MM:SS.cc and must not go negative."""
-        seconds = max(0.0, float(seconds))
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        centis = int(round((seconds - int(seconds)) * 100))
-        if centis >= 100:
-            centis = 99
-        return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
-
-    @staticmethod
-    def _escape_ass_text(text: str) -> str:
-        """Escape for an ASS dialogue line and wrap long captions."""
-        text = (text or '').strip()
-        text = text.replace('\\', '\\\\').replace('{', '(').replace('}', ')')
-        text = re.sub(r'\s+', ' ', text)
-        # Keep captions to two readable lines rather than one long ribbon.
-        words = text.split()
-        if len(words) > 7:
-            mid = (len(words) + 1) // 2
-            text = ' '.join(words[:mid]) + r'\N' + ' '.join(words[mid:])
-        return text
-
-    def write_ass(self, transcript_segments: List[Dict], ass_path: Path,
-                  time_offset: float = 0.0, clip_duration: Optional[float] = None,
-                  font_size: Optional[int] = None,
-                  keywords: Optional[List[str]] = None,
-                  style: Optional[str] = None) -> bool:
-        """Write the ASS caption file for a clip.
-
-        Routes to the word-level viral engine (:mod:`captions`) for every style
-        except ``legacy``, which keeps the old segment-per-line behaviour for
-        anyone who depends on it.
-
-        The previous version of this method rendered one dialogue line per
-        Whisper segment -- a 15-25 word paragraph held static for 5-10 seconds
-        -- and its "hormozi" preset truncated the text to the first 3 words,
-        silently discarding most of the speech. See captions.py.
+        Crop video to 9:16 aspect ratio (vertical)
 
         Args:
-            transcript_segments: segments carrying ABSOLUTE source timestamps
-                (unless ``time_offset`` is 0 because they are already clip
-                relative).
-            time_offset: clip start in the source timeline; subtracted from
-                every timestamp so captions line up with the extracted clip.
-            clip_duration: clamp/drop captions past the end of the clip.
-            keywords: niche keywords, which bias which word gets emphasised.
+            input_path: Path to input video
+            output_path: Path for output video
+            x_offset: Horizontal offset from center (negative = left, positive = right)
+            y_offset: Vertical offset from top (negative = up, positive = down)
+
+        Returns:
+            True if successful, False otherwise
         """
-        style = (style or getattr(config, 'caption_style', 'viral') or 'viral').lower()
-
-        if style == 'legacy':
-            return self._write_ass_legacy(
-                transcript_segments, ass_path, time_offset=time_offset,
-                clip_duration=clip_duration, font_size=font_size,
-            )
-
-        try:
-            document = captions_mod.build_viral_ass(
-                transcript_segments,
-                preset_name=style,
-                time_offset=time_offset,
-                clip_duration=clip_duration,
-                keywords=keywords or [],
-                font_size=font_size or getattr(config, 'caption_font_size', None),
-                max_words=getattr(config, 'caption_max_words', None),
-                available_fonts=self.available_fonts(),
-                play_res=(SHORT_WIDTH, SHORT_HEIGHT),
-                punch_ratio=getattr(config, 'caption_punch_ratio', 0.22),
-            )
-        except Exception as exc:
-            logger.error("Caption generation failed: %s", exc, exc_info=True)
-            return False
-
-        if not document:
-            logger.warning("No caption words fell inside the clip")
+        if not Path(input_path).exists():
+            logger.error(f"Input video not found: {input_path}")
             return False
 
         try:
-            ass_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(ass_path, 'w', encoding='utf-8') as f:
-                f.write(document)
-        except Exception as exc:
-            logger.error("Could not write subtitle file %s: %s", ass_path, exc)
+            # First, get video dimensions to calculate crop
+            cmd_probe = [
+                'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height', '-of', 'csv=p=0',
+                input_path
+            ]
+            result = subprocess.run(cmd_probe, capture_output=True, text=True, timeout=10)
+
+            if result.returncode != 0:
+                logger.error(f"Failed to probe video dimensions: {result.stderr}")
+                return False
+
+            width, height = map(int, result.stdout.strip().split(','))
+
+            # Calculate 9:16 crop dimensions
+            target_ratio = 9/16
+            if width / height > target_ratio:
+                # Video is wider than 9:16, crop width
+                new_width = int(height * target_ratio)
+                new_height = height
+                x_offset_calc = (width - new_width) // 2 + x_offset
+                y_offset_calc = 0
+            else:
+                # Video is taller than 9:16, crop height
+                new_width = width
+                new_height = int(width / target_ratio)
+                x_offset_calc = 0
+                y_offset_calc = (height - new_height) // 2 + y_offset
+
+            # Ensure offsets don't go negative or exceed bounds
+            x_offset_calc = max(0, min(x_offset_calc, width - new_width))
+            y_offset_calc = max(0, min(y_offset_calc, height - new_height))
+
+            # Build crop filter
+            crop_filter = f'crop={new_width}:{new_height}:{x_offset_calc}:{y_offset_calc}'
+
+            # FFmpeg command for cropping
+            cmd = [
+                'ffmpeg',
+                '-i', input_path,
+                '-vf', crop_filter,
+                '-c:a', 'copy',  # Copy audio stream
+                '-avoid_negative_ts', 'make_zero',
+                '-fflags', '+genpts',
+                '-y',  # Overwrite output
+                output_path
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+            if result.returncode != 0:
+                logger.error(f"Video cropping failed: {result.stderr}")
+                return False
+
+            if not Path(output_path).exists():
+                logger.error(f"Output video not created: {output_path}")
+                return False
+
+            logger.info(f"Video cropped to 9:16: {output_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in vertical crop: {str(e)}")
             return False
-        return True
 
-    # ------------------------------------------------------------------
-    @classmethod
-    def available_fonts(cls):
-        """Font family names known to fontconfig, or None if unavailable.
-
-        Needed because libass *silently* substitutes its default for a missing
-        family. Without this check a preset asking for Montserrat ExtraBold on
-        a box that lacks it renders in a plain fallback and looks nothing like
-        the intended style -- with no warning anywhere.
-
-        Cached: fc-list takes ~100ms and the answer cannot change mid-run.
+    def add_burn_in_captions(self, input_path: str, transcript_segments: List[Dict],
+                           output_path: str, font_size: int = 24) -> bool:
         """
-        if cls._font_cache is not None:
-            return cls._font_cache or None
-        names = set()
-        fc = shutil.which('fc-list')
-        if fc:
-            try:
-                result = subprocess.run(
-                    [fc, '--format', '%{family}\n'],
-                    capture_output=True, text=True, timeout=20,
-                )
-                if result.returncode == 0:
-                    for line in (result.stdout or '').splitlines():
-                        for family in line.split(','):
-                            family = family.strip()
-                            if family:
-                                names.add(family)
-            except Exception as exc:
-                logger.debug("fc-list failed: %s", exc)
-        cls._font_cache = names
-        if not names:
-            logger.debug("Could not enumerate fonts; using preset font as-is")
-        return names or None
+        Add burned-in captions from transcript segments
 
-    # ------------------------------------------------------------------
-    def _write_ass_legacy(self, transcript_segments: List[Dict], ass_path: Path,
-                          time_offset: float = 0.0,
-                          clip_duration: Optional[float] = None,
-                          font_size: Optional[int] = None) -> bool:
-        """One dialogue line per transcript segment (the pre-rewrite look)."""
-        font_size = font_size or config.caption_font_size
+        Args:
+            input_path: Path to input video
+            transcript_segments: List of segments with 'text', 'start', 'end'
+            output_path: Path for output video with captions
+            font_size: Font size for captions
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not Path(input_path).exists():
+            logger.error(f"Input video not found: {input_path}")
+            return False
+
         try:
-            ass_path.parent.mkdir(parents=True, exist_ok=True)
+            # Create ASS subtitle file from transcript segments
+            ass_path = str(Path(output_path).with_suffix('.ass'))
+
+            # Write ASS subtitle file
             with open(ass_path, 'w', encoding='utf-8') as f:
                 f.write('[Script Info]\n')
-                f.write('Title: Shorts captions\n')
+                f.write('Title: Generated Subtitles\n')
                 f.write('ScriptType: v4.00+\n')
                 f.write('WrapStyle: 0\n')
                 f.write('ScaledBorderAndShadow: yes\n')
-                f.write(f'PlayResX: {SHORT_WIDTH}\n')
-                f.write(f'PlayResY: {SHORT_HEIGHT}\n\n')
+                f.write('PlayResX: 1080\n')
+                f.write('PlayResY: 1920\n')  # 9:16 ratio
+                f.write('Timer: 100.0000\n')
+                f.write('\n')
+
                 f.write('[V4+ Styles]\n')
-                f.write('Format: Name, Fontname, Fontsize, PrimaryColour, '
-                        'SecondaryColour, OutlineColour, BackColour, Bold, Italic, '
-                        'Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, '
-                        'BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, '
-                        'MarginV, Encoding\n')
-                f.write(
-                    f'Style: Default,{captions_mod.resolve_font("Montserrat ExtraBold", self.available_fonts())},'
-                    f'{font_size},&H00FFFFFF,&H000000FF,'
-                    f'&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,2,60,60,320,1\n\n'
-                )
+                f.write('Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n')
+                f.write(f'Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1\n')
+                f.write('\n')
+
                 f.write('[Events]\n')
-                f.write('Format: Layer, Start, End, Style, Name, MarginL, MarginR, '
-                        'MarginV, Effect, Text\n')
+                f.write('Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n')
 
-                written = 0
-                for seg in transcript_segments or []:
-                    start = float(seg.get('start', 0.0)) - time_offset
-                    end = float(seg.get('end', 0.0)) - time_offset
-                    if clip_duration is not None:
-                        if start >= clip_duration:
-                            continue
-                        end = min(end, clip_duration)
-                    if end <= 0:
-                        continue
-                    start = max(0.0, start)
-                    if end <= start:
-                        continue
-                    text = self._escape_ass_text(seg.get('text', ''))
-                    if not text:
-                        continue
-                    f.write(
-                        f'Dialogue: 0,{self._format_ass_time(start)},'
-                        f'{self._format_ass_time(end)},Default,,0,0,0,,{text}\n'
-                    )
-                    written += 1
-            logger.debug("Wrote %d legacy caption lines to %s", written, ass_path.name)
-            return written > 0
-        except Exception as exc:
-            logger.error("Could not write subtitle file %s: %s", ass_path, exc)
-            return False
+                for segment in transcript_segments:
+                    start_time = self._format_ass_time(segment['start'])
+                    end_time = self._format_ass_time(segment['end'])
+                    # Remove HTML tags and escape special characters for ASS
+                    text = segment['text'].replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}')
+                    f.write(f'Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text}\\n')
 
-    @staticmethod
-    def _escape_filter_path(path: str) -> str:
-        """Escape a path for use inside an FFmpeg filter argument."""
-        p = str(path).replace('\\', '/')
-        # Windows drive colons and single quotes must be escaped.
-        # Inside FFmpeg's single-quoted filter strings, ' becomes ''
-        p = p.replace(':', r'\:').replace("'", "''")
-        return p
-
-    # ------------------------------------------------------------------
-    def create_short_from_segment(self, video_path: str, start_time: float,
-                                  end_time: float, transcript_segments: List[Dict],
-                                  output_path: str, add_branding: bool = False,
-                                  burn_captions: bool = True,
-                                  captions_are_clip_relative: bool = False,
-                                  threads: Optional[int] = None,
-                                  keywords: Optional[List[str]] = None,
-                                  caption_style: Optional[str] = None) -> bool:
-        """Render one vertical Short in a single FFmpeg pass.
-
-        Pipeline: seek -> scale/pad to 1080x1920 -> burn captions ->
-        loudness-normalise audio -> encode.
-
-        Args:
-            captions_are_clip_relative: when True, ``transcript_segments``
-                already start at 0 for this clip, so no rebasing is applied.
-                This is what the two-pass caption flow produces: the clip's own
-                audio is transcribed, so its timings are correct in the file
-                being rendered and must not be shifted again.
-            threads: cap libx264 threads. Used when several renders run
-                concurrently so they do not each try to claim every core.
-        """
-        src = Path(video_path)
-        if not src.exists():
-            logger.error("Source video not found: %s", video_path)
-            return False
-
-        start_time = max(0.0, float(start_time))
-        end_time = float(end_time)
-        duration = end_time - start_time
-        if duration <= 0:
-            logger.error(
-                "Invalid clip bounds %.2f-%.2f (duration %.2f)",
-                start_time, end_time, duration,
-            )
-            return False
-
-        out = Path(output_path)
-        out.parent.mkdir(parents=True, exist_ok=True)
-
-        temp_dir = Path(config.temp_dir)
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        # The ASS temp filename must not contain single or double quotes:
-        # FFmpeg's filtergraph parser consumes ' inside subtitles='...' and the
-        # render fails with "Unable to open <name-without-apostrophe>". Clip
-        # hooks are full of apostrophes ("I'm", "you're"), so strip them here.
-        # Only the internal caption file is affected; the visible .mp4 output
-        # keeps its original name.
-        safe_stem = sanitize_filename(out.stem).replace("'", '').replace('"', '')
-        ass_path = temp_dir / f"{safe_stem}.ass"
-        # Render to a temp file next to the destination so the final move is
-        # always same-filesystem (fixes the cross-device rename failure).
-        staging = out.with_name(f".{out.stem}.partial.mp4")
-
-        # --- video filter chain ------------------------------------------
-        # Scale to fit inside 1080x1920 and fill the bars behind it. Nothing is
-        # cropped out, and the result is exactly the resolution YouTube Shorts
-        # expects. The backdrop strategy is configurable because the original
-        # full-resolution gblur cost more than the video encode itself.
-
-        scaler = getattr(config, 'video_scaler', 'lanczos')
-
-        if config.background_mode == 'smart':
-            # Handle smart person-aware cropping
-            filters, last_label = self._build_smart_background_filters(
-                video_path, start_time, end_time, width=SHORT_WIDTH, height=SHORT_HEIGHT
-            )
-        else:
-            filters, last_label = build_background_filters(
-                config.background_mode, scaler=scaler
-            )
-
-        if burn_captions and transcript_segments:
-            caption_offset = 0.0 if captions_are_clip_relative else start_time
-            if self.write_ass(transcript_segments, ass_path,
-                              time_offset=caption_offset, clip_duration=duration,
-                              keywords=keywords, style=caption_style):
-                # Use relative path from cwd for FFmpeg subtitles filter to avoid
-                # Windows drive-letter parsing issues in filter strings.
-                try:
-                    rel_ass = Path(ass_path).relative_to(Path.cwd())
-                except ValueError:
-                    rel_ass = Path(ass_path)
-                # Render subtitles in a full-chroma format, then convert once at
-                # the end. Burning big bold captions directly onto yuv420p
-                # blends the glyph edges into half-resolution chroma planes,
-                # which is what makes caption edges look muddy or fringed --
-                # especially the coloured emphasis words. Compositing at 4:4:4
-                # and subsampling afterwards keeps the outlines crisp.
-                filters.append(
-                    f"[{last_label}]format=yuv444p,"
-                    f"subtitles='{self._escape_filter_path(rel_ass)}'"
-                    f":alpha=1[captioned]"
-                )
-                last_label = 'captioned'
-            else:
-                logger.warning("No caption lines fell inside the clip; skipping captions")
-
-        # Final conversion to the delivery format. Tagging the colour space
-        # matters: untagged H.264 is interpreted as BT.601 by some players and
-        # BT.709 by others, so an untagged file looks washed out or oversaturated
-        # depending on where it is watched.
-        filters.append(f"[{last_label}]format=yuv420p[vout]")
-
-        has_audio = self.has_audio_stream(str(src))
-
-        # --- audio graph --------------------------------------------------
-        # The music bed (when there is one) needs a SECOND input, and mixing
-        # two inputs is only expressible in -filter_complex. The previous
-        # implementation built a multi-input, labelled graph and handed it to
-        # '-af', which accepts only a simple 1-in/1-out chain -- so FFmpeg
-        # rejected every render with "Simple filtergraph '(null)' was expected
-        # to have exactly 1 input and 1 output. However, it had 2 input(s)".
-        # It also used [0:a:0] as *both* the speech and the music source, so
-        # even as a complex graph it would only ever have ducked the speech
-        # against itself. Both problems are fixed by resolving the music track
-        # first, adding it as input 1, and appending real audio chains to the
-        # same filter_complex we already build for video.
-        music_track = self._pick_music_track() if has_audio else None
-
-        cmd = [
-            self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
-            # -ss before -i seeks fast; -t after gives an exact duration.
-            # Both are floats, so no sub-second truncation.
-            '-ss', f"{start_time:.3f}",
-            '-i', str(src),
-        ]
-
-        if music_track:
-            # -stream_loop -1 loops the bed for as long as the clip needs it,
-            # which is what 'aloop' was reaching for. Doing it at the input is
-            # cheaper and cannot overflow a frame-count limit.
-            cmd += ['-stream_loop', '-1', '-i', str(music_track)]
-
-        cmd += ['-t', f"{duration:.3f}"]
-
-        if has_audio:
-            filters.extend(self._build_audio_filters(bool(music_track)))
-
-        cmd += [
-            '-filter_complex', ';'.join(filters),
-            '-map', '[vout]',
-        ]
-
-        if has_audio:
-            cmd += [
-                '-map', '[aout]',
-                # 128k was audibly lossy on music beds. 192k at 48kHz is what
-                # YouTube itself recommends for stereo; the extra bytes are
-                # negligible next to the video track.
-                '-c:a', 'aac', '-b:a', config.audio_bitrate,
-                '-ar', str(config.audio_sample_rate),
-                '-ac', '2',
+            # FFmpeg command to burn in subtitles
+            cmd = [
+                'ffmpeg',
+                '-i', input_path,
+                '-vf', f'subtitles={ass_path}:force_style=\'Fontsize={font_size},PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=3,Outline=2,Shadow=1,Alignment=2\'',
+                '-c:a', 'copy',
+                '-avoid_negative_ts', 'make_zero',
+                '-fflags', '+genpts',
+                '-y',
+                output_path
             ]
-        else:
-            logger.warning("Source has no audio stream; rendering a silent clip")
-            cmd += ['-an']
 
-        # Encoder, quality and colour flags. Resolved once per process: this is
-        # a hardware encoder when the machine has one (freeing the CPU for
-        # transcription, the actual bottleneck), else libx264. The thread cap
-        # only applies to libx264 -- hardware encoders do not contend for cores.
-        cmd += self._video_encode_args(threads=threads)
-        cmd += ['-movflags', '+faststart']
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
-        # Framerate: previously hard-coded to '-r 30', which silently threw away
-        # half the frames of any 50/60fps source and made motion look choppy.
-        # Now the source rate is preserved, capped at video_max_fps so an
-        # unusual high-rate source cannot explode the encode time.
-        target_fps = self._choose_fps(str(src))
-        if target_fps:
-            cmd += ['-r', f"{target_fps:g}"]
-
-        # NOTE: the -threads cap is applied inside _video_encode_args(), which
-        # knows whether the resolved encoder is CPU-bound and can honour it.
-        cmd += ['-y', str(staging)]
-
-        # Timeouts must scale with the work: a fixed 30s killed any real clip.
-        timeout = max(300, int(duration * 30) + 120)
-
-        logger.info(
-            "Rendering %.2f-%.2fs (%.1fs) -> %s",
-            start_time, end_time, duration, out.name,
-        )
-
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            logger.error("FFmpeg timed out after %ss rendering %s", timeout, out.name)
-            self._cleanup(staging, ass_path)
-            return False
-        except Exception as exc:
-            logger.error("FFmpeg could not be launched: %s", exc)
-            self._cleanup(staging, ass_path)
-            return False
-
-        if result.returncode != 0:
-            logger.error(
-                "FFmpeg failed (exit %s) for %s: %s",
-                result.returncode, out.name,
-                (result.stderr or '').strip()[-800:],
-            )
-            self._cleanup(staging, ass_path)
-            return False
-
-        if not staging.exists() or staging.stat().st_size == 0:
-            logger.error("FFmpeg reported success but produced no output for %s", out.name)
-            self._cleanup(staging, ass_path)
-            return False
-
-        try:
-            if out.exists():
-                out.unlink()
-            # shutil.move handles cross-filesystem moves; Path.rename does not.
-            shutil.move(str(staging), str(out))
-        except Exception as exc:
-            logger.error("Could not move rendered clip into place: %s", exc)
-            self._cleanup(staging, ass_path)
-            return False
-
-        self._cleanup(None, ass_path)
-
-        dims = self.probe_dimensions(str(out))
-        logger.info(
-            "Short ready: %s (%s, %.1f MB)",
-            out, f"{dims[0]}x{dims[1]}" if dims else 'unknown',
-            out.stat().st_size / (1024 * 1024),
-        )
-        return True
-
-    # ------------------------------------------------------------------
-    # Audio graph
-    # ------------------------------------------------------------------
-    #: Extensions accepted for background music beds.
-    MUSIC_EXTENSIONS = ('.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.opus')
-
-    #: Cached list of music tracks. Scanning the directory per clip is pure
-    #: overhead (the answer cannot change mid-run) and it made the "no tracks
-    #: found" warning fire once per render, spamming the log.
-    _music_cache = None
-    _music_warned = False
-
-    @classmethod
-    def _music_tracks(cls) -> List[Path]:
-        """All usable music beds, scanned once per process."""
-        if cls._music_cache is not None:
-            return cls._music_cache
-
-        tracks: List[Path] = []
-        music_dir = Path(getattr(config, 'music_dir', 'data/music'))
-        if music_dir.exists():
-            for path in sorted(music_dir.iterdir()):
-                if not path.is_file():
-                    continue
-                if path.suffix.lower() not in cls.MUSIC_EXTENSIONS:
-                    continue
-                try:
-                    if path.stat().st_size <= 0:
-                        continue
-                except OSError:
-                    continue
-                tracks.append(path)
-
-        if not tracks and getattr(config, 'music_enabled', True):
+            # Clean up temporary ASS file
             try:
-                from .music_sources import sync_ncs_music
-                tracks = sync_ncs_music(music_dir=music_dir, min_tracks=3, max_new_tracks=3)
-            except Exception as exc:
-                logger.warning("Failed to auto-sync music tracks: %s", exc)
+                os.remove(ass_path)
+            except OSError:
+                pass  # Ignore if already deleted
 
-        cls._music_cache = tracks
-        return tracks
+            if result.returncode != 0:
+                logger.error(f"Caption burning failed: {result.stderr}")
+                return False
 
-    @classmethod
-    def _pick_music_track(cls) -> Optional[Path]:
-        """A random music bed, or None when music is off/unavailable."""
-        if not getattr(config, 'music_enabled', True):
-            return None
-        # A zero volume means the bed would be inaudible: skip the extra input
-        # and the mix entirely rather than paying for a silent track.
-        if float(getattr(config, 'music_volume', 0.15) or 0.0) <= 0.0:
-            return None
+            if not Path(output_path).exists():
+                logger.error(f"Output video not created: {output_path}")
+                return False
 
-        tracks = cls._music_tracks()
-        if not tracks:
-            # Warn once, not once per clip.
-            if not cls._music_warned:
-                cls._music_warned = True
-                logger.warning(
-                    "Music enabled but no tracks found in %s -- rendering "
-                    "speech-only audio. Add .mp3/.wav files there or set "
-                    "MUSIC_ENABLED=false to silence this warning.",
-                    getattr(config, 'music_dir', 'data/music'),
-                )
-            return None
+            logger.info(f"Captions burned into video: {output_path}")
+            return True
 
-        import random
-        return random.choice(tracks)
-
-    @staticmethod
-    def _build_audio_filters(with_music: bool) -> List[str]:
-        """Audio chains ending in the ``[aout]`` label.
-
-        Speech is always loudness-normalised to YouTube's target. When a music
-        bed is present it is attenuated, side-chain ducked *by the speech* (so
-        it drops under dialogue and swells in the gaps) and mixed underneath.
-        """
-        loudnorm = 'loudnorm=I=-16:TP=-1.5:LRA=11'
-
-        if not with_music:
-            return [f"[0:a:0]{loudnorm},aresample=async=1:first_pts=0[aout]"]
-
-        music_volume = float(getattr(config, 'music_volume', 0.15) or 0.15)
-        duck = float(getattr(config, 'music_duck_factor', 0.3) or 0.3)
-        # music_duck_factor is "how loud the bed stays under speech", so a
-        # smaller factor must mean a *stronger* duck. Expressed as a
-        # sidechaincompress ratio, that is an inverse relationship. The old
-        # code used it as `makeup=1/duck`, i.e. it BOOSTED the music while
-        # speech played -- the opposite of ducking. Clamped so a factor of 0
-        # cannot divide by zero.
-        duck = min(max(duck, 0.05), 1.0)
-        ratio = min(20.0, max(1.5, 1.0 / duck))
-
-        return [
-            # Speech: normalise once, then split -- one copy is the sidechain
-            # control signal, the other is the audible track.
-            f"[0:a:0]{loudnorm},aresample=async=1:first_pts=0,"
-            f"asplit=2[speech][sidechain]",
-            # Music: match the speech layout/rate before it reaches the mixer,
-            # and trim it to the clip so the looped input cannot run long.
-            f"[1:a:0]volume={music_volume:g},aformat=sample_fmts=fltp:"
-            f"sample_rates={int(config.audio_sample_rate)}:channel_layouts=stereo[bed]",
-            # Duck the bed against the speech.
-            f"[bed][sidechain]sidechaincompress="
-            f"threshold=0.03:ratio={ratio:g}:attack=5:release=250[ducked]",
-            # Mix. duration=first keeps the output exactly as long as the
-            # speech track; dropout_transition=0 stops amix from ramping the
-            # gain up when one input ends.
-            "[speech][ducked]amix=inputs=2:duration=first:dropout_transition=0:"
-            "normalize=0[aout]",
-        ]
-
-    @staticmethod
-    def _cleanup(*paths):
-        for p in paths:
-            if not p:
-                continue
+        except Exception as e:
+            logger.error(f"Error adding captions: {str(e)}")
+            # Clean up ASS file if it exists
+            ass_path = str(Path(output_path).with_suffix('.ass'))
             try:
-                Path(p).unlink()
+                os.remove(ass_path)
             except OSError:
                 pass
+            return False
 
-    # ------------------------------------------------------------------
-    # Backwards-compatible helpers. The single-pass renderer above replaces
-    # these for normal use, but they are kept because other tooling calls them.
-    # ------------------------------------------------------------------
-    def create_vertical_crop(self, input_path: str, output_path: str,
-                             x_offset: int = 0, y_offset: int = 0) -> bool:
-        """Scale/pad a video to 1080x1920 (kept for API compatibility)."""
-        if not Path(input_path).exists():
-            logger.error("Input video not found: %s", input_path)
-            return False
-        # Reuse the shared (and much cheaper) backdrop graph rather than
-        # keeping a second copy of the expensive full-resolution blur.
-        filters, last_label = build_background_filters(
-            config.background_mode, scaler=getattr(config, 'video_scaler', 'lanczos')
-        )
-        filters.append(f"[{last_label}]format=yuv420p[vout]")
-        cmd = [
-            self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
-            '-i', input_path,
-            '-filter_complex', ';'.join(filters),
-            '-map', '[vout]', '-map', '0:a?',
-        ] + self._video_encode_args() + [
-            '-c:a', 'copy', '-y', output_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-        if result.returncode != 0:
-            logger.error("Vertical conversion failed: %s", (result.stderr or '')[-500:])
-            return False
-        return Path(output_path).exists()
+    def _format_ass_time(self, seconds: float) -> str:
+        """Convert seconds to ASS time format (H:MM:SS.cc)"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        centisecs = int((seconds - int(seconds)) * 100)
+        return f"{hours}:{minutes:02d}:{secs:02d}.{centisecs:02d}"
 
-    def add_burn_in_captions(self, input_path: str, transcript_segments: List[Dict],
-                             output_path: str, font_size: Optional[int] = None,
-                             time_offset: float = 0.0) -> bool:
-        """Burn captions into an existing clip (kept for API compatibility)."""
+    def add_intro_outro(self, input_path: str, output_path: str,
+                       intro_path: Optional[str] = None, outro_path: Optional[str] = None) -> bool:
+        """
+        Add intro and/or outro clips to a video
+
+        Args:
+            input_path: Path to main video
+            output_path: Path for output video
+            intro_path: Path to intro video (optional)
+            outro_path: Path to outro video (optional)
+
+        Returns:
+            True if successful, False otherwise
+        """
         if not Path(input_path).exists():
-            logger.error("Input video not found: %s", input_path)
+            logger.error(f"Input video not found: {input_path}")
             return False
-        # Same quote-stripping as create_short_from_segment(): a ' in the
-        # filename breaks FFmpeg's subtitles='...' filtergraph quoting.
-        safe_stem = Path(output_path).stem.replace("'", '').replace('"', '')
-        ass_path = Path(config.temp_dir) / f"{safe_stem}.ass"
-        if not self.write_ass(transcript_segments, ass_path,
-                              time_offset=time_offset, font_size=font_size):
-            logger.warning("No captions to burn; copying input through")
-        cmd = [
-            self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
-            '-i', input_path,
-            # 4:4:4 while compositing glyphs, 4:2:0 for delivery -- see the
-            # note in create_short_from_segment().
-            '-vf', (f"format=yuv444p,"
-                    f"subtitles='{self._escape_filter_path(ass_path)}':alpha=1,"
-                    f"format=yuv420p"),
-        ] + self._video_encode_args() + [
-            '-c:a', 'copy', '-y', output_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-        self._cleanup(ass_path)
-        if result.returncode != 0:
-            logger.error("Caption burn failed: %s", (result.stderr or '')[-500:])
+
+        try:
+            # Build filter complex for concatenation
+            inputs = ['-i', input_path]
+            filters = []
+            input_count = 1
+
+            if intro_path and Path(intro_path).exists():
+                inputs.extend(['-i', intro_path])
+                input_count += 1
+
+            if outro_path and Path(outro_path).exists():
+                inputs.extend(['-i', outro_path])
+                input_count += 1
+
+            # Build concat filter
+            concat_inputs = ''
+            if input_count == 3:  # intro + main + outro
+                concat_inputs = '[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[outv][outa]'
+            elif input_count == 2:  # Either intro+main or main+outro
+                if intro_path:
+                    concat_inputs = '[1:v][1:a][0:v][0:a]concat=n=2:v=1:a=1[outv][outa]'
+                else:  # outro only
+                    concat_inputs = '[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]'
+            else:  # Just main video
+                concat_inputs = '[0:v][0:a]'
+
+            # FFmpeg command
+            cmd = ['ffmpeg'] + inputs + [
+                '-filter_complex', concat_inputs,
+                '-map', '[outv]', '-map', '[outa]',
+                '-avoid_negative_ts', 'make_zero',
+                '-fflags', '+genpts',
+                '-y',
+                output_path
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+            if result.returncode != 0:
+                logger.error(f"Intro/outro addition failed: {result.stderr}")
+                return False
+
+            if not Path(output_path).exists():
+                logger.error(f"Output video not created: {output_path}")
+                return False
+
+            logger.info(f"Intro/outro added to video: {output_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error adding intro/outro: {str(e)}")
             return False
-        return Path(output_path).exists()
 
     def normalize_audio(self, input_path: str, output_path: str) -> bool:
-        """Loudness-normalise audio, copying video (kept for API compatibility)."""
-        if not Path(input_path).exists():
-            logger.error("Input video not found: %s", input_path)
-            return False
-        cmd = [
-            self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
-            '-i', input_path,
-            '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
-            '-c:v', 'copy', '-c:a', 'aac', '-b:a', config.audio_bitrate,
-            '-ar', str(config.audio_sample_rate), '-y', output_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-        if result.returncode != 0:
-            logger.error("Audio normalisation failed: %s", (result.stderr or '')[-500:])
-            return False
-        return Path(output_path).exists()
-
-    def _build_smart_background_filters(self, video_path: str, start_time: float,
-                                        end_time: float,
-                                        width: int = SHORT_WIDTH,
-                                        height: int = SHORT_HEIGHT):
-        """Person-aware framing, delegating to :mod:`smart_crop`.
-
-        The previous implementation lived here and never worked: it normalised
-        source-pixel face coordinates by the *output* size, averaged the
-        positions of different people into a point where nobody stood, and its
-        multi-person branch computed regions and then discarded them with
-        ``return build_background_filters('crop', ...)``. See smart_crop.py for
-        the full analysis.
-
-        Falls back to the configured non-smart backdrop whenever detection
-        finds nobody, so this stage can never fail a render.
         """
-        fallback = getattr(config, 'smart_fallback_mode', 'crop')
-        scaler = getattr(config, 'video_scaler', 'lanczos')
+        Normalize audio using FFmpeg loudnorm filter
+
+        Args:
+            input_path: Path to input video
+            output_path: Path for output video
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not Path(input_path).exists():
+            logger.error(f"Input video not found: {input_path}")
+            return False
+
         try:
-            result = smart_crop.build_smart_filters(
-                video_path, start_time, end_time, width=width, height=height,
-                zoom=getattr(config, 'smart_zoom', 1.0),
-                headroom=getattr(config, 'smart_headroom', 0.55),
-                samples=getattr(config, 'smart_samples', 9),
-                max_people=getattr(config, 'smart_max_people', 4),
-                min_presence=getattr(config, 'smart_min_presence', 0.34),
-                scaler=scaler,
-            )
-        except Exception as exc:
-            logger.warning("Smart framing failed (%s); using '%s'", exc, fallback)
-            return build_background_filters(fallback, width, height, scaler=scaler)
+            # Two-pass loudnorm for better results
+            # First pass: analyze
+            cmd1 = [
+                'ffmpeg',
+                '-i', input_path,
+                '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11:print_format=summary',
+                '-f', 'null', '-'
+            ]
 
-        if not result:
-            logger.info("Smart framing found no people; using '%s'", fallback)
-            return build_background_filters(fallback, width, height, scaler=scaler)
+            result1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=30)
 
-        filters, label, _count = result
-        return list(filters), label
+            # Extract measurements from first pass (simplified - in production you'd parse the output)
+            # For now, we'll use fixed parameters which work reasonably well
+
+            # Second pass: apply normalization
+            cmd2 = [
+                'ffmpeg',
+                '-i', input_path,
+                '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
+                '-c:v', 'copy',
+                '-y',
+                output_path
+            ]
+
+            result2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=30)
+
+            if result2.returncode != 0:
+                logger.error(f"Audio normalization failed: {result2.stderr}")
+                return False
+
+            if not Path(output_path).exists():
+                logger.error(f"Output video not created: {output_path}")
+                return False
+
+            logger.info(f"Audio normalized: {output_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error normalizing audio: {str(e)}")
+            return False
+
+    def create_short_from_segment(self, video_path: str, start_time: float,
+                                end_time: float, transcript_segments: List[Dict],
+                                output_path: str, add_branding: bool = True) -> bool:
+        """
+        Create a complete Short from a video segment
+
+        Args:
+            video_path: Path to source video
+            start_time: Start time in seconds
+            end_time: End time in seconds
+            transcript_segments: Transcript segments for this time range (for captions)
+            output_path: Path for final Short
+            add_branding: Whether to add intro/outro branding
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not Path(video_path).exists():
+            logger.error(f"Source video not found: {video_path}")
+            return False
+
+        try:
+            # Create temporary files in temp directory
+            temp_dir = Path(__file__).parent.parent / 'data' / 'temp'
+            temp_dir.mkdir(parents=True, exist_ok=True)
+
+            # Filter transcript segments for this time range
+            relevant_transcript = [
+                seg for seg in transcript_segments
+                if not (seg['end'] <= start_time or seg['start'] >= end_time)
+            ]
+
+            segmented_video = str(temp_dir / f"segmented_{Path(output_path).stem}.mp4")
+            cropped_video = str(temp_dir / f"cropped_{Path(output_path).stem}.mp4")
+            captioned_video = str(temp_dir / f"captioned_{Path(output_path).stem}.mp4")
+            normalized_video = str(temp_dir / f"normalized_{Path(output_path).stem}.mp4")
+
+            # Step 1: Extract segment
+            logger.info(f"Extracting segment {start_time:.2f}-{end_time:.2f} from {video_path}")
+            cmd_extract = [
+                'ffmpeg',
+                '-ss', format_timestamp(start_time),
+                '-i', video_path,
+                '-to', format_timestamp(end_time),
+                '-c:v', 'libx264',
+                '-c:a', 'aac',
+                '-avoid_negative_ts', 'make_zero',
+                '-fflags', '+genpts',
+                '-y',
+                segmented_video
+            ]
+
+            result = subprocess.run(cmd_extract, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                logger.error(f"Segment extraction failed: {result.stderr}")
+                return False
+
+            # Step 2: Crop to 9:16 vertical
+            logger.info("Cropping to 9:16 vertical format")
+            if not self.create_vertical_crop(segmented_video, cropped_video):
+                return False
+
+            # Step 3: Add captions
+            logger.info("Adding burned-in captions")
+            if not self.add_burn_in_captions(cropped_video, relevant_transcript, captioned_video):
+                return False
+
+            # Step 4: Add branding (intro/outro) if requested
+            if add_branding:
+                logger.info("Adding branding")
+                # For now, we'll skip actual intro/outro files and just use the captioned video
+                # In production, you'd have actual intro/outro assets
+                branded_video = captioned_video
+            else:
+                branded_video = captioned_video
+
+            # Step 5: Normalize audio
+            logger.info("Normalizing audio")
+            if not self.normalize_audio(branded_video, normalized_video):
+                return False
+
+            # Step 6: Move final output to desired location
+            logger.info(f"Moving final output to {output_path}")
+            # Ensure output directory exists
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+            # Move/replace the file
+            if Path(output_path).exists():
+                Path(output_path).unlink()
+            Path(normalized_video).rename(output_path)
+
+            # Clean up temporary files
+            for temp_file in [segmented_video, cropped_video, captioned_video, normalized_video]:
+                try:
+                    if Path(temp_file).exists():
+                        Path(temp_file).unlink()
+                except OSError:
+                    pass  # Ignore if already deleted
+
+            logger.info(f"Short created successfully: {output_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error creating Short: {str(e)}")
+            # Clean up any temporary files
+            temp_files = ['segmented_video', 'cropped_video', 'captioned_video', 'normalized_video']
+            for temp_name in temp_files:
+                if temp_name in locals():
+                    try:
+                        if Path(locals()[temp_name]).exists():
+                            Path(locals()[temp_name]).unlink()
+                    except OSError:
+                        pass
+            return False

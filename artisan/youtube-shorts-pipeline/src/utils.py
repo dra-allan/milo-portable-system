@@ -36,31 +36,12 @@ def setup_logger(name: str, log_file: Optional[Path] = None) -> logging.Logger:
     return logger
 
 def get_data_dir() -> Path:
-    """Get the data directory path.
-
-    Config-driven so working data can live outside the repo (see
-    config/.env DATA_DIR). Falls back to the legacy internal path if
-    config cannot be imported.
-    """
-    try:
-        from .config import config
-        return config.data_dir
-    except Exception:
-        return Path(__file__).parent.parent / 'data'
+    """Get the data directory path"""
+    return Path(__file__).parent.parent / 'data'
 
 def get_temp_dir() -> Path:
-    """Get the temp directory path.
-
-    Config-driven so downloads/temp can live outside the repo (see
-    config/.env TEMP_DIR). Falls back to the legacy internal path if
-    config cannot be imported. The downloader must use this -- using a
-    hardcoded path is how downloads "vanished" between runs.
-    """
-    try:
-        from .config import config
-        return config.temp_dir
-    except Exception:
-        return Path(__file__).parent.parent / 'data' / 'temp'
+    """Get the temp directory path"""
+    return Path(__file__).parent.parent / 'data' / 'temp'
 
 def cleanup_temp_files(max_age_hours: int = 24):
     """Clean up temporary files older than specified hours"""

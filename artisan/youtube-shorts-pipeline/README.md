@@ -218,51 +218,6 @@ NICHE_NAME:
   keywords: ["keyword1", "keyword2", "keyword3"]
   min_duration: 300   # 5 minutes
   max_duration: 3600  # 1 hour
-  ranking_mode: false # optional; see "Ranking / countdown niches" below
-```
-
-#### Keyword matching is word-boundary based
-`keywords` and `negative_keywords` match **whole words and phrases**, not raw
-substrings. This matters most for short negative keywords: with substring
-matching, `live` rejected *"Cars Ever De**live**red"*, `dance` rejected
-*"Abun**dance**"*, and `guide` rejected *"**Guide**d Missiles"* — which threw
-away most legitimate sources on list-style channels. Multi-word phrases still
-work (`live stream` matches *"Live stream: full show"*), and keywords with
-punctuation are handled (`#shorts`, `vs`).
-
-Because of this, prefer **format-level** negative keywords (`compilation`,
-`reaction`, `gameplay`, `#shorts`) over bare topic words.
-
-### Ranking / countdown niches
-
-Set `ranking_mode: true` to switch highlight scoring into countdown-aware mode.
-Use it for Top-10 / "ranked worst to best" sources.
-
-A list video is only clippable at **item boundaries** — a clip starting halfway
-through item four has no setup and no payoff. With `ranking_mode` enabled the
-scorer:
-
-- **boosts** clips that *open* on an enumeration cue (*"Coming in at number
-  four…"*), because those are self-contained,
-- **boosts** clips containing the #1 payoff (*"and the number one spot goes
-  to…"*), the retention peak of any countdown,
-- **penalises** mid-item narration with no enumeration cue,
-- **penalises** clips spanning many boundaries (that's a compilation, and it
-  loses the payoff structure).
-
-The flag defaults to `false`, so every other niche scores exactly as before.
-The reference implementation is the `ranking_general_commentary` niche.
-
-**Onboarding a ranking channel:**
-```bash
-# 1. Authenticate the upload channel (creates config/youtube_token_<niche>.json)
-python -m src.add_channel ranking_general_commentary
-
-# 2. Dry-run discovery: no downloads, just show what would be picked up
-python -m src.main --mode discover --niche ranking_general_commentary
-
-# 3. Render locally without uploading, to sanity-check clip quality first
-python -m src.main --mode once --niche ranking_general_commentary --no-upload
 ```
 
 ## Database Schema

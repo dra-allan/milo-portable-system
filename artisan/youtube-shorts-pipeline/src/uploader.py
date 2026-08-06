@@ -1,150 +1,106 @@
-"""YouTube Shorts uploader with OAuth, cleanup, and creator attribution."""
 import os
-import re
 from pathlib import Path
-from typing import Optional, List
-try:
-    from .utils import setup_logger
-    from .config import config
-except ImportError:
-    from utils import setup_logger
-    from config import config
+from typing import Optional, List, Dict
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.oauth2 import service_account
+from utils import setup_logger, format_timestamp
+from config import config
 
 logger = setup_logger(__name__)
-SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube', 'https://www.googleapis.com/auth/youtube.force-ssl']
-DEFAULT_CATEGORY_ID = '24'
-_VIDEO_ID_RE = re.compile(r'youtube\.com/watch\?v=([A-Za-z0-9_-]{11})|youtu\.be/([A-Za-z0-9_-]{11})')
-
-
-def _build(credentials):
-    from googleapiclient.discovery import build
-    return build('youtube', 'v3', credentials=credentials, cache_discovery=False)
-
 
 class YouTubeUploader:
-    def __init__(self, channel: Optional[str] = None, credentials_path: Optional[str] = None,
-                 token_file: Optional[str] = None, privacy_status: Optional[str] = None):
-        self.channel = channel
-        self.privacy_status = (privacy_status or config.privacy_status).lower()
-        self.credentials_path = Path(
-            credentials_path or config.oauth_client_secrets_for(channel)
-            or config.oauth_client_secrets or (config.project_root / 'credentials.json')
-        )
-        base = Path(config.oauth_token_file)
-        candidate = base.with_name(f'youtube_token_{channel}.json') if channel else base
-        self.token_file = Path(token_file) if token_file else (candidate if candidate.exists() else base)
-        self.credentials = self._get_credentials()
-        self.youtube = _build(self.credentials)
+    def __init__(self):
+        """Initialize YouTube API client"""
+        if config.google_credentials_path and Path(config.google_credentials_path).exists():
+            # Service account authentication
+            credentials = service_account.Credentials.from_service_account_file(
+                config.google_credentials_path,
+                scopes=['https://www.googleapis.com/auth/youtube.upload']
+            )
+            self.youtube = build('youtube', 'v3', credentials=credentials)
+        elif config.youtube_api_key:
+            # API key authentication (limited functionality)
+            self.youtube = build('youtube', 'v3', developerKey=config.youtube_api_key)
+        else:
+            raise ValueError("No YouTube authentication method configured")
 
-    def _get_credentials(self):
-        from google.auth.exceptions import RefreshError
-        from google.auth.transport.requests import Request
-        from google.oauth2.credentials import Credentials
-        from google_auth_oauthlib.flow import InstalledAppFlow
-        creds = None
-        if self.token_file.exists():
-            try:
-                creds = Credentials.from_authorized_user_file(str(self.token_file), SCOPES)
-            except (ValueError, OSError):
-                creds = None
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-            except RefreshError:
-                creds = None
-        if not creds or not creds.valid:
-            if not self.credentials_path.exists():
-                raise FileNotFoundError(f'OAuth client secrets not found at {self.credentials_path}')
-            creds = InstalledAppFlow.from_client_secrets_file(str(self.credentials_path), SCOPES).run_local_server(port=0)
-        self.token_file.parent.mkdir(parents=True, exist_ok=True)
-        self.token_file.write_text(creds.to_json(), encoding='utf-8')
-        try:
-            os.chmod(self.token_file, 0o600)
-        except OSError:
-            pass
-        return creds
+        logger.info("YouTube API client initialized")
 
-    def _credit_description(self, description: str) -> str:
-        """Append a creator credit from the source video metadata when possible."""
-        if 'Original creator:' in description or 'Original source:' in description:
-            return description
-        match = _VIDEO_ID_RE.search(description or '')
-        if not match:
-            return description
-        video_id = match.group(1) or match.group(2)
-        credit = f'Original source: https://www.youtube.com/watch?v={video_id}'
-        try:
-            items = self.youtube.videos().list(part='snippet', id=video_id).execute().get('items') or []
-            if items:
-                snippet = items[0].get('snippet') or {}
-                creator = (snippet.get('channelTitle') or '').strip()
-                channel_id = (snippet.get('channelId') or '').strip()
-                if creator:
-                    credit = f'Original creator: {creator}'
-                    if channel_id:
-                        credit += f' (https://www.youtube.com/channel/{channel_id})'
-                    credit += f'\nOriginal source: https://www.youtube.com/watch?v={video_id}'
-        except Exception as exc:
-            logger.info('Creator lookup unavailable for %s: %s', video_id, exc)
-        return (description.rstrip() + '\n\nCredits\n' + credit).strip()
+    def upload_short(self, video_path: str, title: str, description: str, tags: List[str]) -> Optional[str]:
+        """
+        Upload a Short to YouTube
 
-    def upload_short(self, video_path: str, title: str, description: str, tags: List[str],
-                     privacy_status: Optional[str] = None, category_id: str = DEFAULT_CATEGORY_ID,
-                     publish_at: Optional[str] = None) -> Optional[str]:
-        path = Path(video_path)
-        if not path.exists():
-            logger.error('UPLOAD_SKIP missing_file=%s', path)
+        Args:
+            video_path: Path to the video file
+            title: Title for the Short (will be truncated to 100 chars)
+            description: Description for the Short
+            tags: List of tags (will be filtered to valid ones)
+
+        Returns:
+            YouTube video ID if successful, None otherwise
+        """
+        if not Path(video_path).exists():
+            logger.error(f"Video file not found: {video_path}")
             return None
-        description = self._credit_description(description)
-        status = (privacy_status or self.privacy_status).lower()
-        body = {
-            'snippet': {'title': title[:100], 'description': description[:5000],
-                        'tags': [t for t in tags if t][:30], 'categoryId': str(category_id),
-                        'defaultLanguage': 'en'},
-            'status': {'privacyStatus': status, 'selfDeclaredMadeForKids': False},
-        }
-        if publish_at:
-            body['status']['publishAt'] = publish_at
+
+        # YouTube constraints
+        title = title[:100]  # YouTube title limit
+        description = description[:5000]  # YouTube description limit
+
+        # Filter and limit tags
+        valid_tags = [tag for tag in tags if tag and len(tag.strip()) > 0][:30]  # Max 30 tags
+
         try:
-            from googleapiclient.http import MediaFileUpload
-            media = MediaFileUpload(str(path), chunksize=10 * 1024 * 1024, resumable=True)
-            request = self.youtube.videos().insert(part='snippet,status', body=body, media_body=media)
+            request_body = {
+                'snippet': {
+                    'title': title,
+                    'description': description,
+                    'tags': valid_tags,
+                    'categoryId': '24',  # Entertainment category
+                    'defaultLanguage': 'en',
+                },
+                'status': {
+                    'privacyStatus': 'public',
+                    'madeForKids': False,
+                    'selfDeclaredMadeForKids': False,
+                }
+            }
+
+            media_file = MediaFileUpload(video_path, chunksize=-1, resumable=True)
+
+            request = self.youtube.videos().insert(
+                part='snippet,status',
+                body=request_body,
+                media_body=media_file
+            )
+
             response = None
             while response is None:
-                _, response = request.next_chunk()
-            vid = response.get('id')
-            if vid:
-                try:
-                    path.unlink()
-                    logger.info('CLEANUP_DONE channel=%s path=%s', self.channel, path.name)
-                except OSError as exc:
-                    logger.warning('CLEANUP_WARN channel=%s path=%s error=%s', self.channel, path.name, exc)
-            logger.info('UPLOAD_DONE channel=%s video_id=%s privacy=%s', self.channel, vid, status)
-            return vid
-        except Exception as exc:
-            logger.error('UPLOAD_FAIL channel=%s error=%s', self.channel, str(exc)[:240])
+                status, response = request.next_chunk()
+                if status:
+                    logger.info(f"Upload progress: {int(status.progress() * 100)}%")
+
+            video_id = response.get('id')
+            logger.info(f"Successfully uploaded Short: {video_id}")
+            return video_id
+
+        except Exception as e:
+            logger.error(f"Failed to upload Short: {str(e)}")
             return None
 
-    def get_video_details(self, video_id):
+    def get_video_details(self, video_id: str) -> Optional[Dict]:
+        """Get details of an uploaded video"""
         try:
-            return (self.youtube.videos().list(part='snippet,statistics,status', id=video_id).execute().get('items') or [None])[0]
-        except Exception:
+            request = self.youtube.videos().list(
+                part='snippet,statistics,status',
+                id=video_id
+            )
+            response = request.execute()
+
+            if response['items']:
+                return response['items'][0]
             return None
-
-    def fetch_statistics(self, video_id):
-        details = self.get_video_details(video_id)
-        stats = (details or {}).get('statistics') or {}
-        def number(key):
-            try:
-                return int(stats.get(key, 0) or 0)
-            except (TypeError, ValueError):
-                return 0
-        return {'views': number('viewCount'), 'likes': number('likeCount'), 'comments': number('commentCount'), 'favorites': number('favoriteCount')} if details else None
-
-    @staticmethod
-    def auth_for_channel(channel, credentials_path=None, token_file=None):
-        base = Path(config.oauth_token_file)
-        token_file = token_file or str(base.with_name(f'youtube_token_{channel}.json'))
-        uploader = YouTubeUploader(channel=channel, credentials_path=credentials_path, token_file=token_file, privacy_status='private')
-        items = uploader.youtube.channels().list(part='snippet', mine=True).execute().get('items') or []
-        return items[0].get('id') if items else None
+        except Exception as e:
+            logger.error(f"Failed to get video details for {video_id}: {str(e)}")
+            return None
