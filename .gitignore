@@ -54,3 +54,6 @@ artisan/mm_pipeline/**/_work/
 artisan/mm_pipeline/**/*_FINAL.mp4
 artisan/mm_pipeline/**/*_FINAL.wav
 artisan/mm_pipeline/**/media_cache/
+
+# pov_pipeline audio artifacts (generated narration files)
+artisan/pov_pipeline/**/06_AUDIO/
