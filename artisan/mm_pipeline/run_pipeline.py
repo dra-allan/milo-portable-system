@@ -8,7 +8,7 @@ import os, sys, subprocess, re, shutil, textwrap, json
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-FFMPEG = r"C:\Users\user\Desktop\AGENTIC WORK\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
+FFMPEG = r"C:\Users\user\Desktop\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
 FFPROBE = FFMPEG.replace("ffmpeg.exe", "ffprobe.exe")
 PIPELINE_AGENTS = [
     ("01", "ResearchAnalyst",  "00_RESEARCH_NOTES.txt"),
