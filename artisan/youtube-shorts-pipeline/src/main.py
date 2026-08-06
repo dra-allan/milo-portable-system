@@ -358,7 +358,8 @@ class ShortsPipeline:
             transcript = None if force else self.load_cached_transcript(video_id)
 
             if transcript is None:
-                audio_path = self.transcriber.extract_audio_from_video(video_path)
+                max_seconds = getattr(self.transcriber, 'max_seconds', None)
+                audio_path = self.transcriber.extract_audio_from_video(video_path, max_seconds=max_seconds)
                 if not audio_path:
                     logger.error("Failed to extract audio from %s", video_path)
                     self.stats['errors'] += 1
