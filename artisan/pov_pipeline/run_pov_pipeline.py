@@ -142,16 +142,30 @@ def script_gate(project_dir: Path) -> bool:
     source_path = project_dir / "00_SOURCE_SCRIPT.txt"
     ok = True
 
-    # 1. Wordcount (body segments only, rough: everything between manifest
-    #    end and the final OUTRO line).
+    # 1. Wordcount (body segments only — narration text, not manifest or segment headers)
     if not script_path.exists():
         eprint("[gate] FAIL — 01_SCRIPT_RAW.txt missing")
         return False
     raw = script_path.read_text(encoding="utf-8")
     body = raw.split("=== END MANIFEST ===")[-1]
-    words = len(re.findall(r"[A-Za-z0-9']+", body))
+    # Count only actual narration lines: skip [NAR-###] markers, [VOICE...] markers,
+    # empty lines, and the title card "POV-... The Listener."
+    narration_lines = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("[NAR-"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            continue
+        if line.startswith("POV-") and "The Listener" in line:
+            continue
+        narration_lines.append(line)
+    narration_text = " ".join(narration_lines)
+    words = len(re.findall(r"[A-Za-z0-9']+", narration_text))
     lo, hi = WORD_BUDGET
-    print(f"[gate] wordcount: {words} (target {lo}-{hi})")
+    print(f"[gate] wordcount (narration only): {words} (target {lo}-{hi})")
     if not (lo <= words <= hi):
         eprint(f"[gate] FAIL — outside budget. Expand/cut then re-run.")
         ok = False
