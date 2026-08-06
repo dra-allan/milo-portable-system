@@ -1,0 +1,408 @@
+=== VISUAL MANIFEST ===
+VIDEO_ID: MM-RENTBUY-2026-001
+CONTENT_MODE: EDUCATIONAL
+TOTAL_IMG_SEGMENTS: 19
+TOTAL_VISUAL_ENTRIES: 72
+GENERATED_BY: MM-VisualDirector
+DATE: 2026-08-06
+=== END MANIFEST ===
+
+---
+[N01] $750k vs $600k — one decision at 32
+---
+[MM-N01-A]
+  TYPE: A
+  QUERY: "two 32-year-olds standing side by side, one holding house keys, one holding investment portfolio"
+  DURATION: 5s
+
+[MM-N01-B]
+  TYPE: D
+  TEXT: "Same age // Same income // Same savings // Different outcome"
+  DURATION: 5s
+
+[MM-N01-C]
+  TYPE: B
+  CHART: "two bars comparing $750,000 vs $606,000 net worth after 20 years, teal and navy"
+  DURATION: 5s
+
+[MM-N01-D]
+  TYPE: D
+  TEXT: "The difference? // One decision at 32 // Rent or buy"
+  DURATION: 4s
+
+---
+[N02] The classic dilemma: rent $2k vs buy $350k at 7%
+---
+[MM-N02-A]
+  TYPE: A
+  QUERY: "person looking at Zillow listing on laptop, $350,000 home"
+  DURATION: 5s
+
+[MM-N02-B]
+  TYPE: D
+  TEXT: "Rent: $2,000/month // Buy: $350,000 at 7% // $70k down + $10k closing"
+  DURATION: 5s
+
+[MM-N02-C]
+  TYPE: A
+  QUERY: "confused person weighing two options on scale"
+  DURATION: 4s
+
+[MM-N02-D]
+  TYPE: A
+  QUERY: "realtor handing keys to happy couple"
+  DURATION: 4s
+
+---
+[N03] Why this matters — half a million at stake
+---
+[MM-N03-A]
+  TYPE: A
+  QUERY: "person at kitchen table with calculator and papers, stressed"
+  DURATION: 5s
+
+[MM-N03-B]
+  TYPE: D
+  TEXT: "Ryan wants stability // Steve wants flexibility // $500k net worth difference"
+  DURATION: 5s
+
+[MM-N03-C]
+  TYPE: C
+  ILLUSTRATION: "two paths diverging: house on one path, stock chart on other, teal and gold"
+  DURATION: 5s
+
+[MM-N03-D]
+  TYPE: D
+  TEXT: "Numbers don't care about tradition // They care about math and behavior"
+  DURATION: 4s
+
+---
+[N04] Ryan's real monthly cost: $2,653 — only $230 to equity
+---
+[MM-N04-A]
+  TYPE: B
+  CHART: "pie chart breaking down $2,653: $1,633 interest (navy), $350 taxes, $150 insurance, $290 maintenance, $230 equity (teal)"
+  DURATION: 6s
+
+[MM-N04-B]
+  TYPE: D
+  TEXT: "Mortgage: $1,863 // Taxes: $350 // Insurance: $150 // Maintenance: $290 // Total: $2,653"
+  DURATION: 5s
+
+[MM-N04-C]
+  TYPE: D
+  TEXT: "Month 1: Only $230 builds equity // $2,423 is the cost of owning"
+  DURATION: 5s
+
+[MM-N04-D]
+  TYPE: A
+  QUERY: "homeowner fixing water heater on Saturday, looking tired"
+  DURATION: 4s
+
+---
+[N05] Steve invests $80k + $653/month at 10%
+---
+[MM-N05-A]
+  TYPE: A
+  QUERY: "person setting up automatic investment on Vanguard app"
+  DURATION: 5s
+
+[MM-N05-B]
+  TYPE: D
+  TEXT: "Steve's $80k in index fund // Plus $653/month difference // 10% annual return"
+  DURATION: 5s
+
+[MM-N05-C]
+  TYPE: B
+  CHART: "line chart showing Steve's portfolio growing to $130k in year 1 vs Ryan's $9k equity"
+  DURATION: 5s
+
+[MM-N05-D]
+  TYPE: D
+  TEXT: "Year 1: Renter already ahead // $130k portfolio vs $9k equity"
+  DURATION: 4s
+
+---
+[N06] The twist: fixed mortgage vs 3% rent growth
+---
+[MM-N06-A]
+  TYPE: B
+  CHART: "two lines: flat mortgage payment $1,863 (teal) vs rising rent $2,000 → $2,700 (navy) over 10 years"
+  DURATION: 6s
+
+[MM-N06-B]
+  TYPE: D
+  TEXT: "Ryan's payment: FIXED for 30 years // Steve's rent: +3% per year"
+  DURATION: 5s
+
+[MM-N06-C]
+  TYPE: D
+  TEXT: "Year 10: Steve pays $2,700 // Ryan still pays $1,863 principal + interest"
+  DURATION: 4s
+
+[MM-N06-D]
+  TYPE: A
+  QUERY: "person looking at rent increase notice with frustration"
+  DURATION: 4s
+
+---
+[N07] Year 10 check-in: Ryan $230-278k equity, Steve $290k portfolio
+---
+[MM-N07-A]
+  TYPE: B
+  CHART: "two bars at year 10: Ryan equity $230-278k (teal) vs Steve portfolio $290k (navy)"
+  DURATION: 5s
+
+[MM-N07-B]
+  TYPE: D
+  TEXT: "Home: $470-518k // Mortgage: $240k // Ryan equity: $230-278k"
+  DURATION: 4s
+
+[MM-N07-C]
+  TYPE: D
+  TEXT: "Steve portfolio: $290k // Rent: $2,700 // Ryan housing cost lower now"
+  DURATION: 4s
+
+---
+[N08] Year 20: Ryan $472-606k equity, Steve $750k portfolio
+---
+[MM-N08-A]
+  TYPE: B
+  CHART: "two bars at year 20: Ryan equity $472-606k (teal) vs Steve portfolio $750k (navy)"
+  DURATION: 5s
+
+[MM-N08-B]
+  TYPE: D
+  TEXT: "Ryan home: $632-767k // Mortgage: $160k // 10 years left"
+  DURATION: 4s
+
+[MM-N08-C]
+  TYPE: D
+  TEXT: "Steve portfolio: $750k // Rent: $3,600 // No finish line"
+  DURATION: 4s
+
+[MM-N08-D]
+  TYPE: A
+  QUERY: "older couple looking at paid-off mortgage document smiling"
+  DURATION: 4s
+
+---
+[N09] Factor 1: Time horizon — need 7-10 years minimum
+---
+[MM-N09-A]
+  TYPE: A
+  QUERY: "calendar pages flipping from year 1 to year 10"
+  DURATION: 5s
+
+[MM-N09-B]
+  TYPE: D
+  TEXT: "Sell at year 3 // Transaction costs wipe out equity // Need 7-10 years minimum"
+  DURATION: 5s
+
+[MM-N09-C]
+  TYPE: C
+  ILLUSTRATION: "house with 'FOR SALE' sign, red X through it, then green check at year 10"
+  DURATION: 5s
+
+---
+[N10] Factor 2: Price-to-rent ratio — 14.6 favors buying
+---
+[MM-N10-A]
+  TYPE: B
+  CHART: "formula: $350,000 / $24,000 = 14.6 // Below 15 = buy // Above 20 = rent"
+  DURATION: 5s
+
+[MM-N10-B]
+  TYPE: D
+  TEXT: "Price-to-rent ratio // 14.6 in this example // Below 15 favors buying"
+  DURATION: 4s
+
+[MM-N10-C]
+  TYPE: A
+  QUERY: "person calculating on phone, looking at real estate listings"
+  DURATION: 4s
+
+---
+[N11] Factor 3: Discipline — Steve must invest every month for 20 years
+---
+[MM-N11-A]
+  TYPE: A
+  QUERY: "person at laptop, market crashing red, person still clicking invest"
+  DURATION: 5s
+
+[MM-N11-B]
+  TYPE: D
+  TEXT: "Market falls 30% // You still invest // Lifestyle creep eats the spread"
+  DURATION: 4s
+
+[MM-N11-C]
+  TYPE: C
+  ILLUSTRATION: "two paths: disciplined investor (steady upward) vs lifestyle creep (flat), teal vs navy"
+  DURATION: 5s
+
+[MM-N11-D]
+  TYPE: D
+  TEXT: "Mortgage forces savings // Bank decides for you // Behavioral alpha is real"
+  DURATION: 4s
+
+---
+[N12] Factor 4: Mobility vs concentration risk
+---
+[MM-N12-A]
+  TYPE: A
+  QUERY: "person packing boxes, moving truck outside — easy move"
+  DURATION: 4s
+
+[MM-N12-B]
+  TYPE: A
+  QUERY: "homeowner with FOR RENT sign, tenant complaint texts on phone"
+  DURATION: 4s
+
+[MM-N12-C]
+  TYPE: C
+  ILLUSTRATION: "diversified portfolio: thousands of companies (teal) vs one house on one street (navy)"
+  DURATION: 5s
+
+[MM-N12-D]
+  TYPE: D
+  TEXT: "Steve: thousands of companies // Ryan: one house, one street // Cannot sell the bathroom"
+  DURATION: 5s
+
+---
+[N13] Mistake 1: Buying short-term — underwater at year 3
+---
+[MM-N13-A]
+  TYPE: B
+  CHART: "year 3 equity vs closing costs + selling costs — underwater in red"
+  DURATION: 5s
+
+[MM-N13-B]
+  TYPE: D
+  TEXT: "5-year rule: might move in 5 years? RENT // Math only works if you stay"
+  DURATION: 4s
+
+[MM-N13-C]
+  TYPE: A
+  QUERY: "sad couple at closing table realizing they lost money"
+  DURATION: 4s
+
+---
+[N14] Mistake 2: Renting but not investing
+---
+[MM-N14-A]
+  TYPE: A
+  QUERY: "person buying nicer car instead of investing the difference"
+  DURATION: 4s
+
+[MM-N14-B]
+  TYPE: D
+  TEXT: "Renter advantage VANISHES // If you spend the savings // Lifestyle inflation wins"
+  DURATION: 4s
+
+[MM-N14-C]
+  TYPE: C
+  ILLUSTRATION: "spreadsheet with perfect numbers vs real life with car/vacation expenses, red X"
+  DURATION: 4s
+
+---
+[N15] Mistake 3: Ignoring total cost of ownership
+---
+[MM-N15-A]
+  TYPE: B
+  CHART: "mortgage $1,863 vs real cost $2,653 — hidden $790 in taxes, insurance, maintenance"
+  DURATION: 5s
+
+[MM-N15-B]
+  TYPE: A
+  QUERY: "roof being replaced, $12,000 invoice on screen"
+  DURATION: 4s
+
+[MM-N15-C]
+  TYPE: D
+  TEXT: "Buying is not just a mortgage // Taxes, insurance, maintenance, roof, water heater"
+  DURATION: 4s
+
+---
+[N16] Mistake 4: Treating home as investment
+---
+[MM-N16-A]
+  TYPE: A
+  QUERY: "person trying to chip off piece of kitchen counter to pay bills"
+  DURATION: 4s
+
+[MM-N16-B]
+  TYPE: C
+  ILLUSTRATION: "illiquid house (heavy, locked) vs liquid portfolio (flowing gold coins)"
+  DURATION: 5s
+
+[MM-N16-C]
+  TYPE: D
+  TEXT: "Home equity is wealth // But not spendable wealth // Concentration risk is real"
+  DURATION: 4s
+
+---
+[N17] Your framework: 2 questions
+---
+[MM-N17-A]
+  TYPE: D
+  TEXT: "Question 1: How long will you ACTUALLY stay? // Under 7 years = RENT"
+  DURATION: 5s
+
+[MM-N17-B]
+  TYPE: D
+  TEXT: "Question 2: Will you GENUINELY invest the difference? // No = BUY"
+  DURATION: 5s
+
+[MM-N17-C]
+  TYPE: A
+  QUERY: "person thinking deeply, two thought bubbles: house and stock chart"
+  DURATION: 5s
+
+[MM-N17-D]
+  TYPE: C
+  ILLUSTRATION: "forced savings (mortgage) vs discipline required (investing), teal check vs navy X"
+  DURATION: 5s
+
+---
+[N18] Winner = discipline, not rent vs buy
+---
+[MM-N18-A]
+  TYPE: A
+  QUERY: "split screen: disciplined renter investing vs disciplined owner paying mortgage"
+  DURATION: 5s
+
+[MM-N18-B]
+  TYPE: D
+  TEXT: "Ryan needed to stay // Steve needed to invest // Discipline vs drift"
+  DURATION: 5s
+
+[MM-N18-C]
+  TYPE: C
+  ILLUSTRATION: "two people shaking hands in middle: stability and flexibility both valid"
+  DURATION: 5s
+
+[MM-N18-D]
+  TYPE: D
+  TEXT: "The winner isn't the homeowner // The winner isn't the renter // The winner understands tradeoffs"
+  DURATION: 5s
+
+---
+[N19] Subscribe to Money Matrix
+---
+[MM-N19-A]
+  TYPE: D
+  TEXT: "Subscribe to Money Matrix // Financial complexity → Simple action"
+  DURATION: 4s
+
+[MM-N19-B]
+  TYPE: A
+  QUERY: "Money Matrix logo animation, subscribe button pulsing"
+  DURATION: 4s
+
+=== VISUAL SUMMARY ===
+Total visual entries: 72
+  TYPE A (Stock Footage): 28
+  TYPE B (Charts): 14
+  TYPE C (Illustrations): 12
+  TYPE D (Text Overlays): 18
+---
