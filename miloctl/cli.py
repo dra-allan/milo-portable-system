@@ -206,7 +206,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     try:
         stats = _brain().stats()
         check("memory db", True,
-              f"{stats.get('memories', 0)} memories, fts={stats.get('fts')}")
+              f"{stats.get('live', stats.get('total_rows', 0))} memories, "
+              f"fts={stats.get('fts')}")
     except Exception as exc:
         check("memory db", False, str(exc), "run: milo install")
 
