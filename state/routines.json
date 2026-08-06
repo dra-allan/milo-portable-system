@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1785975850.335336,
+  "updated_at": 1785999176.0244067,
   "routines": [
     {
       "name": "curate-skills",
@@ -25,7 +25,7 @@
       "last_run": 0.0,
       "last_status": "skipped",
       "last_output": "",
-      "next_run": 1785978000.0,
+      "next_run": 1786064400.0,
       "runs": 0,
       "failures": 0
     },
@@ -77,11 +77,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1785975833.2166705,
-      "last_status": "ok",
+      "last_run": 1785975870.4428627,
+      "last_status": "skipped",
       "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     47\n  notes        7\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1785976150.3349044,
-      "runs": 2,
+      "next_run": 1785999410.9924603,
+      "runs": 3,
       "failures": 0
     },
     {
@@ -107,7 +107,7 @@
       "last_run": 0.0,
       "last_status": "skipped",
       "last_output": "",
-      "next_run": 1785975974.055178,
+      "next_run": 1785999410.9924603,
       "runs": 0,
       "failures": 0
     },
@@ -159,11 +159,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 0.0,
-      "last_status": "skipped",
-      "last_output": "",
-      "next_run": 1785988800.0,
-      "runs": 0,
+      "last_run": 1785999110.9997911,
+      "last_status": "ok",
+      "last_output": "Morning, Dra. Here's where things stand — Thursday, 6 Aug 2026.\n\n**Voice mode — closest to done, one gap left.** Speech quality is fixed (mojibake, markdown read aloud, dead air between sentences — all sorted yesterday). What's blocking a real `milo voice` mic session: no GEMINI key in `$MILO_HOME/.env` (only the artisan pipeline has one) and sounddevice/ffmpeg on PATH. Edge TTS is the default speaker, so the main missing piece is the mic input + a key. Once it's live, we wire the identity check (passphrase before sensitive actions) before real use — that was the deal.\n\n**Hermes absorption roadmap** — voice is #1 and nearly there. Next up when you're ready: #2 cron/webhooks (kill the schtasks dependency), then #3 the broken browser/computer-use fix.\n\n**YouTube replication** — one engine, five channels (Money Matrix, ExplaiNation, god did fx, moviegasm, flick rush), heavy-twist at ScriptEngineer. The open piece is building the fetch-transcript step so you drop in a URL and get a twisted script out. The fetch_transcript.py you wanted is already in the Hermes repo, ready to vendor in.\n\n**Website flip** — plan locked: global prospects, one-off sale, Gmail outreach, cheap hosting. Design bar set (Hortons-level, real photos, no Picsum). El Dorado and Rockford Lane are blacklisted styles permanently. Next real step is prospect hunting — pulling businesses off Google Maps with their real info and branding.\n\nMy suggested day: either finish the voice gap (I need a Gemini key from you, or we wire sounddevice) or point me at a channel URL and I'll build the transcript-scraping step. Both are an hour of work, not a project.",
+      "next_run": 1786075200.0,
+      "runs": 1,
       "failures": 0
     },
     {
@@ -189,7 +189,7 @@
       "last_run": 0.0,
       "last_status": "skipped",
       "last_output": "",
-      "next_run": 1785981600.0,
+      "next_run": 1786068000.0,
       "runs": 0,
       "failures": 0
     },
@@ -212,11 +212,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0510957,
-      "last_run": 0.0,
-      "last_status": "skipped",
-      "last_output": "",
-      "next_run": 1785997274.055178,
-      "runs": 0,
+      "last_run": 1785999166.5126328,
+      "last_status": "ok",
+      "last_output": "[ok]    d383123..e1ca89d  master -> master",
+      "next_run": 1786020776.02414,
+      "runs": 1,
       "failures": 0
     }
   ]
