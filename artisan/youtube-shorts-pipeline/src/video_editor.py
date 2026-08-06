@@ -39,7 +39,15 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+
+# Optional OpenCV import for smart person-aware cropping
+try:
+    import cv2
+    OPENCV_AVAILABLE = True
+except ImportError:
+    OPENCV_AVAILABLE = False
+    cv2 = None  # type: ignore
 
 try:  # package-relative first (python -m src.main)
     from .utils import setup_logger, sanitize_filename
@@ -52,6 +60,140 @@ logger = setup_logger(__name__)
 
 SHORT_WIDTH = 1080
 SHORT_HEIGHT = 1920
+
+
+def detect_faces_in_frame(frame, face_cascade):
+    """Detect faces in a single frame and return list of face rectangles."""
+    if frame is None:
+        return []
+
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(
+        gray,
+        scaleFactor=1.1,
+        minNeighbors=5,
+        minSize=(30, 30),
+        flags=cv2.CASCADE_SCALE_IMAGE
+    )
+    return faces
+
+
+def get_optimal_crop_regions(video_path, timestamp, num_people_expected=None):
+    """
+    Analyze a frame at the given timestamp to determine optimal crop regions
+    for person-aware cropping.
+
+    Returns a list of (x, y, width, height) tuples for each person/region.
+    """
+    if not OPENCV_AVAILABLE:
+        logger.warning("OpenCV not available, falling back to center crop for smart mode")
+        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]  # Full frame fallback
+
+    # Initialize video capture
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        logger.error(f"Could not open video {video_path} for face detection")
+        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
+
+    # Set position to the timestamp
+    cap.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000)
+
+    # Read frame
+    ret, frame = cap.read()
+    cap.release()
+
+    if not ret or frame is None:
+        logger.warning(f"Could not read frame at timestamp {timestamp}, falling back to center crop")
+        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
+
+    # Load face cascade classifier
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    if face_cascade.empty():
+        logger.error("Could not load face cascade classifier")
+        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
+
+    # Detect faces
+    faces = detect_faces_in_frame(frame, face_cascade)
+
+    if len(faces) == 0:
+        logger.info("No faces detected, using center crop")
+        # Return center crop region
+        center_x = SHORT_WIDTH // 2
+        center_y = SHORT_HEIGHT // 2
+        size = min(SHORT_WIDTH, SHORT_HEIGHT)  # Square crop from center
+        x = max(0, center_x - size // 2)
+        y = max(0, center_y - size // 2)
+        return [(x, y, size, size)]
+
+    logger.info(f"Detected {len(faces)} faces at timestamp {timestamp}")
+
+    # Sort faces by x-coordinate (left to right)
+    faces = sorted(faces, key=lambda f: f[0])
+
+    # If we have face regions, return them
+    if len(faces) == 1:
+        # Single person - use the face region with some padding
+        x, y, w, h = faces[0]
+        # Add padding around the face
+        padding_x = int(w * 0.3)
+        padding_y = int(h * 0.5)
+        x = max(0, x - padding_x)
+        y = max(0, y - padding_y)
+        w = w + 2 * padding_x
+        h = h + 2 * padding_y
+        return [(x, y, w, h)]
+
+    elif len(faces) == 2:
+        # Two people - split screen vertically
+        face1 = faces[0]
+        face2 = faces[1]
+
+        # Calculate regions for each person
+        # Person 1: top half
+        x1, y1, w1, h1 = face1
+        person1_region = (
+            max(0, x1 - 20),
+            0,
+            min(SHORT_WIDTH, x1 + w1 + 20),
+            SHORT_HEIGHT // 2
+        )
+
+        # Person 2: bottom half
+        x2, y2, w2, h2 = face2
+        person2_region = (
+            max(0, x2 - 20),
+            SHORT_HEIGHT // 2,
+            min(SHORT_WIDTH, x2 + w2 + 20),
+            SHORT_HEIGHT
+        )
+
+        return [person1_region, person2_region]
+
+    else:
+        # 3+ people - create a grid layout
+        # For simplicity, we'll do a 2x2 grid for up to 4 people
+        rows = 2
+        cols = 2
+
+        regions = []
+        region_width = SHORT_WIDTH // cols
+        region_height = SHORT_HEIGHT // rows
+
+        for row in range(rows):
+            for col in range(cols):
+                if len(regions) >= len(faces):
+                    break
+                x = col * region_width
+                y = row * region_height
+                regions.append((x, y, region_width, region_height))
+
+        # If we have more people than grid spaces, just use the grid
+        while len(regions) < 4:  # 2x2 grid
+            x = (len(regions) % cols) * region_width
+            y = (len(regions) // cols) * region_height
+            regions.append((x, y, region_width, region_height))
+
+        return regions[:min(len(faces), 4)]  # Limit to 4 regions max
 
 # The reference blur strength, applied at full 1080x1920 by the original code.
 # Every cheaper backdrop mode is calibrated to look like this one.
@@ -94,6 +236,13 @@ def build_background_filters(mode: str, width: int = SHORT_WIDTH,
         # Fill the frame by cropping the sides. No bars, but loses the edges.
         return ([f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase"
                  f":flags=fast_bilinear,crop={width}:{height}[padded]"], 'padded')
+
+    if mode == 'smart':
+        # Smart person-aware cropping - will be handled differently in the filter chain
+        # For now, return a placeholder that indicates smart mode
+        return ([f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease"
+                 f":flags=fast_bilinear,"
+                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black[padded]"], 'padded')
 
     if mode == 'blur':
         # The original, kept as the reference look for anyone who wants it.
@@ -325,7 +474,14 @@ class VideoEditor:
         # cropped out, and the result is exactly the resolution YouTube Shorts
         # expects. The backdrop strategy is configurable because the original
         # full-resolution gblur cost more than the video encode itself.
-        filters, last_label = build_background_filters(config.background_mode)
+
+        if config.background_mode == 'smart':
+            # Handle smart person-aware cropping
+            filters, last_label = self._build_smart_background_filters(
+                video_path, start_time, end_time, width=SHORT_WIDTH, height=SHORT_HEIGHT
+            )
+        else:
+            filters, last_label = build_background_filters(config.background_mode)
 
         if burn_captions and transcript_segments:
             # Clip-relative captions are already on this file's timeline (the
