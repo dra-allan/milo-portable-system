@@ -1,0 +1,728 @@
+=== VISUAL MANIFEST ===
+VIDEO_ID: MM-2026-001
+CONTENT_MODE: EDUCATIONAL
+TOTAL_IMG_SEGMENTS: 27
+TOTAL_VISUAL_ENTRIES: 120
+GENERATED_BY: MM-VisualDirector
+DATE: 2026-07-18
+=== END MANIFEST ===
+
+---
+[N01] 82% professionals failed to beat S&P 500
+---
+[MM-N01-A]
+  TYPE: A
+  QUERY: "traders staring at Bloomberg terminals in busy office"
+  DURATION: 5s
+
+[MM-N01-B]
+  TYPE: D
+  TEXT: "82% of professionals // Failed to beat the S&P 500 // Over 15 years"
+  DURATION: 5s
+
+[MM-N01-C]
+  TYPE: A
+  QUERY: "person trading on smartphone looking stressed"
+  DURATION: 4s
+
+[MM-N01-D]
+  TYPE: B
+  CHART: "bar chart comparing S&P 500 returns vs active fund manager returns over 15 years, teal bar towering over navy bars"
+  DURATION: 4s
+
+[MM-N01-E]
+  TYPE: A
+  QUERY: "server room data center with blinking blue lights"
+  DURATION: 4s
+
+---
+[N02] You don't need to pick stocks at all
+---
+[MM-N02-A]
+  TYPE: A
+  QUERY: "person overwhelmed looking at stock charts on laptop"
+  DURATION: 5s
+
+[MM-N02-B]
+  TYPE: D
+  TEXT: "You do not need // To pick stocks"
+  DURATION: 4s
+
+[MM-N02-C]
+  TYPE: C
+  ILLUSTRATION: "light bulb turning on above a person's head, vector style, teal and gold accents"
+  DURATION: 5s
+
+[MM-N02-D]
+  TYPE: A
+  QUERY: "calm person relaxing on couch feeling relieved"
+  DURATION: 5s
+
+[MM-N02-E]
+  TYPE: D
+  TEXT: "Own the whole market // Not individual stocks // Single most important insight"
+  DURATION: 6s
+
+---
+[N03] Fear of picking wrong company
+---
+[MM-N03-A]
+  TYPE: A
+  QUERY: "anxious man staring at phone with red falling stock chart"
+  DURATION: 5s
+
+[MM-N03-B]
+  TYPE: D
+  TEXT: "What if I pick // The wrong company // And lose everything?"
+  DURATION: 5s
+
+[MM-N03-C]
+  TYPE: A
+  QUERY: "person overwhelmed by financial news headlines on TV"
+  DURATION: 5s
+
+[MM-N03-D]
+  TYPE: C
+  ILLUSTRATION: "question mark floating above anxious person with red down arrows, navy background"
+  DURATION: 5s
+
+---
+[N04] 62% of households own no stocks, inflation
+---
+[MM-N04-A]
+  TYPE: A
+  QUERY: "person sitting on couch doing nothing procrastinating"
+  DURATION: 5s
+
+[MM-N04-B]
+  TYPE: D
+  TEXT: "62% of American households // Own zero stocks"
+  DURATION: 5s
+
+[MM-N04-C]
+  TYPE: A
+  QUERY: "frustrated person looking at bank statement with low balance"
+  DURATION: 5s
+
+[MM-N04-D]
+  TYPE: C
+  ILLUSTRATION: "animation of inflation monster eating cash bills in a glass jar, navy and gold"
+  DURATION: 5s
+
+[MM-N04-E]
+  TYPE: B
+  CHART: "line chart comparing purchasing power over time, savings account near flat line vs inflation line climbing in red, teal annotation"
+  DURATION: 5s
+
+---
+[N05] One decision works for decades
+---
+[MM-N05-A]
+  TYPE: C
+  ILLUSTRATION: "single decision button being pressed, then decades of calendar pages flipping, vector style with teal glow"
+  DURATION: 5s
+
+[MM-N05-B]
+  TYPE: D
+  TEXT: "One decision // Made once // Works for decades"
+  DURATION: 4s
+
+[MM-N05-C]
+  TYPE: A
+  QUERY: "confident person at desk looking calm and in control"
+  DURATION: 5s
+
+[MM-N05-D]
+  TYPE: A
+  QUERY: "person with fifty dollar bill and person with briefcase both smiling equally"
+  DURATION: 5s
+
+[MM-N05-E]
+  TYPE: C
+  ILLUSTRATION: "small seed growing into a large tree with money as leaves, teal and gold gradient"
+  DURATION: 6s
+
+---
+[N06] Casino kitchen analogy — gambler betting on lasagna
+---
+[MM-N06-A]
+  TYPE: C
+  ILLUSTRATION: "casino kitchen scene with chef holding giant lasagna tray, neon sign glowing, vector style"
+  DURATION: 5s
+
+[MM-N06-B]
+  TYPE: D
+  TEXT: "ALL IN // On Lasagna"
+  DURATION: 4s
+
+[MM-N06-C]
+  TYPE: A
+  QUERY: "chef looking disappointed at failed dish in restaurant kitchen"
+  DURATION: 5s
+
+[MM-N06-D]
+  TYPE: A
+  QUERY: "chef celebrating successful dish with customers cheering"
+  DURATION: 5s
+
+[MM-N06-E]
+  TYPE: A
+  QUERY: "confused chef scratching head looking at menu board changing"
+  DURATION: 5s
+
+[MM-N06-F]
+  TYPE: D
+  TEXT: "Every season // A new bet // Real money on the line"
+  DURATION: 6s
+
+---
+[N07] Farm analogy — farmer owns everything
+---
+[MM-N07-A]
+  TYPE: A
+  QUERY: "farmer walking through diverse fields of crops at sunrise"
+  DURATION: 5s
+
+[MM-N07-B]
+  TYPE: C
+  ILLUSTRATION: "animated split screen showing tomatoes, corn, wheat, apples, lettuce growing in different seasons, teal and gold"
+  DURATION: 6s
+
+[MM-N07-C]
+  TYPE: A
+  QUERY: "farmer smiling holding fresh vegetables in harvest basket"
+  DURATION: 5s
+
+[MM-N07-D]
+  TYPE: B
+  CHART: "line chart showing farm total output steadily rising over 20 years ignoring seasonal dips, teal line trending up with gold shaded area"
+  DURATION: 6s
+
+[MM-N07-E]
+  TYPE: A
+  QUERY: "farmer sleeping peacefully in bed at night"
+  DURATION: 6s
+
+---
+[N08] Index fund investor is the farmer
+---
+[MM-N08-A]
+  TYPE: A
+  QUERY: "farmer silhouette standing at sunrise overlooking farmland"
+  DURATION: 5s
+
+[MM-N08-B]
+  TYPE: C
+  ILLUSTRATION: "animation of one company dropping out of index and new rising company sliding in, clean vector style with teal arrows"
+  DURATION: 5s
+
+[MM-N08-C]
+  TYPE: A
+  QUERY: "hands collecting fresh harvest produce into basket"
+  DURATION: 5s
+
+[MM-N08-D]
+  TYPE: C
+  ILLUSTRATION: "gold coins falling like rain into hands of relaxed person, navy background with teal glow"
+  DURATION: 5s
+
+---
+[N09] Warren Buffett bet against hedge funds
+---
+[MM-N09-A]
+  TYPE: A
+  QUERY: "Warren Buffett speaking at podium Berkshire Hathaway"
+  DURATION: 5s
+
+[MM-N09-B]
+  TYPE: D
+  TEXT: "$1 Million Bet // Buffett vs Hedge Funds // 2007 — 2017"
+  DURATION: 5s
+
+[MM-N09-C]
+  TYPE: B
+  CHART: "bar chart comparing S&P 500 index fund at 125.8% vs hedge funds at 36.3%, massive teal bar dwarfing navy bars, gold annotation"
+  DURATION: 6s
+
+[MM-N09-D]
+  TYPE: C
+  ILLUSTRATION: "animation of index fund bar growing 3.5 times taller than hedge fund bar, teal vs navy"
+  DURATION: 5s
+
+[MM-N09-E]
+  TYPE: D
+  TEXT: "Index won by // Three and a half times"
+  DURATION: 5s
+
+---
+[N10] $10k growth comparison with fees
+---
+[MM-N10-A]
+  TYPE: B
+  CHART: "line graph showing $10,000 growing to $61,000 over 20 years at 9.7% average return, teal line with gold dots"
+  DURATION: 5s
+
+[MM-N10-B]
+  TYPE: D
+  TEXT: "0.03% expense ratio // That's $3 per year // For every $10,000"
+  DURATION: 5s
+
+[MM-N10-C]
+  TYPE: A
+  QUERY: "person looking happily at growing investment account on laptop"
+  DURATION: 5s
+
+[MM-N10-D]
+  TYPE: D
+  TEXT: "Active fund: 1.2% // $120 per year // $44,000 final value"
+  DURATION: 5s
+
+[MM-N10-E]
+  TYPE: B
+  CHART: "side-by-side bar chart comparing $61,000 index fund vs $44,000 actively managed fund over 20 years, teal vs faded navy"
+  DURATION: 6s
+
+[MM-N10-F]
+  TYPE: D
+  TEXT: "Fees cost you // $17,000 // On a single investment"
+  DURATION: 6s
+
+---
+[N11] Sarah story — peak dot-com, auto-invests through crashes
+---
+[MM-N11-A]
+  TYPE: A
+  QUERY: "woman looking at computer screen in early 2000s office"
+  DURATION: 5s
+
+[MM-N11-B]
+  TYPE: B
+  CHART: "line chart of S&P 500 with peak annotation at January 2000 dot-com high, teal line with gold marker at peak"
+  DURATION: 5s
+
+[MM-N11-C]
+  TYPE: A
+  QUERY: "woman setting up automatic bank transfer on laptop"
+  DURATION: 5s
+
+[MM-N11-D]
+  TYPE: C
+  ILLUSTRATION: "calendar animation flipping through years 2000 dot-com crash, 2008 financial crisis, 2020 pandemic, person remains seated calmly, teal accents"
+  DURATION: 6s
+
+[MM-N11-E]
+  TYPE: A
+  QUERY: "woman sleeping peacefully never checking investments"
+  DURATION: 5s
+
+---
+[N12] Sarah's $1.2M result
+---
+[MM-N12-A]
+  TYPE: D
+  TEXT: "Total invested: $200,000 // Final value: $1,200,000 // $1,000,000 in profit"
+  DURATION: 6s
+
+[MM-N12-B]
+  TYPE: B
+  CHART: "stacked bar chart showing $200,000 contributions in navy and $1,000,000 growth in teal, massive teal section towering above"
+  DURATION: 6s
+
+[MM-N12-C]
+  TYPE: A
+  QUERY: "happy 60-year-old woman smiling in comfortable home"
+  DURATION: 5s
+
+[MM-N12-D]
+  TYPE: C
+  ILLUSTRATION: "animation of dollar-cost averaging smoothing out wavy market line into a steady upward slope, teal line with gold accent"
+  DURATION: 5s
+
+---
+[N13] Same approach works for anyone
+---
+[MM-N13-A]
+  TYPE: A
+  QUERY: "diverse group of people of different ages and backgrounds"
+  DURATION: 6s
+
+[MM-N13-B]
+  TYPE: C
+  ILLUSTRATION: "compound growth engine animation, small coins going in, larger coins coming out, gears turning with teal glow, navy background"
+  DURATION: 6s
+
+[MM-N13-C]
+  TYPE: D
+  TEXT: "Compound growth rewards // The patient // Not the clever"
+  DURATION: 6s
+
+---
+[N14] Step 1: Open account, buy S&P 500 fund
+---
+[MM-N14-A]
+  TYPE: A
+  QUERY: "person opening laptop to start investing journey"
+  DURATION: 5s
+
+[MM-N14-B]
+  TYPE: D
+  TEXT: "Step 1: Open retirement account // Buy S&P 500 index fund // Takes 60 minutes"
+  DURATION: 6s
+
+[MM-N14-C]
+  TYPE: A
+  QUERY: "Vanguard Fidelity Schwab logos on computer screen"
+  DURATION: 5s
+
+[MM-N14-D]
+  TYPE: C
+  ILLUSTRATION: "animation of buying VOO ticker on brokerage app screen, clean vector with teal buy button"
+  DURATION: 5s
+
+[MM-N14-E]
+  TYPE: D
+  TEXT: "VOO: 0.03% // FXAIX: 0.015% // 500 largest US companies // One purchase"
+  DURATION: 5s
+
+---
+[N15] Why specific funds matter, fee comparison
+---
+[MM-N15-A]
+  TYPE: D
+  TEXT: "VOO costs // $3 per year // Per $10,000 invested"
+  DURATION: 5s
+
+[MM-N15-B]
+  TYPE: B
+  CHART: "two line graphs comparing $10,000 over 30 years, one growing much larger with low fees in teal, other stunted with high fees in faded navy"
+  DURATION: 6s
+
+[MM-N15-C]
+  TYPE: A
+  QUERY: "person putting money into pocket instead of handing it away"
+  DURATION: 5s
+
+[MM-N15-D]
+  TYPE: D
+  TEXT: "Tens of thousands // Stay in your pocket // Instead of the fund manager"
+  DURATION: 6s
+
+---
+[N16] Step 2: Auto investments
+---
+[MM-N16-A]
+  TYPE: A
+  QUERY: "person setting up recurring payment on phone banking app"
+  DURATION: 5s
+
+[MM-N16-B]
+  TYPE: D
+  TEXT: "Step 2: Set up auto invest // Takes 15 minutes // $100 per month"
+  DURATION: 5s
+
+[MM-N16-C]
+  TYPE: A
+  QUERY: "person sleeping peacefully while money grows automatically"
+  DURATION: 5s
+
+[MM-N16-D]
+  TYPE: B
+  CHART: "line graph showing $100 monthly contributions growing to $215,000 over 30 years, steady teal upward curve with gold shading underneath"
+  DURATION: 6s
+
+[MM-N16-E]
+  TYPE: C
+  ILLUSTRATION: "animation of computer doing work while person sleeps in bed, money symbols floating up, navy and teal"
+  DURATION: 5s
+
+---
+[N17] Consistency beats timing, Vanguard study
+---
+[MM-N17-A]
+  TYPE: A
+  QUERY: "person relaxing not checking phone or stock prices"
+  DURATION: 5s
+
+[MM-N17-B]
+  TYPE: D
+  TEXT: "Vanguard study found // Do-nothing investors // Outperform by 2.3% per year"
+  DURATION: 6s
+
+[MM-N17-C]
+  TYPE: B
+  CHART: "bar chart comparing returns of target-date fund investors vs frequent traders over time, teal bar significantly higher than navy bar"
+  DURATION: 6s
+
+[MM-N17-D]
+  TYPE: A
+  QUERY: "person walking away from desk leaving investments alone"
+  DURATION: 5s
+
+---
+[N18] Step 3: Global diversification
+---
+[MM-N18-A]
+  TYPE: C
+  ILLUSTRATION: "animated world map with US highlighted in teal and rest of world in gold, 60/40 split visual"
+  DURATION: 5s
+
+[MM-N18-B]
+  TYPE: D
+  TEXT: "US: 60% of global market // International: 40%"
+  DURATION: 4s
+
+[MM-N18-C]
+  TYPE: A
+  QUERY: "person holding a globe in hands"
+  DURATION: 5s
+
+[MM-N18-D]
+  TYPE: C
+  ILLUSTRATION: "animation of VT ticker covering entire globe, then splitting into VTI 70% and VXUS 30%, clean vector with teal and gold"
+  DURATION: 6s
+
+[MM-N18-E]
+  TYPE: D
+  TEXT: "VT: 0.07% // One ticker // The entire planet"
+  DURATION: 5s
+
+---
+[N19] When US struggles, international does better
+---
+[MM-N19-A]
+  TYPE: B
+  CHART: "seesaw line chart showing US line dipping in navy while international line rises in teal, inverse correlation visual"
+  DURATION: 6s
+
+[MM-N19-B]
+  TYPE: A
+  QUERY: "person driving on smooth road without bumps or turbulence"
+  DURATION: 5s
+
+[MM-N19-C]
+  TYPE: D
+  TEXT: "Smoother ride // Less panic-selling // Stay invested — that's the whole game"
+  DURATION: 5s
+
+---
+[N20] Step 4: Ignore news, rebalance yearly
+---
+[MM-N20-A]
+  TYPE: A
+  QUERY: "news anchors shouting on TV with red breaking news banner"
+  DURATION: 5s
+
+[MM-N20-B]
+  TYPE: D
+  TEXT: "Step 4: Ignore the news // Rebalance once a year // 30 minutes every January"
+  DURATION: 6s
+
+[MM-N20-C]
+  TYPE: A
+  QUERY: "person calmly ignoring dramatic TV news headlines"
+  DURATION: 5s
+
+[MM-N20-D]
+  TYPE: B
+  CHART: "line chart with a 20% drop annotated with buying more shares at lower price arrow, teal line recovering, gold annotations"
+  DURATION: 5s
+
+[MM-N20-E]
+  TYPE: A
+  QUERY: "person checking portfolio once on laptop then closing it satisfied"
+  DURATION: 4s
+
+---
+[N21] Rebalance process
+---
+[MM-N21-A]
+  TYPE: A
+  QUERY: "person at desk with calendar reminder on phone"
+  DURATION: 5s
+
+[MM-N21-B]
+  TYPE: C
+  ILLUSTRATION: "animated pie chart showing US slice growing from 70% to 75%, then being trimmed back to 70%, clean vector with teal and navy"
+  DURATION: 6s
+
+[MM-N21-C]
+  TYPE: D
+  TEXT: "Sell high // Buy low // Automatically"
+  DURATION: 4s
+
+[MM-N21-D]
+  TYPE: A
+  QUERY: "person setting annual calendar reminder on smartphone"
+  DURATION: 5s
+
+[MM-N21-E]
+  TYPE: D
+  TEXT: "Check once // Rebalance // Do nothing else all year"
+  DURATION: 5s
+
+---
+[N22] Mistake 1: High fees
+---
+[MM-N22-A]
+  TYPE: A
+  QUERY: "bank advisor meeting with customer at desk with documents"
+  DURATION: 5s
+
+[MM-N22-B]
+  TYPE: D
+  TEXT: "Mistake 1: Paying too much // Some funds charge 1%+ // Hidden fees"
+  DURATION: 5s
+
+[MM-N22-C]
+  TYPE: B
+  CHART: "two line charts over 30 years from $10,000 — 0.05% fee reaches $74,200 in teal, 1% fee only $56,000 in faded navy, massive gap"
+  DURATION: 6s
+
+[MM-N22-D]
+  TYPE: D
+  TEXT: "$74,200 vs $56,000 // $18,200 paid for nothing"
+  DURATION: 5s
+
+[MM-N22-E]
+  TYPE: D
+  TEXT: "For S&P 500 funds // Max 0.20% // Anything above is a ripoff"
+  DURATION: 5s
+
+---
+[N23] Mistake 2: Panic-selling during COVID crash
+---
+[MM-N23-A]
+  TYPE: A
+  QUERY: "news coverage of COVID crash March 2020 worried reporters"
+  DURATION: 5s
+
+[MM-N23-B]
+  TYPE: B
+  CHART: "V-shaped recovery line chart showing sharp 34% drop then 68% surge, teal line dropping then soaring with gold annotations"
+  DURATION: 6s
+
+[MM-N23-C]
+  TYPE: A
+  QUERY: "person panicking staring at red stock chart on phone"
+  DURATION: 5s
+
+[MM-N23-D]
+  TYPE: A
+  QUERY: "same person calm doing nothing on couch looking peaceful"
+  DURATION: 5s
+
+[MM-N23-E]
+  TYPE: D
+  TEXT: "Did nothing // Got it all back // Plus 34% within a year"
+  DURATION: 4s
+
+---
+[N24] Mistake 3: Overlapping funds
+---
+[MM-N24-A]
+  TYPE: A
+  QUERY: "confused investor surrounded by stacks of fund documents"
+  DURATION: 6s
+
+[MM-N24-B]
+  TYPE: C
+  ILLUSTRATION: "animation of ten overlapping circles all covering same large US stocks area, chaotic visual then simplifying to three clean circles, teal and navy"
+  DURATION: 6s
+
+[MM-N24-C]
+  TYPE: D
+  TEXT: "Three funds is all you need // Total US // Total International // Bonds"
+  DURATION: 5s
+
+[MM-N24-D]
+  TYPE: A
+  QUERY: "person with clean simple three-folder portfolio system"
+  DURATION: 5s
+
+---
+[N25] Mistake 4: Waiting for better time
+---
+[MM-N25-A]
+  TYPE: A
+  QUERY: "person waiting hesitating staring at stock chart"
+  DURATION: 5s
+
+[MM-N25-B]
+  TYPE: D
+  TEXT: "Schwab study 2000-2024 // Investing now beats waiting // 75% of the time"
+  DURATION: 5s
+
+[MM-N25-C]
+  TYPE: B
+  CHART: "two line charts comparing lump sum investing immediately in teal vs dribbling in over time in navy, teal ending higher, gold annotations"
+  DURATION: 6s
+
+[MM-N25-D]
+  TYPE: A
+  QUERY: "person taking action clicking buy button on laptop"
+  DURATION: 5s
+
+[MM-N25-E]
+  TYPE: D
+  TEXT: "Best days to invest // Are the ones // That feel the scariest"
+  DURATION: 4s
+
+---
+[N26] You don't need to beat the market — own it
+---
+[MM-N26-A]
+  TYPE: A
+  QUERY: "person standing in golden farm field looking at horizon"
+  DURATION: 5s
+
+[MM-N26-B]
+  TYPE: D
+  TEXT: "You don't need to beat // The market // You just need to own it"
+  DURATION: 5s
+
+[MM-N26-C]
+  TYPE: A
+  QUERY: "farmer standing confidently overlooking vast farmland"
+  DURATION: 5s
+
+[MM-N26-D]
+  TYPE: C
+  ILLUSTRATION: "side-by-side animation: stressed gambler at casino table vs relaxed farmer with abundant harvest, teal farmer side wins, navy gambler side loses"
+  DURATION: 5s
+
+[MM-N26-E]
+  TYPE: D
+  TEXT: "The farmers win // The gamblers go broke // Be the farmer"
+  DURATION: 5s
+
+---
+[N27] Action: Open account, buy, auto invest this week
+---
+[MM-N27-A]
+  TYPE: A
+  QUERY: "person opening brokerage account on laptop excited"
+  DURATION: 5s
+
+[MM-N27-B]
+  TYPE: D
+  TEXT: "This week: // Open a brokerage account // Buy S&P 500 index fund // Set up auto investment"
+  DURATION: 6s
+
+[MM-N27-C]
+  TYPE: A
+  QUERY: "person clicking confirm buy button on smartphone"
+  DURATION: 5s
+
+[MM-N27-D]
+  TYPE: C
+  ILLUSTRATION: "animation of present self shaking hands with future self, smiling, teal glow, navy background with gold sparkles"
+  DURATION: 6s
+
+---
+=== VISUAL SUMMARY ===
+Total visual entries: 120
+  TYPE A (Stock Footage): 55
+  TYPE B (Charts): 18
+  TYPE C (Illustrations): 22
+  TYPE D (Text Overlays): 25
+---
