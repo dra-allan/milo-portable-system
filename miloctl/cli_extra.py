@@ -1277,7 +1277,7 @@ def cmd_routines(args: argparse.Namespace) -> int:
         (ui.ok if res["status"] in ("ok", "dry-run") else ui.err)(
             f"{res['routine']}: {res['status']}")
         if res.get("output"):
-            ui.say(re["output"][:2000])
+            ui.say(res["output"][:2000])
         return 0 if res["status"] in ("ok", "dry-run") else 1
 
     if action == "tick":
