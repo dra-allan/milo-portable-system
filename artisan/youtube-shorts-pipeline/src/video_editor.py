@@ -106,8 +106,19 @@ def get_optimal_crop_regions(video_path, timestamp, num_people_expected=None):
         logger.warning(f"Could not read frame at timestamp {timestamp}, falling back to center crop")
         return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
 
-    # Load face cascade classifier
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    # Load face cascade classifier - handle case where cv2 might not have CascadeClassifier or XML files
+    if not hasattr(cv2, 'CascadeClassifier'):
+        logger.warning("OpenCV does not have CascadeClassifier attribute, falling back to center crop for smart mode")
+        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
+
+    cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+    # Check if cascade file actually exists
+    import os
+    if not os.path.exists(cascade_path):
+        logger.warning(f"Haar cascade file not found at {cascade_path}, falling back to center crop for smart mode")
+        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
+
+    face_cascade = cv2.CascadeClassifier(cascade_path)
     if face_cascade.empty():
         logger.error("Could not load face cascade classifier")
         return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
@@ -743,8 +754,8 @@ class VideoEditor:
         For 2 people: split screen vertically (top/bottom)
         For 3+ people: grid layout (2x2 for up to 4 people)
         """
-        if not OPENCV_AVAILABLE:
-            logger.warning("OpenCV not available for smart mode, falling back to crop mode")
+        if not OPENCV_AVAILABLE or not hasattr(cv2, 'CascadeClassifier'):
+            logger.warning("OpenCV not available or missing CascadeClassifier for smart mode, falling back to crop mode")
             return build_background_filters('crop', width, height)
 
         # Sample multiple timestamps to get a better representation of people positions
