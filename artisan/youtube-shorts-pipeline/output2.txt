@@ -1,0 +1,8 @@
+Microsoft Windows [Version 10.0.22621.4317]
+(c) Microsoft Corporation. All rights reserved.
+
+C:\Users\user\Desktop\milo-portable-system\artisan\youtube-shorts-pipeline>TestUser
+'TestUser' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\user\Desktop\milo-portable-system\artisan\youtube-shorts-pipeline>
