@@ -14,6 +14,7 @@ Two problems fixed here:
 
 import os
 from pathlib import Path
+from typing import List
 
 try:
     import yaml
@@ -31,6 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # Sensible defaults so a fresh clone runs without any niches.yaml at all.
 DEFAULT_NICHE = {
     'channels': [],
+    'channel': '',
     'keywords': [],
     'min_duration': 300,
     'max_duration': 7200,
@@ -52,6 +54,7 @@ class Config:
             env_file = PROJECT_ROOT / '.env'
         env_file = Path(env_file)
         self.env_file = env_file
+        self.project_root = PROJECT_ROOT
         self.env_loaded = env_file.exists()
         if self.env_loaded:
             load_dotenv(env_file)
@@ -157,6 +160,16 @@ class Config:
         self.privacy_status = os.getenv('PRIVACY_STATUS', 'private').lower()
         if self.privacy_status not in ('public', 'private', 'unlisted'):
             self.privacy_status = 'private'
+        # Hard cap on how many Shorts a single run may publish. YouTube's
+        # default Data API quota is ~10,000 units/day and one upload costs
+        # ~1,600, so only ~6 uploads fit per day; 20+ clips from one video
+        # would blow that instantly, so we throttle and let backlog drain it.
+        self.upload_max_per_run = self._int('UPLOAD_MAX_PER_RUN', 5, minimum=1)
+        # When a run has room left in its cap, fill it with older clips that
+        # were rendered but never uploaded (the "new mixed with old" queue).
+        self.upload_backlog = self._bool('UPLOAD_BACKLOG', True)
+        # Channel key used when a niche has no explicit `channel:` binding.
+        self.upload_default_channel = (os.getenv('UPLOAD_DEFAULT_CHANNEL') or '').strip()
 
         # --- Encoding ----------------------------------------------------
         self.video_preset = os.getenv('VIDEO_PRESET', 'medium')
@@ -251,6 +264,33 @@ class Config:
 
     def niche_names(self):
         return sorted((self.niches or {}).keys())
+
+    def get_niche_channel(self, niche_name: str) -> str:
+        """Return the upload channel key bound to a niche.
+
+        Resolution order:
+          1. the niche's explicit ``channel:`` value in niches.yaml,
+          2. ``UPLOAD_DEFAULT_CHANNEL`` from .env,
+          3. the niche name itself (a niche whose key matches a token, e.g.
+             ``flick_shorts`` -> ``youtube_token_flick_shorts.json``),
+          4. '' (no binding) -- uploads are skipped with a warning.
+        """
+        cfg = self.get_niche_config(niche_name)
+        bound = str(cfg.get('channel') or '').strip()
+        if bound:
+            return bound
+        if self.upload_default_channel:
+            return self.upload_default_channel
+        return (niche_name or '').strip()
+
+    def authenticated_channels(self) -> List[str]:
+        """Channel keys that have a token file on disk."""
+        token_dir = Path(self.oauth_token_file).parent
+        return sorted(
+            p.name[len('youtube_token_'):-len('.json')]
+            for p in token_dir.glob('youtube_token_*.json')
+            if p.name != 'youtube_token.json'
+        )
 
     def has_upload_credentials(self) -> bool:
         if self.google_credentials_path and Path(self.google_credentials_path).exists():
