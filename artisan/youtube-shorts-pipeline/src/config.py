@@ -49,7 +49,7 @@ def _resolve(path_value: str) -> Path:
 class Config:
     def __init__(self, env_file=None):
         if env_file is None:
-            env_file = PROJECT_ROOT / 'config' / '.env'
+            env_file = PROJECT_ROOT / '.env'
         env_file = Path(env_file)
         self.env_file = env_file
         self.env_loaded = env_file.exists()
