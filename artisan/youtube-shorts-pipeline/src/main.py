@@ -418,7 +418,8 @@ class ShortsPipeline:
 
             # -- 4. render --------------------------------------------------
             safe_title = sanitize_filename(title) or video_id
-            shorts_dir = Path(self.config.shorts_dir) / safe_title
+            # Store clips under data/shorts/<niche>/<video_title>/ for easy identification
+            shorts_dir = Path(self.config.shorts_dir) / niche / safe_title
             shorts_dir.mkdir(parents=True, exist_ok=True)
 
             logger.info("Step 4/6: Creating Shorts from highlights")
@@ -967,13 +968,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument('target', nargs='?', default=None,
                         help='YouTube URL or 11-character video ID')
-    parser.add_argument('--mode', choices=['once', 'schedule', 'test', 'library', 'stats', 'discover'],
+    parser.add_argument('--mode', choices=['once', 'schedule', 'test', 'library', 'stats', 'discover', 'upload-existing', 'migrate-shorts'],
                         default='once',
                         help="'library' lists videos already downloaded and can "
                              "process them without touching the network; "
                              "'stats' fetches YouTube metrics for uploaded shorts; "
                              "'discover' dry-runs scheduled discovery for bound "
-                             "niches (no downloads)")
+                             "niches (no downloads); "
+                             "'upload-existing' uploads rendered-but-unpublished shorts; "
+                             "'migrate-shorts' restructures legacy shorts layout (see also --dry-run)")
     parser.add_argument('--niche', default=None,
                         help='Niche name from config/niches.yaml (default: auto-detect)')
     parser.add_argument('--videos', type=int, default=1,
@@ -982,6 +985,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help='Upload results to YouTube (overrides UPLOAD_ENABLED)')
     parser.add_argument('--no-upload', dest='upload', action='store_false',
                         help='Never upload, just render locally')
+    parser.add_argument('--upload-limit', type=int, default=None, metavar='N',
+                        help='Max clips to upload in --mode upload-existing '
+                             '(default: config.UPLOAD_MAX_PER_RUN or 5)')
+    parser.add_argument('--channel', default=None,
+                        help='Override target YouTube channel for --mode upload-existing '
+                             '(defaults to niche-bound channel)')
     parser.add_argument('--force', action='store_true',
                         help='Redo finished work: ignore the DB dedup entry, the '
                              'cached transcript and any already-rendered clips')
@@ -1007,6 +1016,8 @@ def build_parser() -> argparse.ArgumentParser:
                              'than N hours ago (default 24)')
     parser.add_argument('--top', type=int, default=10,
                         help='With --mode stats: show top N clips by views (default 10)')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='With --mode migrate-shorts: show what would be migrated without making changes')
     return parser
 
 
@@ -1049,6 +1060,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         video_id = extract_video_id(args.target) if args.target else None
         return _render_more_from_plan(pipeline, video_id, 0, args.force, args)
 
+    if args.mode == 'migrate-shorts':
+        # Run the migration script inline
+        from .migrate_shorts import migrate_shorts
+        moved, updated, errors = migrate_shorts(dry_run=args.dry_run, force=args.force)
+        if errors:
+            logger.error("Migration completed with %d errors", errors)
+            return 1
+        logger.info("Migration successful: %d moved, %d updated", moved, updated)
+        return 0
+
+    if args.mode == 'upload-existing':
+        return _upload_existing_shorts(pipeline, args)
+
     # --- render-more: render additional clips from cached clip plan ---
     if args.render_more > 0:
         if not args.target:
@@ -1078,7 +1102,159 @@ def main(argv: Optional[List[str]] = None) -> int:
     return 0 if stats['videos_processed'] > 0 else 1
 
 
-def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
+def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
+    """Upload rendered-but-unpublished shorts to YouTube.
+    
+    Queries the database for clips with youtube_short_id IS NULL,
+    applies optional niche/channel filters, and uploads up to the
+    configured limit. Respects quota limits and updates DB on success.
+    """
+    # Determine upload limit
+    upload_limit = args.upload_limit
+    if upload_limit is None:
+        upload_limit = getattr(pipeline.config, 'upload_max_per_run', 5)
+    logger.info("Upload limit: %d clips", upload_limit)
+    
+    # Get unuploaded shorts from database
+    unuploaded = pipeline.db.unuploaded_shorts(limit=upload_limit * 3)
+    if not unuploaded:
+        logger.info("No un-uploaded shorts found in database")
+        return 0
+    
+    # Apply niche filter if specified
+    if args.niche:
+        unuploaded = [r for r in unuploaded if r.get('niche') == args.niche]
+        logger.info("Filtered to niche '%s': %d clips", args.niche, len(unuploaded))
+    
+    # Apply upload limit
+    unuploaded = unuploaded[:upload_limit]
+    if not unuploaded:
+        logger.info("No clips to upload after filtering")
+        return 0
+    
+    logger.info("Preparing to upload %d clip(s)", len(unuploaded))
+    
+    uploaded_count = 0
+    errors = 0
+    
+    for clip in unuploaded:
+        source_video_id = clip['source_video_id']
+        segment_index = clip['segment_index']
+        local_path = clip['local_path']
+        clip_niche = clip.get('niche') or args.niche
+        
+        # Validate file exists
+        if not local_path or not Path(local_path).exists():
+            logger.warning(
+                "Clip file missing: %s#%s at %s -- skipping",
+                source_video_id, segment_index, local_path
+            )
+            errors += 1
+            continue
+        
+        # Resolve target channel
+        channel = args.channel
+        if not channel:
+            if clip_niche:
+                channel = pipeline.config.get_niche_channel(clip_niche)
+            if not channel:
+                logger.error(
+                    "No authenticated channel for niche '%s' (clip %s#%s) -- skipping",
+                    clip_niche, source_video_id, segment_index
+                )
+                errors += 1
+                continue
+        
+        # Verify channel is authenticated
+        authed = pipeline.config.authenticated_channels()
+        if authed and channel not in authed:
+            logger.error(
+                "Channel '%s' not authenticated for clip %s#%s -- skipping",
+                channel, source_video_id, segment_index
+            )
+            errors += 1
+            continue
+        
+        # Get uploader for channel
+        try:
+            uploader = pipeline._uploader_for_channel(channel)
+        except Exception as exc:
+            logger.error(
+                "Failed to initialize uploader for channel '%s': %s",
+                channel, exc
+            )
+            errors += 1
+            continue
+        
+        # Build title/description/tags from clip data
+        highlight_text = clip.get('title') or clip_niche or 'Short'
+        hook = highlight_text.strip().replace('\n', ' ')
+        short_title = pipeline._generate_unique_title(hook, clip_niche or 'short', segment_index)
+        
+        keywords = []
+        if clip_niche:
+            niche_config = pipeline.config.get_niche_config(clip_niche)
+            keywords = niche_config.get('keywords', [])
+        
+        description = (
+            f"Full video: https://youtube.com/watch?v={source_video_id}\n\n"
+            f"Follow for more {clip_niche} content!\n"
+            f"#Shorts #{clip_niche} "
+            + ' '.join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
+        )
+        tags = [clip_niche, 'Shorts'] + [kw for kw in keywords[:10] if kw]
+        
+        # Upload with quota error handling
+        try:
+            short_id = uploader.upload_short(
+                video_path=local_path,
+                title=short_title,
+                description=description,
+                tags=tags,
+            )
+        except Exception as exc:
+            # Check for quota exceeded
+            err_str = str(exc).lower()
+            if 'quota' in err_str or '403' in err_str or 'rate' in err_str:
+                logger.error(
+                    "YouTube quota exceeded or rate limited: %s. Stopping upload.",
+                    exc
+                )
+                # Re-raise to signal quota exhaustion to caller
+                raise
+            logger.error(
+                "Upload failed for %s#%s: %s",
+                source_video_id, segment_index, exc
+            )
+            errors += 1
+            continue
+        
+        if not short_id:
+            logger.error(
+                "Upload returned no video ID for %s#%s",
+                source_video_id, segment_index
+            )
+            errors += 1
+            continue
+        
+        # Mark as uploaded in database
+        try:
+            pipeline.db.mark_short_uploaded(source_video_id, segment_index, short_id)
+            uploaded_count += 1
+            logger.info(
+                "Uploaded %s#%s -> %s (via channel %s)",
+                source_video_id, segment_index, short_id, channel
+            )
+        except Exception as exc:
+            logger.warning(
+                "Upload succeeded but DB update failed for %s#%s: %s",
+                source_video_id, segment_index, exc
+            )
+            # Still count as uploaded since it's on YouTube
+            uploaded_count += 1
+    
+    logger.info("Upload complete: %d uploaded, %d errors", uploaded_count, errors)
+    return 0 if errors == 0 else 1
                            count: int, force: bool = False, args=None) -> int:
     """List (and optionally process) videos already downloaded to data/temp.
 
