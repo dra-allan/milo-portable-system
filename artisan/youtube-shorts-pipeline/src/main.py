@@ -419,7 +419,12 @@ class ShortsPipeline:
 
             created: List[Dict] = []
             for i, highlight in enumerate(highlights, start=1):
-                output_path = str(shorts_dir / f"{i:02d}_{safe_title}.mp4")
+                hook_text = (highlight.get('text') or '').strip()
+                safe_hook = sanitize_filename(hook_text) if hook_text else f"clip{i}"
+                # Limit length to 50 characters to avoid excessively long filenames
+                if len(safe_hook) > 50:
+                    safe_hook = safe_hook[:50]
+                output_path = str(shorts_dir / f"{i:02d}_{safe_hook}.mp4")
                 existing = Path(output_path)
 
                 # Resume: a clip already rendered on a previous run is kept.
