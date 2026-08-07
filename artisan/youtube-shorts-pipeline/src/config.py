@@ -52,6 +52,7 @@ class Config:
             env_file = PROJECT_ROOT / '.env'
         env_file = Path(env_file)
         self.env_file = env_file
+        self.project_root = PROJECT_ROOT
         self.env_loaded = env_file.exists()
         if self.env_loaded:
             load_dotenv(env_file)
