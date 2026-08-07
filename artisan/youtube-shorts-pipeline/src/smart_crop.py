@@ -35,9 +35,12 @@ WHAT THIS MODULE DOES
 * **Tracks** detections into persistent clusters across frames, so a person is
   identified by consistent presence rather than by one lucky frame. Clusters
   seen in fewer than ``min_presence`` of the frames are discarded as noise.
-* Builds a layout: 1 person -> single centred crop; 2 -> stacked halves;
-  3-4 -> 2x2 grid. **Each tile gets its own crop window, centred on its own
-  person**, computed in source coordinates and clamped to the frame.
+* Builds a row-based layout (see ``ROW_PLANS``): 1 person -> single centred
+  crop; 2 -> one above, one below; 3 -> two up, one down; 4 -> 2x2; up to 6.
+  **Each tile gets its own crop window, centred on its own person** and
+  computed for that tile's aspect ratio, in source coordinates, clamped to the
+  frame. Rows rather than columns because a 1080-wide frame split three ways
+  gives 360px slivers.
 * Falls back to a plain centre crop whenever detection is unavailable or
   unconvincing, so the render never fails because of this stage.
 
@@ -184,36 +187,89 @@ class Tile:
                 f" crop={self.crop})")
 
 
-def _grid_cells(count: int, width: int, height: int) -> List[Tuple[int, int, int, int]]:
-    """Destination cells for ``count`` people in a 1080x1920 frame.
+#: How many people occupy each row, indexed by head count. Rows are filled
+#: top to bottom, so index 3 -> ``(2, 1)`` means *two up, one down*.
+#:
+#: Vertical frames are 1080x1920, so a row is 1080 wide and tall by default:
+#: splitting into ROWS keeps every tile as close to a phone-friendly shape as
+#: possible. Three people side by side would be 360x1920 slivers -- unusable --
+#: which is why nothing here ever puts more than two in a row.
+ROW_PLANS: Dict[int, Tuple[int, ...]] = {
+    1: (1,),           # whole frame
+    2: (1, 1),         # stacked: one above, one below
+    3: (2, 1),         # two up, one down
+    4: (2, 2),         # 2x2
+    5: (2, 2, 1),      # two, two, one full-width
+    6: (2, 2, 2),      # 3 rows of two
+}
+MAX_LAYOUT_PEOPLE = max(ROW_PLANS)
 
-    * 1 -> the whole frame.
-    * 2 -> stacked halves (the classic vertical split-screen for a two-person
-      conversation; side-by-side would give each person a 540x1920 sliver).
-    * 3 -> one full-width row on top, two side-by-side beneath.
-    * 4 -> 2x2.
+
+def row_plan(count: int) -> Tuple[int, ...]:
+    """Rows of people for ``count`` heads, e.g. 3 -> ``(2, 1)``.
+
+    Beyond the table the plan degrades gracefully to pairs of rows rather than
+    raising, so an unexpected head count can never break a render.
+    """
+    count = max(1, int(count))
+    if count in ROW_PLANS:
+        return ROW_PLANS[count]
+    rows = [2] * (count // 2)
+    if count % 2:
+        rows.append(1)
+    return tuple(rows)
+
+
+def describe_layout(count: int) -> str:
+    """Human-readable layout name, derived from ``row_plan`` not hard-coded.
+
+    Logs are the only window into what smart framing decided on a given clip,
+    so this must never drift from the geometry actually used.
+    """
+    if count <= 1:
+        return 'single centred crop'
+    rows = row_plan(count)
+    if all(r == 1 for r in rows):
+        return f"stacked split-screen ({len(rows)} rows)"
+    return f"{'+'.join(str(r) for r in rows)} grid"
+
+
+def _split_span(total: int, parts: int) -> List[Tuple[int, int]]:
+    """Divide ``total`` pixels into ``parts`` even-sized spans, exactly.
+
+    Returns [(offset, size)]. Every size is even (yuv420p requires it) and the
+    sizes sum to exactly ``total`` -- the last span absorbs the rounding
+    remainder. Getting this wrong leaves a one-pixel black seam between tiles,
+    or worse, a gap at the frame edge that shows the canvas through.
+    """
+    parts = max(1, int(parts))
+    base = _even(total / parts)
+    spans: List[Tuple[int, int]] = []
+    offset = 0
+    for i in range(parts):
+        size = base if i < parts - 1 else max(2, total - offset)
+        spans.append((offset, size))
+        offset += size
+    return spans
+
+
+def _grid_cells(count: int, width: int, height: int) -> List[Tuple[int, int, int, int]]:
+    """Destination cells (x, y, w, h) for ``count`` people, from ``ROW_PLANS``.
+
+    Cells tile the frame exactly with no gaps and no overlap, so the base
+    canvas is never visible through the mosaic.
     """
     if count <= 1:
         return [(0, 0, width, height)]
-    if count == 2:
-        half = _even(height / 2)
-        return [(0, 0, width, half), (0, half, width, height - half)]
-    if count == 3:
-        top = _even(height / 2)
-        half_w = _even(width / 2)
-        return [
-            (0, 0, width, top),
-            (0, top, half_w, height - top),
-            (half_w, top, width - half_w, height - top),
-        ]
-    half_w = _even(width / 2)
-    half_h = _even(height / 2)
-    return [
-        (0, 0, half_w, half_h),
-        (half_w, 0, width - half_w, half_h),
-        (0, half_h, half_w, height - half_h),
-        (half_w, half_h, width - half_w, height - half_h),
-    ]
+
+    rows = row_plan(count)
+    row_spans = _split_span(height, len(rows))
+
+    cells: List[Tuple[int, int, int, int]] = []
+    for (row_y, row_h), per_row in zip(row_spans, rows):
+        for col_x, col_w in _split_span(width, per_row):
+            cells.append((col_x, row_y, col_w, row_h))
+    return cells[:count]
 
 
 def plan_layout(faces: Sequence[Box], src_w: int, src_h: int,
@@ -222,16 +278,24 @@ def plan_layout(faces: Sequence[Box], src_w: int, src_h: int,
                 max_people: int = 4) -> List[Tile]:
     """Assign each detected person a destination cell and a centred crop.
 
-    People are ordered left-to-right by their position in the source so the
-    on-screen arrangement matches the real scene -- otherwise two speakers can
-    swap places between clips, which is disorienting.
+    People are ordered left-to-right by their position in the source and then
+    filled into cells in reading order, so the on-screen arrangement matches
+    the real scene: with two people the one on the left of the source appears
+    on top, and that stays consistent across clips. A stable mapping matters
+    because a layout that reshuffles between clips of the same conversation
+    reads as a glitch.
+
+    Each cell's crop is computed for *that cell's* aspect ratio and centred on
+    *that cell's* person, which is the fix for the original bug -- every tile
+    used to show the same mis-placed centre crop.
 
     Returns [] when there is nothing usable, letting the caller fall back.
     """
     if not faces:
         return []
 
-    people = sorted(faces, key=lambda f: f.cx)[:max(1, int(max_people))]
+    cap = max(1, min(int(max_people), MAX_LAYOUT_PEOPLE))
+    people = sorted(faces, key=lambda f: f.cx)[:cap]
     cells = _grid_cells(len(people), width, height)
 
     tiles: List[Tile] = []
@@ -243,50 +307,64 @@ def plan_layout(faces: Sequence[Box], src_w: int, src_h: int,
 
 
 def build_layout_filters(tiles: Sequence[Tile], width: int = SHORT_WIDTH,
-                         height: int = SHORT_HEIGHT) -> Tuple[List[str], str]:
+                         height: int = SHORT_HEIGHT,
+                         scaler: str = 'lanczos') -> Tuple[List[str], str]:
     """Turn tiles into an FFmpeg filter graph, returning (filters, out_label).
 
-    Implemented as a black base canvas plus one ``overlay`` per tile rather
-    than ``vstack``/``xstack``. Overlay is explicit about destination position,
-    so a tile whose rounded size is a pixel off cannot shift the whole mosaic
-    -- stack filters reject mismatched inputs outright.
+    Two deliberate choices here, both about output quality:
+
+    **No synthetic base canvas.** The obvious construction is
+    ``color=c=black:s=1080x1920:r=30`` overlaid with each tile. That silently
+    destroys quality in two ways: the hard-coded ``r=30`` forces the whole
+    graph to 30fps (a 60fps source loses half its frames and all its motion
+    smoothness), and the endless colour source needs ``shortest=1``, which
+    truncates the clip to whichever input ends first. Instead the *first tile*
+    is padded out to the full frame and used as the base, so the graph carries
+    the source's own framerate, timestamps and duration end to end.
+
+    **Overlay rather than vstack/xstack.** Overlay states each destination
+    position explicitly, so a tile whose rounded size is a pixel off cannot
+    shift the whole mosaic; ``vstack`` rejects mismatched inputs outright.
+
+    ``scaler`` is the swscale flag used for every tile. lanczos preserves
+    noticeably more detail than bicubic on the downscale from a 1080p/4K source
+    into a tile, and this is a one-off cost per frame.
     """
     if not tiles:
         return [], ''
 
+    scaler = (scaler or 'lanczos').strip() or 'lanczos'
     filters: List[str] = []
     n = len(tiles)
 
-    if n == 1:
-        tile = tiles[0]
+    def crop_scale(src_label: str, tile: Tile, out_label: str,
+                   pad_to_frame: bool = False) -> str:
         x, y, w, h = tile.crop.as_int_tuple()
         w, h = _even(w), _even(h)
-        filters.append(
-            f"[0:v]crop={w}:{h}:{x}:{y},"
-            f"scale={width}:{height}:flags=bicubic,setsar=1[vsmart]"
-        )
-        return filters, 'vsmart'
+        chain = (f"[{src_label}]crop={w}:{h}:{x}:{y},"
+                 f"scale={tile.dest_w}:{tile.dest_h}:flags={scaler}")
+        if pad_to_frame and (tile.dest_w != width or tile.dest_h != height):
+            # Grow this tile into the full frame, seated at its own cell, so it
+            # can serve as the base layer for the remaining overlays.
+            chain += f",pad={width}:{height}:{tile.dest_x}:{tile.dest_y}:black"
+        return chain + f",setsar=1[{out_label}]"
+
+    if n == 1:
+        return [crop_scale('0:v', tiles[0], 'vsmart')], 'vsmart'
 
     # Split the source once per tile; each branch crops its own region.
     filters.append(f"[0:v]split={n}" + ''.join(f"[s{i}]" for i in range(n)))
-    for i, tile in enumerate(tiles):
-        x, y, w, h = tile.crop.as_int_tuple()
-        w, h = _even(w), _even(h)
-        filters.append(
-            f"[s{i}]crop={w}:{h}:{x}:{y},"
-            f"scale={tile.dest_w}:{tile.dest_h}:flags=bicubic,setsar=1[t{i}]"
-        )
+    # Tile 0 becomes the full-frame base; the rest are overlaid onto it.
+    filters.append(crop_scale('s0', tiles[0], 'base0', pad_to_frame=True))
+    for i, tile in enumerate(tiles[1:], start=1):
+        filters.append(crop_scale(f"s{i}", tile, f"t{i}"))
 
-    filters.append(
-        f"color=c=black:s={width}x{height}:r=30,format=yuv420p[canvas0]"
-    )
-    current = 'canvas0'
-    for i, tile in enumerate(tiles):
-        nxt = f"canvas{i + 1}" if i < len(tiles) - 1 else 'vsmart'
-        # shortest=1 stops the synthetic colour source from extending the clip.
+    current = 'base0'
+    for i, tile in enumerate(tiles[1:], start=1):
+        nxt = 'vsmart' if i == n - 1 else f"base{i}"
         filters.append(
             f"[{current}][t{i}]overlay={tile.dest_x}:{tile.dest_y}"
-            f":shortest=1[{nxt}]"
+            f":eval=init[{nxt}]"
         )
         current = nxt
     return filters, 'vsmart'
@@ -505,7 +583,8 @@ def build_smart_filters(video_path: str, start_time: float, end_time: float,
                         width: int = SHORT_WIDTH, height: int = SHORT_HEIGHT,
                         zoom: float = 1.0, headroom: float = 0.55,
                         samples: int = 9, max_people: int = 4,
-                        min_presence: float = 0.34
+                        min_presence: float = 0.34,
+                        scaler: str = 'lanczos'
                         ) -> Optional[Tuple[List[str], str, int]]:
     """Build the smart-framing filter graph for a clip.
 
@@ -524,12 +603,12 @@ def build_smart_filters(video_path: str, start_time: float, end_time: float,
     if not tiles:
         return None
 
-    filters, label = build_layout_filters(tiles, width=width, height=height)
+    filters, label = build_layout_filters(tiles, width=width, height=height,
+                                          scaler=scaler)
     if not filters:
         return None
 
-    layout = {1: 'single centred crop', 2: 'stacked split-screen',
-              3: '1-over-2 grid', 4: '2x2 grid'}.get(len(tiles), 'grid')
+    layout = describe_layout(len(tiles))
     logger.info(
         "Smart framing: %d person(s) -> %s (source %dx%d)",
         len(tiles), layout, src_w, src_h,
