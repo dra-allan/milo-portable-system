@@ -680,43 +680,57 @@ class ShortsPipeline:
                 self.stats['errors'] += 1
 
     # ------------------------------------------------------------------
-    def run_niche(self, niche: str, max_videos: int = 1) -> None:
-        """Process recent videos for a niche.
+    def run_niche(self, niche: str, max_videos: int = 1,
+                  lookback: Optional[int] = None) -> int:
+        """Process the best `max_videos` videos discovered for a niche.
 
-        Channel discovery needs the YouTube Data API; downloader.
-        search_videos_by_channel() is still a stub that returns [], so this
-        reports the gap honestly instead of pretending to work.
+        Only niches bound to an authenticated upload channel are processed:
+        a niche with no channel binding renders clips that can never be
+        published, so we leave it untouched until it is bound.
+
+        Returns how many videos were actually started.
         """
-        niche_config = self.config.get_niche_config(niche)
-        channels = [c for c in niche_config.get('channels', [])
-                    if c and not str(c).startswith('UCXXXXX')]
-        if not channels:
-            logger.error(
-                "Niche '%s' has no real channel IDs configured in config/niches.yaml",
-                niche,
+        from .discovery import discover_candidates
+
+        channel = self.config.get_niche_channel(niche)
+        authed = self.config.authenticated_channels()
+        if not channel or (channel not in authed and authed):
+            logger.info(
+                "Niche '%s': no authenticated upload channel bound "
+                "(resolved channel=%r, authed=%s) -- skipping until bound in "
+                "config/niches.yaml with `channel: <name>`",
+                niche, channel, authed or ['(default token)'],
             )
-            return
+            return 0
 
-        found: List[str] = []
-        for channel_id in channels:
-            try:
-                results = self.downloader.search_videos_by_channel(
-                    channel_id, published_after='', max_results=max_videos
-                )
-                found.extend(r['id'] for r in results if r.get('id'))
-            except Exception as exc:
-                logger.warning("Channel search failed for %s: %s", channel_id, exc)
+        lookback = lookback or getattr(self.config, 'discovery_lookback', 10)
+        result = discover_candidates(self.downloader, self.db, niche,
+                                     max_videos=max_videos, lookback=lookback)
 
-        if not found:
-            logger.error(
-                "No videos discovered for niche '%s'. Channel discovery is not "
-                "implemented yet (downloader.search_videos_by_channel is a stub) -- "
-                "pass an explicit video URL/ID with --mode once for now.", niche
-            )
-            return
+        for skip in result.skipped_already_processed:
+            logger.info("Niche '%s': %s already processed -- skipping", niche, skip)
+        if result.skipped_duration:
+            logger.info("Niche '%s': %d outside duration band -- skipping",
+                        niche, len(result.skipped_duration))
+        if result.skipped_negative_keywords:
+            logger.info("Niche '%s': %d negative-keyword titles -- skipping",
+                        niche, len(result.skipped_negative_keywords))
 
-        for video_id in found[:max_videos]:
-            self.process_video_for_shorts(video_id, niche)
+        if not result.candidates:
+            logger.info("Niche '%s': no new discoverable videos (queried %d channel(s))",
+                        niche, len(result.channels_queried))
+            return 0
+
+        candidates = result.candidates[:max_videos]
+        logger.info("Niche '%s': processing %d of %d discovered",
+                    niche, len(candidates), len(result.candidates))
+        started = 0
+        for entry in candidates:
+            vid = entry['id']
+            ok = self.process_video_for_shorts(vid, niche)
+            if ok:
+                started += 1
+        return started
 
     def report(self) -> Dict[str, int]:
         logger.info(
@@ -796,6 +810,48 @@ def run_stats_mode(pipeline: 'ShortsPipeline', args) -> int:
 
 
 # ----------------------------------------------------------------------
+def run_discover_mode(pipeline: 'ShortsPipeline', args) -> int:
+    """Dry-run discovery: print what a scheduled run would pick, do nothing else.
+
+    Only niches bound to an authenticated channel are reported; unbound niches
+    are listed as skipped. No downloads, no transcription, no rendering.
+    """
+    from .discovery import discover_candidates
+
+    niches = [args.niche] if args.niche else config.niche_names()
+    if not niches:
+        print("No niches configured.")
+        return 1
+
+    lookback = getattr(config, 'discovery_lookback', 10)
+    authed = config.authenticated_channels()
+    total = 0
+    for niche in niches:
+        channel = config.get_niche_channel(niche)
+        if not channel or (channel not in authed and authed):
+            print(f"\n[{niche}] SKIPPED: no authenticated upload channel bound "
+                  f"(resolved {channel!r}, authed={authed or ['(default token)']})")
+            continue
+
+        result = discover_candidates(pipeline.downloader, pipeline.db, niche,
+                                     max_videos=1, lookback=lookback)
+        print(f"\n[{niche}] channel={channel} | queried {len(result.channels_queried)} source channel(s)")
+        if result.skipped_already_processed:
+            print(f"  skipped (already processed): {len(result.skipped_already_processed)}")
+        if result.skipped_duration:
+            print(f"  skipped (duration band):     {len(result.skipped_duration)}")
+        if result.skipped_negative_keywords:
+            print(f"  skipped (negative keywords): {len(result.skipped_negative_keywords)}")
+        for c in result.candidates[:10]:
+            dur = c.get('duration') or 0
+            print(f"  CANDIDATE {c['id']}  {dur:>7.0f}s  {str(c.get('title'))[:50]}")
+        if not result.candidates:
+            print("  (no new candidates)")
+        total += len(result.candidates)
+    print(f"\nDiscover: {total} candidate video(s) across bound niches.")
+    return 0
+
+
 def run_test_mode() -> int:
     """Check the environment without downloading anything."""
     import shutil
@@ -911,11 +967,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument('target', nargs='?', default=None,
                         help='YouTube URL or 11-character video ID')
-    parser.add_argument('--mode', choices=['once', 'schedule', 'test', 'library', 'stats'],
+    parser.add_argument('--mode', choices=['once', 'schedule', 'test', 'library', 'stats', 'discover'],
                         default='once',
                         help="'library' lists videos already downloaded and can "
                              "process them without touching the network; "
-                             "'stats' fetches YouTube metrics for uploaded shorts")
+                             "'stats' fetches YouTube metrics for uploaded shorts; "
+                             "'discover' dry-runs scheduled discovery for bound "
+                             "niches (no downloads)")
     parser.add_argument('--niche', default=None,
                         help='Niche name from config/niches.yaml (default: auto-detect)')
     parser.add_argument('--videos', type=int, default=1,
@@ -980,6 +1038,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.mode == 'stats':
         return run_stats_mode(pipeline, args)
 
+    if args.mode == 'discover':
+        return run_discover_mode(pipeline, args)
+
     if args.mode == 'schedule':
         return _run_schedule(pipeline, args)
 
@@ -1011,12 +1072,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         pipeline.process_video_for_shorts(video_id, args.niche, force=args.force,
                                           local_only=args.from_library)
     else:
-        niches = [args.niche] if args.niche else config.niche_names()
-        if not niches:
-            logger.error("No niches configured and no video specified. Nothing to do.")
-            return 2
-        for niche in niches:
-            pipeline.run_niche(niche, max_videos=args.videos)
+        _run_scheduled_sweep(pipeline, args)
 
     stats = pipeline.report()
     return 0 if stats['videos_processed'] > 0 else 1
@@ -1094,6 +1150,32 @@ def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
     return 0 if stats['videos_processed'] > 0 else 1
 
 
+def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
+    """Run every channel-bound niche up to a global per-run video budget.
+
+    Each run_niche returns how many videos it started; the sweep stops once
+    the budget is exhausted so 20+ niches can't trigger 20 download cycles
+    when only a handful will be uploaded. Niches without an authenticated
+    upload channel are skipped inside run_niche (they can't publish).
+    """
+    budget = getattr(config, 'schedule_max_videos', 3)
+    niches = [args.niche] if args.niche else config.niche_names()
+    if not niches:
+        logger.error("No niches configured and no video specified. Nothing to do.")
+        return 0
+
+    started_total = 0
+    for niche in niches:
+        if started_total >= budget:
+            logger.info("Scheduled sweep budget (%d videos) exhausted", budget)
+            break
+        remaining = budget - started_total
+        started = pipeline.run_niche(niche, max_videos=remaining)
+        started_total += started
+    logger.info("Scheduled sweep started %d video(s)", started_total)
+    return started_total
+
+
 def _run_schedule(pipeline: 'ShortsPipeline', args) -> int:
     try:
         try:
@@ -1111,10 +1193,11 @@ def _run_schedule(pipeline: 'ShortsPipeline', args) -> int:
     run_times = [t for t in run_times if t]
 
     def job():
-        niches = [args.niche] if args.niche else config.niche_names()
-        for niche in niches:
-            pipeline.run_niche(niche, max_videos=args.videos)
-        pipeline.report()
+        try:
+            _run_scheduled_sweep(pipeline, args)
+            pipeline.report()
+        except Exception as exc:
+            logger.error("Scheduled sweep failed: %s", exc, exc_info=True)
 
     sched = PipelineScheduler()
     for i, cron in enumerate(run_times):

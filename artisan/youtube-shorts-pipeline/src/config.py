@@ -171,6 +171,15 @@ class Config:
         # Channel key used when a niche has no explicit `channel:` binding.
         self.upload_default_channel = (os.getenv('UPLOAD_DEFAULT_CHANNEL') or '').strip()
 
+        # --- Scheduled discovery -----------------------------------------
+        # Candidates pulled per channel before dedup/filtering. Must be >=
+        # schedule_max_videos so already-processed videos can't starve a run.
+        self.discovery_lookback = self._int('DISCOVERY_LOOKBACK', 10, minimum=1)
+        # Global cap on videos STARTED per scheduled run across all niches.
+        # Quota: ~10k units/day, one upload ~1600 -> ~6 uploads/day. Discovery
+        # and transcription cost real time/money, so default to 3 videos/run.
+        self.schedule_max_videos = self._int('SCHEDULE_MAX_VIDEOS', 3, minimum=1)
+
         # --- Encoding ----------------------------------------------------
         self.video_preset = os.getenv('VIDEO_PRESET', 'medium')
         self.video_crf = self._int('VIDEO_CRF', 20, minimum=0)
