@@ -78,16 +78,23 @@ cls
 echo.
 echo Process YouTube URL/Video ID
 echo.
+echo Optional flags to append: --force --no-upload --niche ^<name^>
+echo.
+set "url="
 set /p url="Enter YouTube URL or Video ID: "
 if "%url%"=="" goto url
+set "FORCE_FLAG="
+echo %url% | findstr /c:"--force" >nul && set "FORCE_FLAG=--force"
+set "url=%url:--force=%"
+set "url=%url: =%"
 echo.
 set /p niche="Enter niche (optional, leave blank for auto): "
 if "%niche%"=="" (
     call venv\Scripts\activate
-    python -m src.main --mode once "%url%"
+    python -m src.main --mode once "%url%" %FORCE_FLAG%
 ) else (
     call venv\Scripts\activate
-    python -m src.main --mode once "%url%" --niche "%niche%"
+    python -m src.main --mode once "%url%" --niche "%niche%" %FORCE_FLAG%
 )
 pause
 goto main
