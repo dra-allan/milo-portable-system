@@ -15,18 +15,8 @@ if not "%~1"=="" (
     if "%~1"=="2" goto url
     if "%~1"=="3" goto schedule
     if "%~1"=="4" goto library
-    if "%~1"=="5" (
-        call :set_background %~2
-        shift
-        shift
-        goto main
-    )
-    if "%~1"=="6" (
-        call :set_caption %~2
-        shift
-        shift
-        goto main
-    )
+    if "%~1"=="5" call :set_background %~2
+    if "%~1"=="6" call :set_caption %~2
     if "%~1"=="7" goto exit
     echo Invalid option: %~1
     pause
