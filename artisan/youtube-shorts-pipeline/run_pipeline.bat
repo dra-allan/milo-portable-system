@@ -27,7 +27,8 @@ if not "%~1"=="" (
         shift
         goto main
     )
-    if "%~1"=="7" goto exit
+    if "%~1"=="7" goto upload_existing
+    if "%~1"=="8" goto exit
     echo Invalid option: %~1
     pause
     goto main
@@ -49,16 +50,18 @@ echo 3. Run in Scheduled Mode (9AM, 2PM, 7PM daily)
 echo 4. Process from Library (downloaded videos)
 echo 5. Set BackgroundMode
 echo 6. Set CaptionStyle
-echo 7. Exit
+echo 7. Upload Existing Local Shorts
+echo 8. Exit
 echo.
-set /p choice="Select an option (1-7): "
+set /p choice="Select an option (1-8): "
 if "%choice%"=="1" goto test
 if "%choice%"=="2" goto url
 if "%choice%"=="3" goto schedule
 if "%choice%"=="4" goto library
 if "%choice%"=="5" goto set_background
 if "%choice%"=="6" goto set_caption
-if "%choice%"=="7" goto exit
+if "%choice%"=="7" goto upload_existing
+if "%choice%"=="8" goto exit
 echo Invalid choice! Please try again.
 timeout /t 2 > nul
 goto main
