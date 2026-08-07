@@ -159,8 +159,8 @@ class Config:
             self.privacy_status = 'private'
 
         # --- Encoding ----------------------------------------------------
-        self.video_preset = os.getenv('VIDEO_PRESET', 'veryfast')
-        self.video_crf = self._int('VIDEO_CRF', 23, minimum=0)
+        self.video_preset = os.getenv('VIDEO_PRESET', 'medium')
+        self.video_crf = self._int('VIDEO_CRF', 20, minimum=0)
         self.caption_font_size = self._int('CAPTION_FONT_SIZE', 54, minimum=8)
         # Caption style: 'default', 'hormozi', 'minimalist', 'pop', 'kinetic'
         self.caption_style = (os.getenv('CAPTION_STYLE') or 'default').lower()

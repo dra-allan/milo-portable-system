@@ -415,6 +415,30 @@ class VideoEditor:
                         f'Style: Default,Komika Axis,{font_size},&H00FFFFFF,&H0000FFFF,'
                         f'&H00000000,&H80000000,-1,0,0,0,100,100,0,0,2,4,2,2,60,60,320,1\n\n'
                     )
+                elif caption_style == 'neon':
+                    # Neon Style: Bright cyan background, magenta text, thick outline
+                    f.write(
+                        f'Style: Default,Arial Black,{font_size},&H00FF00FF,&H00FFFF00,'
+                        f'&H00000000,&H80000000,-1,0,0,0,100,100,3,3,0,2,2,2,60,60,320,1\n\n'
+                    )
+                elif caption_style == 'outline':
+                    # Thick Outline Style: White text with thick black outline
+                    f.write(
+                        f'Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,'
+                        f'&H00000000,&H80000000,-1,0,0,0,100,100,3,3,0,2,2,2,60,60,320,1\n\n'
+                    )
+                elif caption_style == 'shadow':
+                    # Heavy Shadow Style: White text with heavy shadow
+                    f.write(
+                        f'Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,'
+                        f'&H00000000,&H64000000,-1,0,0,0,100,100,0,0,2,6,6,2,60,60,320,1\n\n'
+                    )
+                elif caption_style == 'bold':
+                    # Bold Impact Style: Impact font, white text, black outline
+                    f.write(
+                        f'Style: Default,Impact,{font_size},&H00FFFFFF,&H000000FF,'
+                        f'&H00000000,&H80000000,-1,0,0,0,100,100,2,2,0,2,2,2,60,60,320,1\n\n'
+                    )
                 else:
                     # Default style (original)
                     f.write(
