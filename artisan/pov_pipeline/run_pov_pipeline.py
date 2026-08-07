@@ -37,7 +37,7 @@ ROOT = Path(__file__).resolve().parent
 AGENTS_DIR = ROOT / "agents"
 TTS_DIR = ROOT / "tts"
 SCRIPTS_DIR = ROOT / "scripts"
-PROJECTS_DIR = ROOT / "projects"
+PROJECTS_DIR = Path(r"C:\Users\user\Desktop\Milo Video Factory\pov\projects")
 
 # Agent order + output file each one must produce.
 PIPELINE_AGENTS = [

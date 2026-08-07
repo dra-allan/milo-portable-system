@@ -8,6 +8,7 @@ import os, sys, subprocess, re, shutil, textwrap, json
 from pathlib import Path
 
 ROOT = Path(__file__).parent
+PROJECTS_DIR = Path(r"C:\Users\user\Desktop\Milo Video Factory\projects\money_matrix")
 FFMPEG = r"C:\Users\user\Desktop\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
 FFPROBE = FFMPEG.replace("ffmpeg.exe", "ffprobe.exe")
 PIPELINE_AGENTS = [
@@ -52,7 +53,7 @@ def print_section(title: str):
 
 def check_topic_state(topic: str) -> dict:
     """Inspect topic folder and report which artifacts exist."""
-    topic_dir = ROOT / topic
+    topic_dir = PROJECTS_DIR / topic
     if not topic_dir.exists():
         return {"exists": False, "artifacts": {}}
 
@@ -68,7 +69,7 @@ def check_topic_state(topic: str) -> dict:
 
 def run_tts(topic: str) -> bool:
     """Run Gemini TTS for all segments."""
-    topic_dir = ROOT / topic
+    topic_dir = PROJECTS_DIR / topic
     tts_script = ROOT / "gemini_tts.py"
     if not tts_script.exists():
         eprint("[TTS] gemini_tts.py not found, skipping TTS")
@@ -97,7 +98,7 @@ def assemble_video(topic: str, music_file: str | None = None) -> bool:
     cmd = [sys.executable, str(assembler), topic]
     if music_file:
         cmd.extend(["--music", os.path.abspath(music_file)])
-    result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=600)
+    result = subprocess.run(cmd, cwd=str(PROJECTS_DIR / topic), capture_output=True, text=True, timeout=600)
     print(result.stdout)
     if result.returncode != 0:
         eprint(f"[Assembler] Failed:\n{result.stderr}")
@@ -112,7 +113,7 @@ def print_report(topic: str):
         print(f"No artifacts for topic: {topic}")
         return
 
-    topic_dir = ROOT / topic
+    topic_dir = PROJECTS_DIR / topic
     artifacts = state["artifacts"]
     present = [k for k, v in artifacts.items() if v]
     missing = [k for k, v in artifacts.items() if not v]
@@ -142,7 +143,7 @@ def main():
     if not sys.argv[1:]:
         print(__doc__)
         print("\nAvailable topics:")
-        for d in ROOT.iterdir():
+        for d in PROJECTS_DIR.iterdir():
             if d.is_dir() and not d.name.startswith("_") and not d.name.startswith("."):
                 state = check_topic_state(d.name)
                 mp4 = "MP4" if state.get("artifacts", {}).get("FINAL_MP4") else ""
@@ -167,13 +168,13 @@ def main():
     state = check_topic_state(topic)
 
     if not state["exists"]:
-        eprint(f"[ERR] Topic folder not found: {ROOT / topic}")
+        eprint(f"[ERR] Topic folder not found: {PROJECTS_DIR / topic}")
         eprint("First run the creative agents (ResearchAnalyst through MetadataLibrarian)")
         eprint("then call this orchestrator for TTS + video assembly.")
         sys.exit(1)
 
     print_section(f"MM Pipeline Orchestrator - {topic}")
-    print(f"  Working dir: {ROOT / topic}")
+    print(f"  Working dir: {PROJECTS_DIR / topic}")
     print(f"  Music: {music_file or 'none'}")
     print()
 
