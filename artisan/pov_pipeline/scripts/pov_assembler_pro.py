@@ -1585,7 +1585,7 @@ def main():
                   else f"PARTIAL_{video_id}.mp4")
     final_path = out_dir / final_name
 
-    print(f"\n[merge] Concatenating {len(ordered_segments)} segment(s){xf_note} → {final_path.name}")
+    print(f"\n[merge] Concatenating {len(ordered_segments)} segment(s){xf_note} -> {final_path.name}")
     print(f"        Merge throttling: nice={merge_n}, threads={merge_t}, "
           f"filter-threads={merge_ft}")
     if not project_complete:
