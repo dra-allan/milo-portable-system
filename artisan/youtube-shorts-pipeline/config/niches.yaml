@@ -4,6 +4,9 @@
 # If your pipeline only supports channel IDs, resolve @handles before running.
 
 flick_shorts:
+  # Upload target: the channel this niche's Shorts get published to.
+  # Key must match an authenticated token (config/youtube_token_<name>.json).
+  channel: flick_shorts
   channels:
     - "UCpDYvYi3_6k3f7J6oH6fLgA" # The Diary Of A CEO - existing
     - "UCzQUP1qoWzcujL62pL1m6Dg" # Joe Rogan Experience - existing
@@ -77,6 +80,9 @@ flick_shorts:
   min_views: 100000
 
 capital_mindset:
+  # Upload target: the channel this niche's Shorts get published to.
+  # Key must match an authenticated token (config/youtube_token_<name>.json).
+  channel: capital_mindset
   channels:
     - "UC3L18k-_-KBy4N7B19GgUHg" # Alex Hormozi - existing
     - "UC_f1oP2XwG8kP9a-pL-qWQA" # My First Million - existing

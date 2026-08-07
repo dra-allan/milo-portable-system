@@ -147,6 +147,7 @@ class ShortsPipeline:
         self._transcriber = None
         self._video_editor = None
         self._uploader = None
+        self._uploaders = {}  # channel key -> YouTubeUploader (cached)
         self._whisper_model = whisper_model or config.whisper_model
 
         self.stats = {
@@ -199,6 +200,16 @@ class ShortsPipeline:
                 from uploader import YouTubeUploader
             self._uploader = YouTubeUploader()
         return self._uploader
+
+    def _uploader_for_channel(self, channel: str):
+        """Return a cached YouTubeUploader bound to a specific channel key."""
+        if channel not in self._uploaders:
+            try:
+                from .uploader import YouTubeUploader
+            except ImportError:
+                from uploader import YouTubeUploader
+            self._uploaders[channel] = YouTubeUploader(channel=channel)
+        return self._uploaders[channel]
 
     # -- transcript cache ------------------------------------------------
     def _transcript_cache_path(self, video_id: str) -> Path:
@@ -565,26 +576,75 @@ class ShortsPipeline:
 
     def _upload_clips(self, created: List[Dict], video_id: str, niche: str,
                       niche_keywords: List[str]) -> None:
+        # Route this niche to its bound channel. If a niche has no token on
+        # disk, YouTubeUploader(channel=...) logs a warning and falls back to
+        # the default token -- so verify a token exists before we build it.
+        channel = self.config.get_niche_channel(niche)
+        authed = self.config.authenticated_channels()
+        if not channel or (channel not in authed and authed):
+            logger.error(
+                "No authenticated YouTube channel bound to niche '%s' "
+                "(resolved channel=%r, authed=%s). Clips kept local. "
+                "Bind it in config/niches.yaml with `channel: <name>` and run "
+                "`python -m src.uploader auth --channel <name>` once.",
+                niche, channel, authed or ['(default token)'],
+            )
+            self.stats['errors'] += 1
+            return
+
         try:
-            uploader = self.uploader
+            uploader = self._uploader_for_channel(channel)
         except Exception as exc:
             logger.error(
-                "Upload requested but the YouTube client could not start: %s. "
-                "Clips are still on disk.", exc
+                "Upload requested but the YouTube client for channel '%s' "
+                "could not start: %s. Clips are still on disk.", channel, exc
             )
             return
 
-        for item in created:
+        cap = self.config.upload_max_per_run
+        # Build the upload queue: fresh clips first (they came from this run),
+        # then older rendered-but-unpublished clips to fill the remaining cap.
+        queue = [{'index': item['index'], 'path': item['path'],
+                  'highlight': item['highlight'], 'niche': niche,
+                  'source_video_id': video_id}
+                 for item in created]
+        if self.config.upload_backlog:
+            old = [r for r in self.db.unuploaded_shorts(limit=cap * 3)
+                   if not any(
+                       r['source_video_id'] == video_id
+                       and r['segment_index'] == item['index']
+                       for item in created
+                   )]
+            logger.info(
+                "Upload queue: %d new clip(s), %d backlog clip(s) available, cap %d/run",
+                len(queue), len(old), cap,
+            )
+            for row in old:
+                if len(queue) >= cap:
+                    break
+                queue.append({'index': row['segment_index'],
+                              'path': row['local_path'],
+                              'highlight': {'text': row['title'] or ''},
+                              'niche': row['niche'] or niche,
+                              'source_video_id': row['source_video_id']})
+        else:
+            logger.info("Upload cap: %d new clip(s), backlog mixing disabled", len(queue))
+
+        for item in queue[:cap]:
+            item_niche = item.get('niche', niche)
+            item_source = item.get('source_video_id', video_id)
+            item_keywords = (self.config.get_niche_config(item_niche)
+                             .get('keywords', [])) if item_niche else niche_keywords
             highlight = item['highlight']
             hook = (highlight.get('text') or '').strip().replace('\n', ' ')
-            short_title = self._generate_unique_title(hook, niche, item['index'])
+            short_title = self._generate_unique_title(hook, item_niche, item['index'])
             description = (
-                f"Full video: https://youtube.com/watch?v={video_id}\n\n"
-                f"Follow for more {niche} content!\n"
-                f"#Shorts #{niche} "
-                + ' '.join(f"#{kw.replace(' ', '')}" for kw in niche_keywords[:3])
+                f"Full video: https://youtube.com/watch?v={item_source}\n\n"
+                f"Follow for more {item_niche} content!\n"
+                f"#Shorts #{item_niche} "
+                + ' '.join(f"#{kw.replace(' ', '')}" for kw in item_keywords[:3])
             )
-            tags = [niche, 'Shorts'] + [kw for kw in niche_keywords[:10] if kw]
+            tags = [item_niche, 'Shorts'] + [kw for kw in item_keywords[:10] if kw]
 
             try:
                 short_id = uploader.upload_short(
@@ -600,7 +660,7 @@ class ShortsPipeline:
             if short_id:
                 logger.info("Uploaded clip %d as %s", item['index'], short_id)
                 self.stats['shorts_uploaded'] += 1
-                self.db.mark_short_uploaded(video_id, item['index'], short_id)
+                self.db.mark_short_uploaded(item_source, item['index'], short_id)
                 # Snapshot stats immediately: YouTube returns view counts that
                 # start near zero, but having the row exist means later
                 # --mode stats runs can compare growth over time.
@@ -608,7 +668,7 @@ class ShortsPipeline:
                     stats = uploader.fetch_statistics(short_id)
                     if stats:
                         self.db.record_performance(
-                            short_id, video_id, item['index'],
+                            short_id, item_source, item['index'],
                             views=stats['views'], likes=stats['likes'],
                             comments=stats['comments'], favorites=stats['favorites'],
                         )
@@ -797,6 +857,18 @@ def run_test_mode() -> int:
     if config.upload_enabled:
         if config.has_upload_credentials():
             print(f"  [ok]   upload: ENABLED, privacy={config.privacy_status}")
+            authed = config.authenticated_channels()
+            print(f"  [{'ok' if authed else 'warn'}]   channels: "
+                  f"{', '.join(authed) if authed else 'none authenticated yet'}"
+                  f" (cap {config.upload_max_per_run}/run, "
+                  f"backlog={'on' if config.upload_backlog else 'off'})")
+            unbound = [n for n in config.niche_names()
+                       if config.get_niche_channel(n) not in authed]
+            if unbound:
+                print(f"  [warn] unbound niches ({len(unbound)}): "
+                      f"{', '.join(unbound[:6])}"
+                      f"{'...' if len(unbound) > 6 else ''} -- add `channel:` "
+                      f"in niches.yaml to publish them")
         else:
             print("  [FAIL] upload is ENABLED but no credentials are configured")
             ok = False

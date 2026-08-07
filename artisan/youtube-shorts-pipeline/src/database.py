@@ -225,6 +225,32 @@ class PipelineDatabase:
             logger.warning("Could not read recent shorts: %s", exc)
             return []
 
+    def unuploaded_shorts(self, limit: int = 50) -> List[Dict]:
+        """Shorts that were rendered but never uploaded, oldest first.
+
+        This is the "old shorts" side of the new-mixed-with-old upload queue:
+        when a run's cap isn't used up by fresh clips, the oldest rendered-but-
+        unpublished clips are published to keep the backlog draining.
+        """
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """SELECT g.source_video_id, g.segment_index, g.start_time,
+                              g.end_time, g.score, g.local_path, g.title,
+                              COALESCE(p.niche, '') AS niche
+                       FROM generated_shorts g
+                       LEFT JOIN processed_videos p
+                              ON p.youtube_video_id = g.source_video_id
+                       WHERE g.youtube_short_id IS NULL
+                         AND g.local_path IS NOT NULL AND g.local_path != ''
+                       ORDER BY g.id ASC LIMIT ?""",
+                    (limit,),
+                ).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as exc:
+            logger.warning("Could not read un-uploaded shorts: %s", exc)
+            return []
+
     # ------------------------------------------------------------------
     # Performance feedback loop: (clip, source, metrics) triples.
     # ------------------------------------------------------------------
