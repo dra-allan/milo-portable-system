@@ -61,3 +61,4 @@ artisan/pov_pipeline/**/06_AUDIO/
 # Milo output/workspace folders (external, machine-specific)
 C:\Users\user\Desktop\Milo Video Factory\
 C:\Users\user\Desktop\Milo Workspace\
+telegram-data/.env
