@@ -182,6 +182,65 @@ if "%niche%"=="" (
 pause
 goto main
 
+:upload_existing
+cls
+echo.
+echo Upload Existing Local Shorts
+echo.
+echo This will upload rendered-but-unpublished shorts to YouTube.
+echo.
+echo 1. Upload by Niche (upload all pending clips for a specific niche)
+echo 2. Upload by Channel Override (force upload to specific channel)
+echo 3. Upload All Pending (upload up to limit across all niches)
+echo 4. Back to Main Menu
+echo.
+set /p ue_choice="Select an option (1-4): "
+if "%ue_choice%"=="1" goto upload_by_niche
+if "%ue_choice%"=="2" goto upload_by_channel
+if "%ue_choice%"=="3" goto upload_all
+if "%ue_choice%"=="4" goto main
+echo Invalid choice!
+timeout /t 2 > nul
+goto upload_existing
+
+:upload_by_niche
+cls
+echo.
+set /p niche="Enter niche name (e.g., flick_shorts, capital_mindset): "
+if "%niche%"=="" (
+    echo Niche name is required.
+    pause
+    goto upload_existing
+)
+call venv\Scripts\activate
+python -m src.main --mode upload-existing --niche "%niche%"
+pause
+goto upload_existing
+
+:upload_by_channel
+cls
+echo.
+set /p channel="Enter channel key (e.g., flick_shorts, capital_mindset): "
+if "%channel%"=="" (
+    echo Channel key is required.
+    pause
+    goto upload_existing
+)
+call venv\Scripts\activate
+python -m src.main --mode upload-existing --channel "%channel%"
+pause
+goto upload_existing
+
+:upload_all
+cls
+echo.
+echo Uploading all pending shorts (respects UPLOAD_MAX_PER_RUN limit)...
+echo.
+call venv\Scripts\activate
+python -m src.main --mode upload-existing
+pause
+goto upload_existing
+
 :set_background
 REM %1 = bg_choice (if passed as argument)
 if not "%~1"=="" (
