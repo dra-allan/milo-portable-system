@@ -1,5 +1,6 @@
 @echo off
-echo Before set /p
+echo [START] Batch file started
 set /p name=Enter name:
-echo After set /p
+echo [AFTER] After set /p
 echo Hello %name%
+echo [END] Batch file ended
