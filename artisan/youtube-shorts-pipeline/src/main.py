@@ -1237,7 +1237,7 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             errors += 1
             continue
         
-        # Mark as uploaded in database
+# Mark as uploaded in database
         try:
             pipeline.db.mark_short_uploaded(source_video_id, segment_index, short_id)
             uploaded_count += 1
@@ -1255,6 +1255,9 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
     
     logger.info("Upload complete: %d uploaded, %d errors", uploaded_count, errors)
     return 0 if errors == 0 else 1
+
+
+def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
                            count: int, force: bool = False, args=None) -> int:
     """List (and optionally process) videos already downloaded to data/temp.
 
