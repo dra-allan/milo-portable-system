@@ -41,170 +41,22 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Optional OpenCV import for smart person-aware cropping
-try:
-    import cv2
-    OPENCV_AVAILABLE = True
-except ImportError:
-    OPENCV_AVAILABLE = False
-    cv2 = None  # type: ignore
-
 try:  # package-relative first (python -m src.main)
     from .utils import setup_logger, sanitize_filename
     from .config import config
+    from . import captions as captions_mod
+    from . import smart_crop
 except ImportError:  # pragma: no cover - direct script execution
     from utils import setup_logger, sanitize_filename
     from config import config
+    import captions as captions_mod
+    import smart_crop
 
 logger = setup_logger(__name__)
 
 SHORT_WIDTH = 1080
 SHORT_HEIGHT = 1920
 
-
-def detect_faces_in_frame(frame, face_cascade):
-    """Detect faces in a single frame and return list of face rectangles."""
-    if frame is None:
-        return []
-
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(
-        gray,
-        scaleFactor=1.1,
-        minNeighbors=5,
-        minSize=(30, 30),
-        flags=cv2.CASCADE_SCALE_IMAGE
-    )
-    return faces
-
-
-def get_optimal_crop_regions(video_path, timestamp, num_people_expected=None):
-    """
-    Analyze a frame at the given timestamp to determine optimal crop regions
-    for person-aware cropping.
-
-    Returns a list of (x, y, width, height) tuples for each person/region.
-    """
-    if not OPENCV_AVAILABLE:
-        logger.warning("OpenCV not available, falling back to center crop for smart mode")
-        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]  # Full frame fallback
-
-    # Initialize video capture
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        logger.error(f"Could not open video {video_path} for face detection")
-        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
-
-    # Set position to the timestamp
-    cap.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000)
-
-    # Read frame
-    ret, frame = cap.read()
-    cap.release()
-
-    if not ret or frame is None:
-        logger.warning(f"Could not read frame at timestamp {timestamp}, falling back to center crop")
-        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
-
-    # Load face cascade classifier - handle case where cv2 might not have CascadeClassifier or XML files
-    if not hasattr(cv2, 'CascadeClassifier'):
-        logger.warning("OpenCV does not have CascadeClassifier attribute, falling back to center crop for smart mode")
-        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
-
-    cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-    # Check if cascade file actually exists
-    import os
-    if not os.path.exists(cascade_path):
-        logger.warning(f"Haar cascade file not found at {cascade_path}, falling back to center crop for smart mode")
-        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
-
-    face_cascade = cv2.CascadeClassifier(cascade_path)
-    if face_cascade.empty():
-        logger.error("Could not load face cascade classifier")
-        return [(0, 0, SHORT_WIDTH, SHORT_HEIGHT)]
-
-    # Detect faces
-    faces = detect_faces_in_frame(frame, face_cascade)
-
-    if len(faces) == 0:
-        logger.info("No faces detected, using center crop")
-        # Return center crop region
-        center_x = SHORT_WIDTH // 2
-        center_y = SHORT_HEIGHT // 2
-        size = min(SHORT_WIDTH, SHORT_HEIGHT)  # Square crop from center
-        x = max(0, center_x - size // 2)
-        y = max(0, center_y - size // 2)
-        return [(x, y, size, size)]
-
-    logger.info(f"Detected {len(faces)} faces at timestamp {timestamp}")
-
-    # Sort faces by x-coordinate (left to right)
-    faces = sorted(faces, key=lambda f: f[0])
-
-    # If we have face regions, return them
-    if len(faces) == 1:
-        # Single person - use the face region with some padding
-        x, y, w, h = faces[0]
-        # Add padding around the face
-        padding_x = int(w * 0.3)
-        padding_y = int(h * 0.5)
-        x = max(0, x - padding_x)
-        y = max(0, y - padding_y)
-        w = w + 2 * padding_x
-        h = h + 2 * padding_y
-        return [(x, y, w, h)]
-
-    elif len(faces) == 2:
-        # Two people - split screen vertically
-        face1 = faces[0]
-        face2 = faces[1]
-
-        # Calculate regions for each person
-        # Person 1: top half
-        x1, y1, w1, h1 = face1
-        person1_region = (
-            max(0, x1 - 20),
-            0,
-            min(SHORT_WIDTH, x1 + w1 + 20),
-            SHORT_HEIGHT // 2
-        )
-
-        # Person 2: bottom half
-        x2, y2, w2, h2 = face2
-        person2_region = (
-            max(0, x2 - 20),
-            SHORT_HEIGHT // 2,
-            min(SHORT_WIDTH, x2 + w2 + 20),
-            SHORT_HEIGHT
-        )
-
-        return [person1_region, person2_region]
-
-    else:
-        # 3+ people - create a grid layout
-        # For simplicity, we'll do a 2x2 grid for up to 4 people
-        rows = 2
-        cols = 2
-
-        regions = []
-        region_width = SHORT_WIDTH // cols
-        region_height = SHORT_HEIGHT // rows
-
-        for row in range(rows):
-            for col in range(cols):
-                if len(regions) >= len(faces):
-                    break
-                x = col * region_width
-                y = row * region_height
-                regions.append((x, y, region_width, region_height))
-
-        # If we have more people than grid spaces, just use the grid
-        while len(regions) < 4:  # 2x2 grid
-            x = (len(regions) % cols) * region_width
-            y = (len(regions) // cols) * region_height
-            regions.append((x, y, region_width, region_height))
-
-        return regions[:min(len(faces), 4)]  # Limit to 4 regions max
 
 # The reference blur strength, applied at full 1080x1920 by the original code.
 # Every cheaper backdrop mode is calibrated to look like this one.
@@ -281,6 +133,10 @@ def build_background_filters(mode: str, width: int = SHORT_WIDTH,
 
 
 class VideoEditor:
+    # Populated once per process by available_fonts(); see the note there on
+    # libass' silent font substitution.
+    _font_cache = None
+
     def __init__(self):
         self.ffmpeg = os.getenv('MILO_FFMPEG') or shutil.which('ffmpeg') or 'ffmpeg'
         self.ffprobe = os.getenv('MILO_FFPROBE') or shutil.which('ffprobe') or 'ffprobe'
@@ -360,18 +216,109 @@ class VideoEditor:
 
     def write_ass(self, transcript_segments: List[Dict], ass_path: Path,
                   time_offset: float = 0.0, clip_duration: Optional[float] = None,
-                  font_size: Optional[int] = None) -> bool:
-        """Write an ASS subtitle file with timestamps rebased onto the clip.
+                  font_size: Optional[int] = None,
+                  keywords: Optional[List[str]] = None,
+                  style: Optional[str] = None) -> bool:
+        """Write the ASS caption file for a clip.
+
+        Routes to the word-level viral engine (:mod:`captions`) for every style
+        except ``legacy``, which keeps the old segment-per-line behaviour for
+        anyone who depends on it.
+
+        The previous version of this method rendered one dialogue line per
+        Whisper segment -- a 15-25 word paragraph held static for 5-10 seconds
+        -- and its "hormozi" preset truncated the text to the first 3 words,
+        silently discarding most of the speech. See captions.py.
 
         Args:
-            transcript_segments: segments carrying ABSOLUTE source timestamps.
+            transcript_segments: segments carrying ABSOLUTE source timestamps
+                (unless ``time_offset`` is 0 because they are already clip
+                relative).
             time_offset: clip start in the source timeline; subtracted from
                 every timestamp so captions line up with the extracted clip.
             clip_duration: clamp/drop captions past the end of the clip.
+            keywords: niche keywords, which bias which word gets emphasised.
         """
-        font_size = font_size or config.caption_font_size
-        caption_style = getattr(config, 'caption_style', 'default')
+        style = (style or getattr(config, 'caption_style', 'viral') or 'viral').lower()
 
+        if style == 'legacy':
+            return self._write_ass_legacy(
+                transcript_segments, ass_path, time_offset=time_offset,
+                clip_duration=clip_duration, font_size=font_size,
+            )
+
+        try:
+            document = captions_mod.build_viral_ass(
+                transcript_segments,
+                preset_name=style,
+                time_offset=time_offset,
+                clip_duration=clip_duration,
+                keywords=keywords or [],
+                font_size=font_size or getattr(config, 'caption_font_size', None),
+                max_words=getattr(config, 'caption_max_words', None),
+                available_fonts=self.available_fonts(),
+                play_res=(SHORT_WIDTH, SHORT_HEIGHT),
+                punch_ratio=getattr(config, 'caption_punch_ratio', 0.22),
+            )
+        except Exception as exc:
+            logger.error("Caption generation failed: %s", exc, exc_info=True)
+            return False
+
+        if not document:
+            logger.warning("No caption words fell inside the clip")
+            return False
+
+        try:
+            ass_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(ass_path, 'w', encoding='utf-8') as f:
+                f.write(document)
+        except Exception as exc:
+            logger.error("Could not write subtitle file %s: %s", ass_path, exc)
+            return False
+        return True
+
+    # ------------------------------------------------------------------
+    @classmethod
+    def available_fonts(cls):
+        """Font family names known to fontconfig, or None if unavailable.
+
+        Needed because libass *silently* substitutes its default for a missing
+        family. Without this check a preset asking for Montserrat ExtraBold on
+        a box that lacks it renders in a plain fallback and looks nothing like
+        the intended style -- with no warning anywhere.
+
+        Cached: fc-list takes ~100ms and the answer cannot change mid-run.
+        """
+        if cls._font_cache is not None:
+            return cls._font_cache or None
+        names = set()
+        fc = shutil.which('fc-list')
+        if fc:
+            try:
+                result = subprocess.run(
+                    [fc, '--format', '%{family}\n'],
+                    capture_output=True, text=True, timeout=20,
+                )
+                if result.returncode == 0:
+                    for line in (result.stdout or '').splitlines():
+                        for family in line.split(','):
+                            family = family.strip()
+                            if family:
+                                names.add(family)
+            except Exception as exc:
+                logger.debug("fc-list failed: %s", exc)
+        cls._font_cache = names
+        if not names:
+            logger.debug("Could not enumerate fonts; using preset font as-is")
+        return names or None
+
+    # ------------------------------------------------------------------
+    def _write_ass_legacy(self, transcript_segments: List[Dict], ass_path: Path,
+                          time_offset: float = 0.0,
+                          clip_duration: Optional[float] = None,
+                          font_size: Optional[int] = None) -> bool:
+        """One dialogue line per transcript segment (the pre-rewrite look)."""
+        font_size = font_size or config.caption_font_size
         try:
             ass_path.parent.mkdir(parents=True, exist_ok=True)
             with open(ass_path, 'w', encoding='utf-8') as f:
@@ -382,70 +329,17 @@ class VideoEditor:
                 f.write('ScaledBorderAndShadow: yes\n')
                 f.write(f'PlayResX: {SHORT_WIDTH}\n')
                 f.write(f'PlayResY: {SHORT_HEIGHT}\n\n')
-
                 f.write('[V4+ Styles]\n')
                 f.write('Format: Name, Fontname, Fontsize, PrimaryColour, '
                         'SecondaryColour, OutlineColour, BackColour, Bold, Italic, '
                         'Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, '
                         'BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, '
                         'MarginV, Encoding\n')
-
-                # Define styles based on caption style
-                if caption_style == 'hormozi':
-                    # Alex Hormozi Style: Bold, dynamic colors, lower-middle
-                    f.write(
-                        f'Style: Default,Impact,{font_size},&H00FFFFFF,&H000000FF,'
-                        f'&H00000000,&H80000000,-1,0,0,0,100,100,0,0,2,4,2,2,60,60,320,1\n\n'
-                    )
-                elif caption_style == 'minimalist':
-                    # Clean Minimalist: Sans-serif, white with shadow or background
-                    f.write(
-                        f'Style: Default,Montserrat,{font_size},&H00FFFFFF,&H000000FF,'
-                        f'&H00000000,&H64000000,-1,0,0,0,100,100,0,0,2,2,2,2,60,60,320,1\n\n'
-                    )
-                elif caption_style == 'pop':
-                    # Pop & Bounce: Bright neon with black outline
-                    f.write(
-                        f'Style: Default,Bebas Neue,{font_size},&H00FFFFFF,&H0000FF00,'
-                        f'&H00000000,&H80000000,-1,0,0,0,100,100,4,4,0,2,2,2,60,60,320,1\n\n'
-                    )
-                elif caption_style == 'kinetic':
-                    # Kinetic Karaoke: Highlight current word
-                    f.write(
-                        f'Style: Default,Komika Axis,{font_size},&H00FFFFFF,&H0000FFFF,'
-                        f'&H00000000,&H80000000,-1,0,0,0,100,100,0,0,2,4,2,2,60,60,320,1\n\n'
-                    )
-                elif caption_style == 'neon':
-                    # Neon Style: Bright cyan background, magenta text, thick outline
-                    f.write(
-                        f'Style: Default,Arial Black,{font_size},&H00FF00FF,&H00FFFF00,'
-                        f'&H00000000,&H80000000,-1,0,0,0,100,100,3,3,0,2,2,2,60,60,320,1\n\n'
-                    )
-                elif caption_style == 'outline':
-                    # Thick Outline Style: White text with thick black outline
-                    f.write(
-                        f'Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,'
-                        f'&H00000000,&H80000000,-1,0,0,0,100,100,3,3,0,2,2,2,60,60,320,1\n\n'
-                    )
-                elif caption_style == 'shadow':
-                    # Heavy Shadow Style: White text with heavy shadow
-                    f.write(
-                        f'Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,'
-                        f'&H00000000,&H64000000,-1,0,0,0,100,100,0,0,2,6,6,2,60,60,320,1\n\n'
-                    )
-                elif caption_style == 'bold':
-                    # Bold Impact Style: Impact font, white text, black outline
-                    f.write(
-                        f'Style: Default,Impact,{font_size},&H00FFFFFF,&H000000FF,'
-                        f'&H00000000,&H80000000,-1,0,0,0,100,100,2,2,0,2,2,2,60,60,320,1\n\n'
-                    )
-                else:
-                    # Default style (original)
-                    f.write(
-                        f'Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,'
-                        f'&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,2,60,60,320,1\n\n'
-                    )
-
+                f.write(
+                    f'Style: Default,{captions_mod.resolve_font("Montserrat ExtraBold", self.available_fonts())},'
+                    f'{font_size},&H00FFFFFF,&H000000FF,'
+                    f'&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,2,60,60,320,1\n\n'
+                )
                 f.write('[Events]\n')
                 f.write('Format: Layer, Start, End, Style, Name, MarginL, MarginR, '
                         'MarginV, Effect, Text\n')
@@ -456,33 +350,22 @@ class VideoEditor:
                     end = float(seg.get('end', 0.0)) - time_offset
                     if clip_duration is not None:
                         if start >= clip_duration:
-                            continue        # entirely past the clip
+                            continue
                         end = min(end, clip_duration)
                     if end <= 0:
-                        continue            # entirely before the clip
+                        continue
                     start = max(0.0, start)
                     if end <= start:
                         continue
                     text = self._escape_ass_text(seg.get('text', ''))
                     if not text:
                         continue
-
-                    # Apply style-specific text processing
-                    if caption_style == 'hormozi':
-                        text = self._process_hormozi_style(text)
-                    elif caption_style == 'pop':
-                        text = self._process_pop_style(text)
-                    elif caption_style == 'kinetic':
-                        text = self._process_kinetic_style(text, start, end)
-                    # minimalist uses default processing
-
                     f.write(
                         f'Dialogue: 0,{self._format_ass_time(start)},'
                         f'{self._format_ass_time(end)},Default,,0,0,0,,{text}\n'
                     )
                     written += 1
-
-            logger.debug("Wrote %d caption lines to %s", written, ass_path.name)
+            logger.debug("Wrote %d legacy caption lines to %s", written, ass_path.name)
             return written > 0
         except Exception as exc:
             logger.error("Could not write subtitle file %s: %s", ass_path, exc)
@@ -503,7 +386,9 @@ class VideoEditor:
                                   output_path: str, add_branding: bool = False,
                                   burn_captions: bool = True,
                                   captions_are_clip_relative: bool = False,
-                                  threads: Optional[int] = None) -> bool:
+                                  threads: Optional[int] = None,
+                                  keywords: Optional[List[str]] = None,
+                                  caption_style: Optional[str] = None) -> bool:
         """Render one vertical Short in a single FFmpeg pass.
 
         Pipeline: seek -> scale/pad to 1080x1920 -> burn captions ->
@@ -560,7 +445,8 @@ class VideoEditor:
         if burn_captions and transcript_segments:
             caption_offset = 0.0 if captions_are_clip_relative else start_time
             if self.write_ass(transcript_segments, ass_path,
-                              time_offset=caption_offset, clip_duration=duration):
+                              time_offset=caption_offset, clip_duration=duration,
+                              keywords=keywords, style=caption_style):
                 # Use relative path from cwd for FFmpeg subtitles filter to avoid
                 # Windows drive-letter parsing issues in filter strings.
                 try:
@@ -745,145 +631,39 @@ class VideoEditor:
             return False
         return Path(output_path).exists()
 
-    def _process_hormozi_style(self, text: str) -> str:
-        """Process text for Alex Hormozi style: 1-3 words, dynamic highlighting"""
-        # For Hormozi style, we'll limit to 1-3 words and add markup for color highlighting
-        words = text.split()
-        if len(words) > 3:
-            # Take first 3 words for Hormozi style
-            words = words[:3]
-            text = ' '.join(words)
+    def _build_smart_background_filters(self, video_path: str, start_time: float,
+                                        end_time: float,
+                                        width: int = SHORT_WIDTH,
+                                        height: int = SHORT_HEIGHT):
+        """Person-aware framing, delegating to :mod:`smart_crop`.
 
-        # In a real implementation, we would add ASS markup for dynamic colors
-        # based on word sentiment (green for money/positive, red for negative, etc.)
-        # For now, we'll return the text as-is but could be enhanced with markup
-        return text.upper()  # Hormozi style often uses uppercase
+        The previous implementation lived here and never worked: it normalised
+        source-pixel face coordinates by the *output* size, averaged the
+        positions of different people into a point where nobody stood, and its
+        multi-person branch computed regions and then discarded them with
+        ``return build_background_filters('crop', ...)``. See smart_crop.py for
+        the full analysis.
 
-    def _process_pop_style(self, text: str) -> str:
-        """Process text for Pop & Bounce style: word-by-word with animation"""
-        # For Pop & Bounce, we'd want each word to appear separately
-        # This would require more complex ASS styling with per-word animation
-        # For now, we'll return the text as-is
-        return text
-
-    def _process_kinetic_style(self, text: str, start_time: float, end_time: float) -> str:
-        """Process text for Kinetic Karaoke style: highlight current word"""
-        # For Kinetic Karaoke, we'd need to split words and highlight based on timing
-        # This is complex to implement in ASS without knowing exact word timings
-        # For now, we'll return the text as-is
-        return text
-
-    def _build_smart_background_filters(self, video_path: str, start_time: float, end_time: float,
-                                      width: int = SHORT_WIDTH, height: int = SHORT_HEIGHT):
+        Falls back to the configured non-smart backdrop whenever detection
+        finds nobody, so this stage can never fail a render.
         """
-        Build smart person-aware crop filters based on face detection.
+        fallback = getattr(config, 'smart_fallback_mode', 'crop')
+        try:
+            result = smart_crop.build_smart_filters(
+                video_path, start_time, end_time, width=width, height=height,
+                zoom=getattr(config, 'smart_zoom', 1.0),
+                headroom=getattr(config, 'smart_headroom', 0.55),
+                samples=getattr(config, 'smart_samples', 9),
+                max_people=getattr(config, 'smart_max_people', 4),
+                min_presence=getattr(config, 'smart_min_presence', 0.34),
+            )
+        except Exception as exc:
+            logger.warning("Smart framing failed (%s); using '%s'", exc, fallback)
+            return build_background_filters(fallback, width, height)
 
-        For 1 person: center crop on the person
-        For 2 people: split screen vertically (top/bottom)
-        For 3+ people: grid layout (2x2 for up to 4 people)
-        """
-        if not OPENCV_AVAILABLE or not hasattr(cv2, 'CascadeClassifier'):
-            logger.warning("OpenCV not available or missing CascadeClassifier for smart mode, falling back to crop mode")
-            return build_background_filters('crop', width, height)
+        if not result:
+            logger.info("Smart framing found no people; using '%s'", fallback)
+            return build_background_filters(fallback, width, height)
 
-        # Sample multiple timestamps to get a better representation of people positions
-        duration = end_time - start_time
-        sample_times = [
-            start_time + duration * 0.25,
-            start_time + duration * 0.5,
-            start_time + duration * 0.75
-        ]
-
-        # Collect face detections from multiple samples
-        all_faces = []
-        for sample_time in sample_times:
-            faces = get_optimal_crop_regions(video_path, sample_time)
-            # Convert face regions to normalized coordinates (0-1)
-            for (x, y, w, h) in faces:
-                norm_x = x / width
-                norm_y = y / height
-                norm_w = w / width
-                norm_h = h / height
-                all_faces.append((norm_x, norm_y, norm_w, norm_h))
-
-        if not all_faces:
-            logger.warning("No faces detected in smart mode, falling back to crop mode")
-            return build_background_filters('crop', width, height)
-
-        # Average the face positions to get stable regions
-        avg_norm_x = sum(f[0] for f in all_faces) / len(all_faces)
-        avg_norm_y = sum(f[1] for f in all_faces) / len(all_faces)
-        avg_norm_w = sum(f[2] for f in all_faces) / len(all_faces)
-        avg_norm_h = sum(f[3] for f in all_faces) / len(all_faces)
-
-        # Convert back to pixel coordinates
-        avg_x = int(avg_norm_x * width)
-        avg_y = int(avg_norm_y * height)
-        avg_w = max(1, int(avg_norm_w * width))
-        avg_h = max(1, int(avg_norm_h * height))
-
-        # For now, implement a simplified smart crop that detects if there are multiple people
-        # and splits accordingly. A more sophisticated implementation would track individuals.
-
-        # Since we're sampling multiple times, let's check if we have consistent separation
-        # that indicates multiple people
-
-        # Simple approach: if we detect significant horizontal spread, assume multiple people
-        face_positions = [f[0] for f in all_faces]  # normalized x positions
-        if len(face_positions) > 1:
-            pos_spread = max(face_positions) - min(face_positions)
-            if pos_spread > 0.3:  # Significant horizontal spread
-                logger.info("Smart mode: Detected horizontal spread, attempting split-screen")
-
-                # Sort faces by x position
-                sorted_faces = sorted(all_faces, key=lambda f: f[0])
-
-                if len(sorted_faces) >= 2:
-                    # Split screen vertically
-                    left_face = sorted_faces[0]
-                    right_face = sorted_faces[-1]  # Take the rightmost face
-
-                    # Left person: top half
-                    left_region = (
-                        0,  # x
-                        0,  # y
-                        width // 2,  # width
-                        height   # height
-                    )
-
-                    # Right person: bottom half
-                    right_region = (
-                        width // 2,  # x
-                        0,           # y
-                        width // 2,  # width
-                        height       # height
-                    )
-
-                    # Create filter complexes for side-by-side layout
-                    # NOTE: This is a simplified implementation. A proper implementation
-                    # would use actual face coordinates and create more complex filter graphs.
-
-                    # For now, we'll fall back to crop mode but log that we detected multiple people
-                    logger.info("Smart mode detected multiple people but using crop mode for now")
-                    return build_background_filters('crop', width, height)
-
-        # Default to center crop on detected face area
-        logger.info("Smart mode: Using center crop on detected face area")
-
-        # Add some padding around the detected area
-        padding_x = int(avg_w * 0.2)
-        padding_y = int(avg_h * 0.3)
-
-        crop_x = max(0, avg_x - padding_x)
-        crop_y = max(0, avg_y - padding_y)
-        crop_w = min(width - crop_x, avg_w + 2 * padding_x)
-        crop_h = min(height - crop_y, avg_h + 2 * padding_y)
-
-        # Ensure minimum size
-        crop_w = max(crop_w, width // 3)
-        crop_h = max(crop_h, height // 3)
-
-        return ([
-            f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease"
-            f":flags=fast_bilinear,crop={crop_w}:{crop_h}:{crop_x}:{crop_y}[padded]",
-        ], 'padded')
+        filters, label, _count = result
+        return list(filters), label

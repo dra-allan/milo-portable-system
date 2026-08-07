@@ -182,6 +182,85 @@ class ShortsPipeline:
         return self._transcriber
 
     @property
+    def caption_transcriber(self):
+        """Accurate, word-level transcriber used only on selected clips.
+
+        Separate from ``self.transcriber`` because the discovery pass runs with
+        ``word_timestamps=False`` and a tiny model for speed -- fine for
+        deciding *where* the highlights are, but useless for captions, which
+        need per-word onsets to be able to reveal words as they are spoken.
+        This pass only ever sees the few minutes of audio that were actually
+        selected, so it can afford beam search and a larger model.
+        """
+        if self._caption_transcriber is None:
+            try:
+                from .transcriber import VideoTranscriber
+            except ImportError:
+                from transcriber import VideoTranscriber
+            self._caption_transcriber = VideoTranscriber(
+                profile='caption', device=config.whisper_device,
+                word_timestamps=True,
+            )
+        return self._caption_transcriber
+
+    def _clip_word_transcript(self, video_path: str, start: float, end: float,
+                              padding: float = 0.35):
+        """Word-level transcript for one clip, in the CLIP's own timeline.
+
+        Returns None on any failure, so the caller can fall back to the
+        discovery transcript rather than losing the clip.
+
+        The clip's audio is transcribed on its own rather than slicing the
+        full-source transcript. That is deliberate: word onsets from the
+        discovery pass are relative to the source, and rebasing them assumes
+        the render cut the video at exactly ``start``. FFmpeg seeks to the
+        nearest keyframe, so that assumption is wrong by up to a keyframe
+        interval -- which is precisely the drift that makes word-level captions
+        look out of sync even when segment-level ones looked fine.
+
+        ``padding`` extends the extracted audio slightly so a word straddling
+        the clip boundary is still decoded whole; the caption engine clamps
+        anything outside the clip afterwards.
+        """
+        try:
+            duration = float(end) - float(start)
+            if duration <= 0:
+                return None
+            slice_start = max(0.0, float(start) - padding)
+            lead_in = float(start) - slice_start
+            slice_duration = duration + padding + lead_in
+
+            tmp_dir = Path(self.config.temp_dir)
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            wav = tmp_dir / f"capt_{int(start * 1000)}_{int(end * 1000)}.wav"
+
+            tr = self.caption_transcriber
+            if not tr._extract_audio_chunk(video_path, str(wav),
+                                           slice_start, slice_duration):
+                return None
+            try:
+                # -lead_in shifts the slice's timeline back onto the clip's, so
+                # t=0 is the first frame the renderer will emit.
+                segments = tr.transcribe_file(str(wav), time_offset=-lead_in)
+            finally:
+                try:
+                    wav.unlink()
+                except OSError:
+                    pass
+
+            if not segments:
+                return None
+            if not any(seg.get('words') for seg in segments):
+                logger.warning("Caption pass returned no word timings for "
+                               "%.1f-%.1fs", start, end)
+                return None
+            return segments
+        except Exception as exc:
+            logger.warning("Word-level caption pass failed for %.1f-%.1fs: %s",
+                           start, end, exc)
+            return None
+
+    @property
     def video_editor(self):
         if self._video_editor is None:
             try:
