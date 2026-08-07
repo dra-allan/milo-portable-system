@@ -128,7 +128,12 @@ class Config:
         # Padding around each section so a later timing nudge needs no
         # re-download, and so keyframe drift lands inside slack we own.
         self.section_padding = self._float('SECTION_PADDING', 8.0, minimum=0.0)
-        self.download_height = self._int('DOWNLOAD_HEIGHT', 1080, minimum=240)
+        # Source resolution ceiling. A vertical Short is 1080x1920, and smart
+        # framing crops *into* the source -- a 1080p landscape frame cropped to
+        # a 9:16 tile is only ~608px wide, which then has to be upscaled. So
+        # allowing 1440p+ genuinely helps when the source offers it, and costs
+        # nothing when it does not (the format selector just falls through).
+        self.download_height = self._int('DOWNLOAD_HEIGHT', 1440, minimum=240)
         self.download_concurrency = self._int('DOWNLOAD_CONCURRENCY', 2, minimum=1)
 
         # --- Render tuning -----------------------------------------------
@@ -181,8 +186,32 @@ class Config:
         self.schedule_max_videos = self._int('SCHEDULE_MAX_VIDEOS', 3, minimum=1)
 
         # --- Encoding ----------------------------------------------------
-        self.video_preset = os.getenv('VIDEO_PRESET', 'medium')
-        self.video_crf = self._int('VIDEO_CRF', 20, minimum=0)
+        # 'slow' over 'medium': at a fixed CRF a slower preset spends more time
+        # searching and produces a *better looking* frame for the same file
+        # size. Rendering is not the bottleneck (download + transcription are),
+        # so the extra CPU is worth it for the visible gain.
+        self.video_preset = os.getenv('VIDEO_PRESET', 'slow')
+        # CRF 20 was leaving visible blocking in motion once captions and a
+        # blurred backdrop were composited on top. 18 is effectively
+        # transparent for 1080p delivery; YouTube re-encodes anyway, so
+        # handing it a cleaner master directly improves the published result.
+        self.video_crf = self._int('VIDEO_CRF', 18, minimum=0)
+        # swscale flag for the *visible* rescale. fast_bilinear (the old
+        # hard-coded value) is the lowest-quality option available and softened
+        # every frame; lanczos keeps edges and text sharp on the downscale from
+        # a 1080p/4K source.
+        self.video_scaler = (os.getenv('VIDEO_SCALER') or 'lanczos').strip() or 'lanczos'
+        if self.video_scaler not in ('lanczos', 'bicubic', 'bilinear', 'spline',
+                                     'neighbor', 'area', 'fast_bilinear'):
+            self.video_scaler = 'lanczos'
+        # Output framerate cap. The source rate is preserved below this, so a
+        # 60fps source stays 60fps (the old code forced everything to 30 and
+        # threw away half the frames).
+        self.video_max_fps = self._int('VIDEO_MAX_FPS', 60, minimum=1)
+        # 128k AAC was audibly lossy on music beds; 192k/48k matches YouTube's
+        # own stereo recommendation.
+        self.audio_bitrate = os.getenv('AUDIO_BITRATE', '192k')
+        self.audio_sample_rate = self._int('AUDIO_SAMPLE_RATE', 48000, minimum=8000)
         # Viral captions are big: at 1080x1920 a 54px font is a caption on a
         # desktop video, not a Short. 104 is ~10% of frame width per character
         # row, which is what the reference Shorts use.
