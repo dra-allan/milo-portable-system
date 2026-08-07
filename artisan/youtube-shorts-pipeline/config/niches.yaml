@@ -1,82 +1,112 @@
-gaming: #[cite: 3]
+flick_shorts:
   channels:
-    - UCXuqSBlHAE6Xw-yeJA0Tunw  # Example: PewDiePie[cite: 3]
-    - UC-lHJZR3Gqxm24_Vd_AJ5Yw  # Example: Markiplier[cite: 3]
-  keywords: ["gameplay", "highlight", "clutch", "epic", "win", "moment", "speedrun", "boss fight", "no damage", "walkthrough", "combo", "easter egg"] #[cite: 3]
-  min_duration: 600    # 10 minutes[cite: 3]
-  max_duration: 7200   # 2 hours[cite: 3]
-
-trading: #[cite: 3]
-  channels:
-    - UCU4C_jNprDQe2V_I0kw-neh  # Example: Graham Stefan[cite: 3]
-    - UCV_h9RKfQa2-4d3bWBprogQ  # Example: Andrei Jikh[cite: 3]
-  keywords: ["stock", "trade", "invest", "profit", "loss", "market", "algorithm", "backtest", "high-frequency", "expert advisor", "drawdown", "liquidity", "margin", "leverage", "metatrader", "quantitative"] #[cite: 3]
-  min_duration: 300    # 5 minutes[cite: 3]
-  max_duration: 3600   # 1 hour[cite: 3]
-
-movies: #[cite: 3]
-  channels:
-    - UCB-pvTOrZ60Q9ycO0bzjr2Q  # Example: Screen Junkies[cite: 3]
-    - UCvz7g1l0bIVM9iFfX6_UPEg  # Example: Chris Stuckmann[cite: 3]
-  keywords: ["review", "trailer", "spoiler", "breakdown", "analysis", "easter eggs", "director", "cinematography", "plot hole", "ending explained", "behind the scenes"] #[cite: 3]
-  min_duration: 600    # 10 minutes[cite: 3]
-  max_duration: 10800  # 3 hours[cite: 3]
-
-podcast: #[cite: 3]
-  channels:
-    - UCXXXXX  # Placeholder: replace with actual podcast channel IDs[cite: 3]
-  # Retaining your extensive vocabulary matrix below:
-  keywords: ["podcast", "interview", "discussion", "talk", "episode", "secret", "mistake", "brain", "habit", "money", "future", "rule", "truth", "change", "key", "important", "advice", "tip", "lesson", "story", "experience", "learn", "growth", "success", "failure", "habit", "routine", "goal", "motivation", "inspiration", "life", "health", "wealth", "relationship", "career", "business", "startup", "technology", "science", "history", "philosophy", "psychology", "selfhelp", "productivity", "time", "focus", "mindset", "attitude", "behavior", "character", "virtue", "vice", "ethics", "morality", "happiness", "joy", "sadness", "anger", "fear", "courage", "bravery", "fear", "doubt", "belief", "faith", "hope", "love", "hate", "peace", "war", "freedom", "slavery", "rights", "law", "justice", "equality", "discrimination", "racism", "sexism", "ageism", "disability", "lgbtq", " feminism", "activism", "protest", "riot", "vote", "election", "president", "senator", "congress", "parliament", "government", "policy", "tax", "budget", "debt", "loan", "mortgage", "rent", "invest", "stock", "bond", "etf", "mutual fund", "crypto", "bitcoin", "ethereum", "blockchain", "ai", "artificial intelligence", "machine learning", "deep learning", "neural network", "data science", "big data", "analytics", "statistics", "probability", "calculus", "algebra", "geometry", "trigonometry", "physics", "chemistry", "biology", "anatomy", "physiology", "genetics", "evolution", "ecology", "environment", "climate", "pollution", "recycling", "sustainability", "renewable", "solar", "wind", "hydro", "nuclear", "space", "astronomy", "cosmology", "rocket", "satellite", "mars", "moon", "stars", "galaxy", "universe", "black hole", "wormhole", "time travel", "paradox", "quantum", "relativity", "string theory", "multiverse", "simulation", "ai ethics", "singularity", "transhumanism", "cyborg", "robot", "automation", "future of work", "gig economy", "remote work", "digital nomad", "minimalism", "stoicism", "buddhism", "christianity", "islam", "hinduism", "judaism", "religion", "spirituality", "meditation", "mindfulness", "yoga", "tai chi", "qigong", "martial arts", "selfdefense", "weapon", "gun", "knife", "sword", "archery", "hunting", "fishing", "camping", "hiking", "backpacking", "survival", "prepping", "disaster", "apocalypse", "zombie", "alien", "ufo", "conspiracy", "mythology", "legend", "folklore", "fairy tale", "fable", "myth", "epic", "saga", "chronicle", "history", "ancient", "medieval", "renaissance", "enlightenment", "industrial revolution", "world war i", "world war ii", "cold war", "vietnam war", "korea war", "gulf war", "iraq war", "afghanistan war", "syria war", "israel palestine conflict", "ukraine russia conflict", "north korea", "south korea", "china", "taiwan", "japan", "korea", "vietnam", "thailand", "indonesia", "philippines", "malaysia", "singapore", "india", "pakistan", "bangladesh", "sri lanka", "nepal", "bhutan", "maldives", "australia", "new zealand", "papua new guinea", "fiji", "samoa", "tonga", "vanuatu", "solomon islands", "kiribati", "tuvalu", "nauru", "palau", "marshall islands", "micronesia", "canada", "united states", "mexico", "guatemala", "belize", "honduras", "el salvador", "nicaragua", "costa rica", "panama", "colombia", "venezuela", "guyana", "suriname", "french guiana", "ecuador", "peru", "bolivia", "paraguay", "uruguay", "argentina", "chile", "brazil", "antartica", "greenland", "iceland", "norway", "sweden", "denmark", "finland", "russia", "ukraine", "belarus", "moldova", "romania", "bulgaria", "serbia", "croatia", "bosnia", "slovenia", "macedonia", "albania", "greece", "turkey", "cyprus", "lebanon", "syria", "jordan", "iraq", "iran", "afghanistan", "pakistan", "india", "nepal", "bhutan", "bangla", "sri lanka", "maldives", "indonesia", "malaysia", "singapore", "brunei", "philippines", "cambodia", "laos", "thailand", "myanmar", "china", "japan", "south korea", "north korea", "mongolia", "kazakhstan", "kyrgyzstan", "tajikistan", "turkmenistan", "uzbekistan", "afghanistan", "pakistan", "india", "china", "russia"] #[cite: 3]
-  min_duration: 600    # 10 minutes[cite: 3]
-  max_duration: 7200   # 2 hours[cite: 3]
-  min_score: 0.30 #[cite: 3]
-
-software_development:
-  channels:
-    - UCXXXXX
-  keywords: ["linux terminal", "version control", "git commit", "api integration", "websocket", "database schema", "authentication token", "background job", "automation script", "refactoring", "frontend", "backend", "deploy", "single page application", "framework"]
-  min_duration: 300
-  max_duration: 7200
-  min_score: 0.35
-
-music_production:
-  channels:
-    - UCXXXXX
-  keywords: ["ableton live", "fl studio", "audio engineering", "vocal chain", "beat breakdown", "mixing", "mastering", "eq", "compression", "midi", "synthesizer", "sampling", "track arrangement", "workflow", "bounce", "stems"]
-  min_duration: 300
-  max_duration: 7200
-  min_score: 0.40
-
-electronics_hardware:
-  channels:
-    - UCXXXXX
-  keywords: ["teardown", "motherboard repair", "soldering", "circuit", "capacitor replacement", "hardware diagnostic", "multimeter", "schematic", "power supply", "component level", "short circuit", "resistor"]
-  min_duration: 600
-  max_duration: 7200
+    - UCpDYvYi3_6k3f7J6oH6fLgA  # The Diary Of A CEO
+    - UCzQUP1qoWzcujL62pL1m6Dg  # Joe Rogan Experience
+  keywords:
+    - "the biggest mistake"
+    - "hard truth"
+    - "nobody talks about"
+    - "changed my life"
+    - "worst advice"
+    - "secret to success"
+    - "unfiltered truth"
+    - "lesson I learned"
+    - "the real reason"
+    - "don't do this"
+    - "mindset shift"
+    - "best advice I got"
+    - "what nobody tells you"
+  min_duration: 600    # 10 minutes
+  max_duration: 7200   # 2 hours
   min_score: 0.45
 
-pharmacy_and_science:
+capital_mindset:
   channels:
-    - UCXXXXX
+    - UC3L18k-_-KBy4N7B19GgUHg  # Alex Hormozi
+    - UC_f1oP2XwG8kP9a-pL-qWQA  # My First Million
+    - UCcefcZRL2jbA_cBbn2W0pLg  # Y Combinator
   keywords:
-    - "pharmacognosy"
-    - "pharmaceutical chemistry"
-    - "drug mechanism"
-    - "clinical trial"
-    - "chemical synthesis"
-    - "botanical extract"
-    - "molecule"
-    - "dosage"
-    - "laboratory"
-    - "biochemistry"
-  min_duration: 600
-  max_duration: 7200
-  min_score: 0.35
+    - "how to get rich"
+    - "billionaire habit"
+    - "building a business"
+    - "first million"
+    - "financial freedom"
+    - "passive income stream"
+    - "investing strategy"
+    - "cash flow"
+    - "went bankrupt"
+    - "profit margin"
+    - "scale to 7 figures"
+    - "make more money"
+    - "business model"
+    - "how companies make money"
+  min_duration: 300    # 5 minutes
+  max_duration: 5400   # 1.5 hours
+  min_score: 0.45
 
-game_development:
+future_tech_daily:
   channels:
-    - UCXXXXX
-  keywords: ["game loop", "asset manifest", "simulation", "multi-agent", "automation loop", "rendering engine", "3d canvas", "virtual camera", "procedural generation", "hitbox", "collider", "npc"]
-  min_duration: 600
-  max_duration: 7200
-  min_score: 0.40
+    - UC0e3QhIYukixgh5v15N5C_Q  # OpenAI
+    - UCBJycsmduvYEL83R_U4JriQ  # MKBHD / Waveform
+    - UCvA_vP_iP77G3J39rP_7O8g  # All-In Podcast
+  keywords:
+    - "artificial intelligence"
+    - "ai tool"
+    - "future of work"
+    - "chatgpt prompt"
+    - "ai agent"
+    - "tech announcement"
+    - "replace human jobs"
+    - "game changing technology"
+    - "software automation"
+    - "next big thing"
+    - "machine learning model"
+    - "tech keynote"
+    - "this new tool"
+  min_duration: 300    # 5 minutes
+  max_duration: 5400   # 1.5 hours
+  min_score: 0.45
+
+peak_human_lab:
+  channels:
+    - UC2D2CMWXMOVWx7giW1n3LIg  # Huberman Lab
+    - UCcefcZRL2jbA_cBbn2W0pLg  # Peter Attia MD
+  keywords:
+    - "fix your sleep"
+    - "dopamine detox"
+    - "stop doing this"
+    - "neuroscience secret"
+    - "brain health"
+    - "lower cortisol"
+    - "morning protocol"
+    - "boost focus"
+    - "what sugar does"
+    - "optimal health"
+    - "longevity hack"
+    - "supplement stack"
+    - "reduce stress fast"
+  min_duration: 600    # 10 minutes
+  max_duration: 7200   # 2 hours
+  min_score: 0.45
+
+untold_frontlines:
+  channels:
+    - UC_p4736fS0p_S0vY60zDq7w  # Shawn Ryan Show
+    - UC1M0m03q_3gG6W49b0w6P0g  # Jocko Podcast
+  keywords:
+    - "navy seal story"
+    - "special forces"
+    - "survived the battle"
+    - "true story of"
+    - "interrogation room"
+    - "military mission"
+    - "behind enemy lines"
+    - "combat experience"
+    - "untold history"
+    - "tactical survival"
+    - "what actually happened"
+    - "war story"
+    - "almost died"
+  min_duration: 600    # 10 minutes
+  max_duration: 10800  # 3 hours
+  min_score: 0.50
