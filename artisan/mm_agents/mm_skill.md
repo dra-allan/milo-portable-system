@@ -21,7 +21,7 @@ COMPLETENESS_REPORT.txt ← ArchiveManager (quality gate)
 
 ```powershell
 $env:TOPIC = "INDEX_FUNDS"
-$env:PROJECT_DIR = "C:\Users\user\Desktop\milo\command\milo\artisan\mm_pipeline\$env:TOPIC"
+$env:PROJECT_DIR = "C:\Users\user\Desktop\Milo Video Factory\projects\money_matrix\$env:TOPIC"
 New-Item -ItemType Directory -Path $env:PROJECT_DIR -Force
 ```
 
