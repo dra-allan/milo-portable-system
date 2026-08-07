@@ -102,9 +102,12 @@ def migrate_shorts(dry_run: bool = False, force: bool = False) -> Tuple[int, int
         with sqlite3.connect(str(db_path)) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("""
-                SELECT id, source_video_id, segment_index, local_path, niche
-                FROM generated_shorts
-                WHERE local_path IS NOT NULL AND local_path != ''
+                SELECT gs.id, gs.source_video_id, gs.segment_index, gs.local_path,
+                       COALESCE(pv.niche, '') AS niche
+                FROM generated_shorts gs
+                LEFT JOIN processed_videos pv
+                    ON pv.youtube_video_id = gs.source_video_id
+                WHERE gs.local_path IS NOT NULL AND gs.local_path != ''
             """).fetchall()
     except Exception as exc:
         logger.error("Failed to query generated_shorts: %s", exc)
