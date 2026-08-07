@@ -1482,10 +1482,10 @@ def main():
                 for t in tqdm(remaining, desc=f"pass {attempt}"):
                     ok, msg, _dur = render_worker(t)
                     if ok:
-                        print(f"  ✓ {msg}")
+                        print(f"  [OK] {msg}")
                         successes.append(t[0]["ID"])
                     else:
-                        print(f"  ✗ {msg}")
+                        print(f"  [FAIL] {msg}")
                         this_round_failed.append(t)
                     if stagger_ms > 0:
                         time.sleep(stagger_ms / 1000.0)
@@ -1504,10 +1504,10 @@ def main():
                         except Exception as e:
                             ok, msg = False, f"{t[0]['ID']}: worker crash: {e}"
                         if ok:
-                            print(f"  ✓ {msg}")
+                            print(f"  [OK] {msg}")
                             successes.append(t[0]["ID"])
                         else:
-                            print(f"  ✗ {msg}")
+                            print(f"  [FAIL] {msg}")
                             this_round_failed.append(t)
             remaining = this_round_failed
             if remaining and attempt < args.max_retries:
