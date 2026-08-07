@@ -151,6 +151,7 @@ pause
 goto main
 
 :set_background
+echo Entering set_background
 cls
 echo.
 echo Set Background Mode
