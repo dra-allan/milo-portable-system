@@ -558,14 +558,17 @@ class VideoEditor:
             filters, last_label = build_background_filters(config.background_mode)
 
         if burn_captions and transcript_segments:
-            # Clip-relative captions are already on this file's timeline (the
-            # two-pass flow transcribes the clip's own audio), so rebasing them
-            # by start_time would shift every line out of sync.
             caption_offset = 0.0 if captions_are_clip_relative else start_time
             if self.write_ass(transcript_segments, ass_path,
                               time_offset=caption_offset, clip_duration=duration):
+                # Use relative path from cwd for FFmpeg subtitles filter to avoid
+                # Windows drive-letter parsing issues in filter strings.
+                try:
+                    rel_ass = Path(ass_path).relative_to(Path.cwd())
+                except ValueError:
+                    rel_ass = Path(ass_path)
                 filters.append(
-                    f"[{last_label}]subtitles='{self._escape_filter_path(ass_path)}'[captioned]"
+                    f"[{last_label}]subtitles='{self._escape_filter_path(rel_ass)}'[captioned]"
                 )
                 last_label = 'captioned'
             else:
