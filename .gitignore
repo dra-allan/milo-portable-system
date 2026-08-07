@@ -48,6 +48,8 @@ artisan/youtube-shorts-pipeline/data/library.json
 artisan/youtube-shorts-pipeline/data/*.db
 artisan/youtube-shorts-pipeline/config/.env
 artisan/youtube-shorts-pipeline/config/youtube_token.json
+# Per-channel OAuth tokens (bound via niches.yaml `channel:`). Never commit.
+artisan/youtube-shorts-pipeline/config/youtube_token_*.json
 
 # Long-form pipeline render scratch + outputs
 artisan/mm_pipeline/**/_work/
