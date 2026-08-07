@@ -492,8 +492,9 @@ class VideoEditor:
     def _escape_filter_path(path: str) -> str:
         """Escape a path for use inside an FFmpeg filter argument."""
         p = str(path).replace('\\', '/')
-        # Windows drive colons and filter separators must be escaped.
-        p = p.replace(':', r'\:').replace("'", r"\'")
+        # Windows drive colons and single quotes must be escaped.
+        # Inside FFmpeg's single-quoted filter strings, ' becomes ''
+        p = p.replace(':', r'\:').replace("'", "''")
         return p
 
     # ------------------------------------------------------------------
