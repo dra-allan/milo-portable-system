@@ -1,3 +1,4 @@
 @echo off
-echo Hello from test.bat
+set /p name=Enter your name:
+echo Hello %name%
 pause
