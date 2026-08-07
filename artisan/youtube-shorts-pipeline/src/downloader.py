@@ -146,14 +146,30 @@ class YouTubeDownloader:
         self.ffprobe = os.getenv('MILO_FFPROBE') or shutil.which('ffprobe') or 'ffprobe'
 
         height = int(getattr(config, 'download_height', 1080) or 1080)
-        # Force a specific known-working format to avoid format selection issues
-        # Format 18 is 640x360 mp4 with AAC audio - the only combined stream available
-        format_string = f'18/best[height<={height}]/best'
-        print(f"DEBUG: Height = {height}")
-        print(f"DEBUG: Format string = {format_string}")
+        # THE root cause of "the output video is low quality": this used to be
+        # hard-coded to `18/best[height<=N]/best`. Format 18 is 640x360, and
+        # because it is listed first yt-dlp picked it EVERY time regardless of
+        # DOWNLOAD_HEIGHT. Every Short was therefore built from a 360p source
+        # and upscaled to 1080x1920 -- no amount of encoder tuning downstream
+        # can recover detail that was never downloaded.
+        #
+        # Correct order: best separate video+audio streams at or below the
+        # configured height (this is where 1080p actually lives on YouTube;
+        # progressive/combined formats stop at 360p), then progressive as a
+        # fallback, then anything. `-S` style sorting is expressed via
+        # `format_sort` so ties break toward higher bitrate rather than
+        # whichever the extractor happened to list first.
+        format_string = (
+            f'bestvideo[height<={height}][vcodec!*=av01]+bestaudio/'
+            f'bestvideo[height<={height}]+bestaudio/'
+            f'best[height<={height}]/best'
+        )
         self.ydl_opts = {
             # Format selection: try specific format first, then fall back
             'format': format_string,
+            # Prefer higher resolution, then higher bitrate, and avoid AV1
+            # (many ffmpeg builds decode it slowly or not at all).
+            'format_sort': ['res', 'vbr', 'abr'],
             # Download straight to the id-prefixed name: no post-hoc rename,
             # so the file is findable by ID forever.
             'outtmpl': str(self.temp_dir / f'%(id)s{ID_SEPARATOR}%(title).80B.%(ext)s'),
@@ -218,8 +234,13 @@ class YouTubeDownloader:
 
         height = int(getattr(config, 'download_height', 1080) or 1080)
         return {
-            'format': (f'bestvideo[height<={height}]+bestaudio/'
+            # Same reasoning as the full-download format above: prefer separate
+            # streams (where the high-resolution renditions are) and sort ties
+            # toward resolution then bitrate.
+            'format': (f'bestvideo[height<={height}][vcodec!*=av01]+bestaudio/'
+                       f'bestvideo[height<={height}]+bestaudio/'
                        f'best[height<={height}]/best'),
+            'format_sort': ['res', 'vbr', 'abr'],
             'outtmpl': str(
                 self.sections_dir
                 / f'{video_id}{ID_SEPARATOR}sec_{int(round(start))}_{int(round(end))}.%(ext)s'

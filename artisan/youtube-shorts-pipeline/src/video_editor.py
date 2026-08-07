@@ -67,7 +67,8 @@ CHEAP_BACKDROP_DIVISOR = 8
 
 
 def build_background_filters(mode: str, width: int = SHORT_WIDTH,
-                             height: int = SHORT_HEIGHT):
+                             height: int = SHORT_HEIGHT,
+                             scaler: Optional[str] = None):
     """Build the scale/pad filter graph, returning (filters, output_label).
 
     Why this is worth its own function: ``gblur=sigma=28`` over a full
@@ -81,40 +82,55 @@ def build_background_filters(mode: str, width: int = SHORT_WIDTH,
     the resolution and scaled back up. Deriving sigma from the divisor matters
     -- an earlier hand-picked sigma scored SSIM 0.870 and looked visibly
     wrong, while the derived value scores 0.975.
+
+    **Scaler choice (quality fix).** Every scale in here used to be
+    ``flags=fast_bilinear``, including the one that produces the *sharp
+    foreground* -- the part the viewer actually looks at. fast_bilinear is the
+    lowest-quality scaler swscale offers; on the resize that lands the source
+    into a 1080x1920 frame it visibly softens edges and text. It is now used
+    only for the blurred backdrop, where by definition no detail survives, and
+    the foreground uses ``scaler`` (lanczos by default).
     """
     mode = (mode or 'cheap').lower()
+    fg_flags = (scaler or 'lanczos').strip() or 'lanczos'
+    # Only the backdrop keeps the cheap scaler: it is about to be Gaussian
+    # blurred, so scaler quality is unobservable and the speed is free.
+    bg_flags = 'fast_bilinear'
 
-    # fast_bilinear costs ~10% less than the default scaler and no one can see
-    # the difference on a blurred backdrop or a downscale.
     fg = (f"[fg]scale={width}:{height}:force_original_aspect_ratio=decrease"
-          f":flags=fast_bilinear[fgs]")
+          f":flags={fg_flags}[fgs]")
 
     if mode == 'black':
         # No backdrop at all: flat bars. Fastest (2.01x) but a different look.
         return ([f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease"
-                 f":flags=fast_bilinear,"
-                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black[padded]"], 'padded')
+                 f":flags={fg_flags},"
+                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[padded]"],
+                'padded')
 
     if mode == 'crop':
         # Fill the frame by cropping the sides. No bars, but loses the edges.
         return ([f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase"
-                 f":flags=fast_bilinear,crop={width}:{height}[padded]"], 'padded')
+                 f":flags={fg_flags},crop={width}:{height},setsar=1[padded]"],
+                'padded')
 
     if mode == 'smart':
-        # Smart person-aware cropping - will be handled differently in the filter chain
-        # For now, return a placeholder that indicates smart mode
-        return ([f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease"
-                 f":flags=fast_bilinear,"
-                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black[padded]"], 'padded')
+        # Person-aware framing needs the source file to inspect, so it cannot
+        # be built here. VideoEditor._build_smart_background_filters() handles
+        # 'smart' before this function is ever reached; this branch only exists
+        # so a stray direct call degrades to a sane centre-fill instead of
+        # raising. (It used to return letterboxed bars, which silently looked
+        # nothing like the mode the user asked for.)
+        return build_background_filters('crop', width, height, scaler=fg_flags)
 
     if mode == 'blur':
         # The original, kept as the reference look for anyone who wants it.
         return ([
             "[0:v]split=2[bg][fg]",
-            f"[bg]scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"[bg]scale={width}:{height}:force_original_aspect_ratio=increase"
+            f":flags={bg_flags},"
             f"crop={width}:{height},gblur=sigma={REFERENCE_BLUR_SIGMA:g}[bgb]",
             fg,
-            "[bgb][fgs]overlay=(W-w)/2:(H-h)/2[padded]",
+            "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1[padded]",
         ], 'padded')
 
     # 'cheap' (default): blur small, then scale up.
@@ -125,10 +141,10 @@ def build_background_filters(mode: str, width: int = SHORT_WIDTH,
     return ([
         "[0:v]split=2[bg][fg]",
         f"[bg]scale={bw}:{bh}:force_original_aspect_ratio=increase"
-        f":flags=fast_bilinear,crop={bw}:{bh},gblur=sigma={sigma:g},"
-        f"scale={width}:{height}:flags=fast_bilinear[bgb]",
+        f":flags={bg_flags},crop={bw}:{bh},gblur=sigma={sigma:g},"
+        f"scale={width}:{height}:flags={bg_flags}[bgb]",
         fg,
-        "[bgb][fgs]overlay=(W-w)/2:(H-h)/2[padded]",
+        "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1[padded]",
     ], 'padded')
 
 
@@ -176,6 +192,56 @@ class VideoEditor:
         except Exception as exc:
             logger.error("Could not probe %s: %s", path, exc)
             return None
+
+    def probe_fps(self, path: str) -> Optional[float]:
+        """Source framerate as a float, or None if it cannot be determined.
+
+        Reads ``r_frame_rate``, which ffprobe reports as a rational such as
+        ``30000/1001``. Parsing the fraction rather than rounding is what keeps
+        29.97 from being reported as 30 and then resampled -- a resample that
+        duplicates or drops one frame per second and shows up as a visible
+        stutter on panning shots.
+        """
+        try:
+            result = subprocess.run(
+                [self.ffprobe, '-v', 'error', '-select_streams', 'v:0',
+                 '-show_entries', 'stream=r_frame_rate', '-of',
+                 'default=nw=1:nk=1', path],
+                capture_output=True, text=True, timeout=30,
+            )
+            raw = (result.stdout or '').strip().splitlines()
+            if result.returncode != 0 or not raw:
+                return None
+            value = raw[0].strip()
+            if '/' in value:
+                num, den = value.split('/', 1)
+                den_f = float(den)
+                if den_f == 0:
+                    return None
+                fps = float(num) / den_f
+            else:
+                fps = float(value)
+            return fps if 1.0 <= fps <= 240.0 else None
+        except Exception as exc:
+            logger.debug("Could not probe framerate of %s: %s", path, exc)
+            return None
+
+    def _choose_fps(self, path: str) -> Optional[float]:
+        """Output framerate: the source's own, capped at ``video_max_fps``.
+
+        Returns None to mean "pass the source rate through untouched", which is
+        strictly better than restating it -- no resampling filter is inserted at
+        all, so timestamps survive exactly.
+        """
+        cap = float(getattr(config, 'video_max_fps', 60) or 60)
+        fps = self.probe_fps(path)
+        if fps is None:
+            return None
+        if fps > cap + 0.01:
+            logger.info("Source is %.3f fps; capping output at %g fps", fps, cap)
+            return cap
+        # Within the cap: keep the source rate, don't touch it.
+        return None
 
     def has_audio_stream(self, path: str) -> bool:
         try:
@@ -434,13 +500,17 @@ class VideoEditor:
         # expects. The backdrop strategy is configurable because the original
         # full-resolution gblur cost more than the video encode itself.
 
+        scaler = getattr(config, 'video_scaler', 'lanczos')
+
         if config.background_mode == 'smart':
             # Handle smart person-aware cropping
             filters, last_label = self._build_smart_background_filters(
                 video_path, start_time, end_time, width=SHORT_WIDTH, height=SHORT_HEIGHT
             )
         else:
-            filters, last_label = build_background_filters(config.background_mode)
+            filters, last_label = build_background_filters(
+                config.background_mode, scaler=scaler
+            )
 
         if burn_captions and transcript_segments:
             caption_offset = 0.0 if captions_are_clip_relative else start_time
@@ -453,13 +523,25 @@ class VideoEditor:
                     rel_ass = Path(ass_path).relative_to(Path.cwd())
                 except ValueError:
                     rel_ass = Path(ass_path)
+                # Render subtitles in a full-chroma format, then convert once at
+                # the end. Burning big bold captions directly onto yuv420p
+                # blends the glyph edges into half-resolution chroma planes,
+                # which is what makes caption edges look muddy or fringed --
+                # especially the coloured emphasis words. Compositing at 4:4:4
+                # and subsampling afterwards keeps the outlines crisp.
                 filters.append(
-                    f"[{last_label}]subtitles='{self._escape_filter_path(rel_ass)}'[captioned]"
+                    f"[{last_label}]format=yuv444p,"
+                    f"subtitles='{self._escape_filter_path(rel_ass)}'"
+                    f":alpha=1[captioned]"
                 )
                 last_label = 'captioned'
             else:
                 logger.warning("No caption lines fell inside the clip; skipping captions")
 
+        # Final conversion to the delivery format. Tagging the colour space
+        # matters: untagged H.264 is interpreted as BT.601 by some players and
+        # BT.709 by others, so an untagged file looks washed out or oversaturated
+        # depending on where it is watched.
         filters.append(f"[{last_label}]format=yuv420p[vout]")
         filter_complex = ';'.join(filters)
 
@@ -480,7 +562,12 @@ class VideoEditor:
             cmd += [
                 '-map', '0:a:0',
                 '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
-                '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+                # 128k was audibly lossy on music beds. 192k at 48kHz is what
+                # YouTube itself recommends for stereo; the extra bytes are
+                # negligible next to the video track.
+                '-c:a', 'aac', '-b:a', config.audio_bitrate,
+                '-ar', str(config.audio_sample_rate),
+                '-ac', '2',
             ]
         else:
             logger.warning("Source has no audio stream; rendering a silent clip")
@@ -491,9 +578,35 @@ class VideoEditor:
             '-preset', config.video_preset,
             '-crf', str(config.video_crf),
             '-pix_fmt', 'yuv420p',
-            '-r', '30',
+            # High profile + level 4.2 covers 1080x1920@60. The default
+            # (unconstrained) is fine for YouTube but some mobile players and
+            # editors refuse odd combinations, so state it.
+            '-profile:v', 'high',
+            '-level', '4.2',
+            # Film tuning turns OFF the psychovisual over-smoothing x264 applies
+            # by default. Without this, fine detail (skin texture, fabric) is
+            # deliberately blurred to save bits, which reads as "low quality"
+            # even at a good CRF.
+            '-tune', 'film',
+            # Two consecutive B-frames + CABAC: better compression at equal
+            # quality, so the CRF budget buys more detail.
+            '-bf', '2', '-g', '60',
+            # Colour metadata (see the filter comment above).
+            '-colorspace', 'bt709',
+            '-color_primaries', 'bt709',
+            '-color_trc', 'bt709',
+            '-color_range', 'tv',
             '-movflags', '+faststart',
         ]
+
+        # Framerate: previously hard-coded to '-r 30', which silently threw away
+        # half the frames of any 50/60fps source and made motion look choppy.
+        # Now the source rate is preserved, capped at video_max_fps so an
+        # unusual high-rate source cannot explode the encode time.
+        target_fps = self._choose_fps(str(src))
+        if target_fps:
+            cmd += ['-r', f"{target_fps:g}"]
+
         if threads and int(threads) > 0:
             cmd += ['-threads', str(int(threads))]
         cmd += ['-y', str(staging)]
@@ -573,7 +686,9 @@ class VideoEditor:
             return False
         # Reuse the shared (and much cheaper) backdrop graph rather than
         # keeping a second copy of the expensive full-resolution blur.
-        filters, last_label = build_background_filters(config.background_mode)
+        filters, last_label = build_background_filters(
+            config.background_mode, scaler=getattr(config, 'video_scaler', 'lanczos')
+        )
         filters.append(f"[{last_label}]format=yuv420p[vout]")
         cmd = [
             self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
@@ -581,7 +696,10 @@ class VideoEditor:
             '-filter_complex', ';'.join(filters),
             '-map', '[vout]', '-map', '0:a?',
             '-c:v', 'libx264', '-preset', config.video_preset,
-            '-crf', str(config.video_crf), '-c:a', 'copy', '-y', output_path,
+            '-crf', str(config.video_crf), '-profile:v', 'high', '-tune', 'film',
+            '-colorspace', 'bt709', '-color_primaries', 'bt709',
+            '-color_trc', 'bt709', '-color_range', 'tv',
+            '-c:a', 'copy', '-y', output_path,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
         if result.returncode != 0:
@@ -603,9 +721,16 @@ class VideoEditor:
         cmd = [
             self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
             '-i', input_path,
-            '-vf', f"subtitles='{self._escape_filter_path(ass_path)}',format=yuv420p",
+            # 4:4:4 while compositing glyphs, 4:2:0 for delivery -- see the
+            # note in create_short_from_segment().
+            '-vf', (f"format=yuv444p,"
+                    f"subtitles='{self._escape_filter_path(ass_path)}':alpha=1,"
+                    f"format=yuv420p"),
             '-c:v', 'libx264', '-preset', config.video_preset,
-            '-crf', str(config.video_crf), '-c:a', 'copy', '-y', output_path,
+            '-crf', str(config.video_crf), '-profile:v', 'high', '-tune', 'film',
+            '-colorspace', 'bt709', '-color_primaries', 'bt709',
+            '-color_trc', 'bt709', '-color_range', 'tv',
+            '-c:a', 'copy', '-y', output_path,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
         self._cleanup(ass_path)
@@ -623,7 +748,8 @@ class VideoEditor:
             self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
             '-i', input_path,
             '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
-            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-y', output_path,
+            '-c:v', 'copy', '-c:a', 'aac', '-b:a', config.audio_bitrate,
+            '-ar', str(config.audio_sample_rate), '-y', output_path,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
         if result.returncode != 0:
@@ -648,6 +774,7 @@ class VideoEditor:
         finds nobody, so this stage can never fail a render.
         """
         fallback = getattr(config, 'smart_fallback_mode', 'crop')
+        scaler = getattr(config, 'video_scaler', 'lanczos')
         try:
             result = smart_crop.build_smart_filters(
                 video_path, start_time, end_time, width=width, height=height,
@@ -656,14 +783,15 @@ class VideoEditor:
                 samples=getattr(config, 'smart_samples', 9),
                 max_people=getattr(config, 'smart_max_people', 4),
                 min_presence=getattr(config, 'smart_min_presence', 0.34),
+                scaler=scaler,
             )
         except Exception as exc:
             logger.warning("Smart framing failed (%s); using '%s'", exc, fallback)
-            return build_background_filters(fallback, width, height)
+            return build_background_filters(fallback, width, height, scaler=scaler)
 
         if not result:
             logger.info("Smart framing found no people; using '%s'", fallback)
-            return build_background_filters(fallback, width, height)
+            return build_background_filters(fallback, width, height, scaler=scaler)
 
         filters, label, _count = result
         return list(filters), label
