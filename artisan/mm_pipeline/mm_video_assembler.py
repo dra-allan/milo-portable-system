@@ -719,6 +719,6 @@ if __name__ == "__main__":
             music = args.pop(i+1)
             args.pop(i)
             break
-    project = args[0] if args else r"C:\Users\user\Desktop\milo\command\milo\artisan\mm_pipeline\INDEX_FUNDS"
+    project = args[0] if args else r"C:\Users\user\Desktop\Milo Video Factory\projects\money_matrix\INDEX_FUNDS"
     out = args[1] if len(args) > 1 else None
     assemble_video(project, out, music)

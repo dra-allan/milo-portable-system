@@ -1,8 +1,0 @@
-BACKGROUND: #0A1628
-CHARACTER: Man in his 30s, split down the middle — left side in hard hat holding house keys (Ryan), right side in hoodie holding laptop with stock chart (Steve). Semi-realistic comic illustration, centered, facing camera.
-BIG NUMBER: $750K vs $606K
-TEXT LINE 1: RENT OR BUY?
-TEXT LINE 1 COLOR: #FFFFFF
-BIG NUMBER COLOR: #FFD166
-STYLE: Semi-realistic comic illustration, bold outlines, rich color, dramatic split lighting — gold on house side, teal on investment side
-NOTE: NO TEXT IN IMAGE — text added in post-production overlay
