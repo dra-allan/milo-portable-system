@@ -164,6 +164,7 @@ echo 4. black     - Solid black bars
 echo 5. smart     - Person-aware cropping (face detection)
 .
 set /p bg_choice="Select background mode (1-5): "
+echo Debug: bg_choice=[%bg_choice%]
 if "%bg_choice%"=="1" (
     set "new_mode=crop"
 ) else if "%bg_choice%"=="2" (
@@ -200,6 +201,7 @@ echo 4. pop       - Pop & bounce (neon highlights, black outline)
 echo 5. kinetic   - Kinetic karaoke (word-by-word highlight)
 .
 set /p cap_choice="Select caption style (1-5): "
+echo Debug: cap_choice=[%cap_choice%]
 if "%cap_choice%"=="1" (
     set "new_style=default"
 ) else if "%cap_choice%"=="2" (
