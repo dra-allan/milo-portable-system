@@ -183,9 +183,45 @@ class Config:
         # --- Encoding ----------------------------------------------------
         self.video_preset = os.getenv('VIDEO_PRESET', 'medium')
         self.video_crf = self._int('VIDEO_CRF', 20, minimum=0)
-        self.caption_font_size = self._int('CAPTION_FONT_SIZE', 54, minimum=8)
-        # Caption style: 'default', 'hormozi', 'minimalist', 'pop', 'kinetic'
-        self.caption_style = (os.getenv('CAPTION_STYLE') or 'default').lower()
+        # Viral captions are big: at 1080x1920 a 54px font is a caption on a
+        # desktop video, not a Short. 104 is ~10% of frame width per character
+        # row, which is what the reference Shorts use.
+        self.caption_font_size = self._int('CAPTION_FONT_SIZE', 104, minimum=8)
+        # Caption style / preset. See src/captions.py PRESETS:
+        #   viral (default), hormozi, kinetic, single, minimalist, neon
+        #   legacy -> the old one-paragraph-per-segment renderer
+        self.caption_style = (os.getenv('CAPTION_STYLE') or 'viral').lower()
+        # Words visible at once. 0/unset uses the preset's own value; viral
+        # captions live in the 1-4 range and 4 is the ceiling before the block
+        # starts reading as a paragraph.
+        self.caption_max_words = self._int('CAPTION_MAX_WORDS', 0, minimum=0) or None
+        # Fraction of caption groups allowed a red "punch" word. Rationed on
+        # purpose: a red word in every group stops registering as emphasis.
+        self.caption_punch_ratio = self._float('CAPTION_PUNCH_RATIO', 0.22,
+                                               minimum=0.0)
+
+        # --- Smart (person-aware) framing --------------------------------
+        # Used when BACKGROUND_MODE=smart. See src/smart_crop.py.
+        # Frames sampled across the clip for person detection. More samples =
+        # steadier layout decisions; 9 costs well under a second.
+        self.smart_samples = self._int('SMART_SAMPLES', 9, minimum=3)
+        # A detection must appear in this fraction of sampled frames to count
+        # as a person. This is the false-positive filter: Haar cascades fire on
+        # background texture in isolated frames.
+        self.smart_min_presence = self._float('SMART_MIN_PRESENCE', 0.34,
+                                              minimum=0.0)
+        # Cap on people given their own grid tile. Above 4 each tile is too
+        # small to read on a phone.
+        self.smart_max_people = self._int('SMART_MAX_PEOPLE', 4, minimum=1)
+        # <1.0 tightens the crop for a closer shot.
+        self.smart_zoom = self._float('SMART_ZOOM', 1.0, minimum=0.25)
+        # How far below the face to place the framing centre, in face-heights.
+        # 0 centres the face itself, which crops the body off.
+        self.smart_headroom = self._float('SMART_HEADROOM', 0.55, minimum=0.0)
+        # Backdrop used when smart framing finds nobody.
+        self.smart_fallback_mode = (os.getenv('SMART_FALLBACK_MODE') or 'cheap').lower()
+        if self.smart_fallback_mode not in ('cheap', 'blur', 'black', 'crop'):
+            self.smart_fallback_mode = 'cheap'
 
         # --- Paths (anchored to project root) ----------------------------
         self.temp_dir = _resolve(os.getenv('TEMP_DIR', 'data/temp'))
