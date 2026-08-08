@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786068046.636278,
+  "updated_at": 1786179949.682909,
   "routines": [
     {
       "name": "curate-skills",
@@ -22,11 +22,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0468326,
-      "last_run": 1786064409.4113426,
+      "last_run": 1786150806.8411167,
       "last_status": "ok",
-      "last_output": "------------------------------------------------------------------------------\n curator\n------------------------------------------------------------------------------\n  0 stale, 0 archived, 0 revived, 3 lint errors, 12 possible duplicates\n  !   ('3d-scene-developer', 'warn', 'description should end with a period')\n  !   ('accessibility-auditor', 'warn', 'description should end with a period')\n  !   ('account-strategist', 'warn', 'description should end with a period')\n  !   ('accounts-payable-agent', 'warn', 'description should end with a period')\n  !   ('ad-creative-strategist', 'warn', 'description should end with a period')\n  !   ('agentic-identity-trust-architect', 'warn', 'description should end with a period')\n  !   ('agents-orchestrator', 'warn', 'description should end with a period')\n  !   ('aging-parent-care-companion', 'warn', 'description should end with a period')\n  !   ('ai-engineer', 'warn', 'description should end with a period')\n  !   ('analytics-reporter', 'warn', 'description should end with a period')\n\n  ! 12 possible duplicate pair(s)\n    drupal-shopping-cart-engineer ~ wordpress-shopping-cart-engineer\n    data-visualization-engineer ~ webassembly-engineer\n    tiktok-strategist ~ zhihu-strategist\n    game-designer ~ narrative-designer\n    technical-artist ~ unreal-technical-artist\n  merge them: milo curate --merge",
-      "next_run": 1786150800.0,
-      "runs": 1,
+      "last_output": "curator not due yet",
+      "next_run": 1786237200.0,
+      "runs": 2,
       "failures": 0
     },
     {
@@ -50,11 +50,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0421934,
-      "last_run": 1786048235.5032485,
+      "last_run": 1786134606.6743805,
       "last_status": "ok",
-      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     56\n  notes        7\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786134600.0,
-      "runs": 2,
+      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     70\n  notes        7\n  sessions     0\n  skills       3\n  traits       0",
+      "next_run": 1786221000.0,
+      "runs": 3,
       "failures": 0
     },
     {
@@ -77,12 +77,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786068011.7625175,
-      "last_status": "ok",
-      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     58\n  notes        7\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1786068335.4560974,
-      "runs": 86,
-      "failures": 3
+      "last_run": 1786178746.9894269,
+      "last_status": "skipped",
+      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     71\n  notes        7\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
+      "next_run": 1786180249.6800072,
+      "runs": 247,
+      "failures": 7
     },
     {
       "name": "frequent-vault-sync",
@@ -104,12 +104,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786068035.4861438,
-      "last_status": "ok",
+      "last_run": 1786178807.2977228,
+      "last_status": "skipped",
       "last_output": "[ok] vault clean, nothing to commit",
-      "next_run": 1786068339.7650864,
-      "runs": 83,
-      "failures": 2
+      "next_run": 1786180249.6800072,
+      "runs": 242,
+      "failures": 45
     },
     {
       "name": "memory-hygiene",
@@ -159,11 +159,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1785999110.9997911,
+      "last_run": 1786161606.641911,
       "last_status": "ok",
-      "last_output": "Morning, Dra. Here's where things stand — Thursday, 6 Aug 2026.\n\n**Voice mode — closest to done, one gap left.** Speech quality is fixed (mojibake, markdown read aloud, dead air between sentences — all sorted yesterday). What's blocking a real `milo voice` mic session: no GEMINI key in `$MILO_HOME/.env` (only the artisan pipeline has one) and sounddevice/ffmpeg on PATH. Edge TTS is the default speaker, so the main missing piece is the mic input + a key. Once it's live, we wire the identity check (passphrase before sensitive actions) before real use — that was the deal.\n\n**Hermes absorption roadmap** — voice is #1 and nearly there. Next up when you're ready: #2 cron/webhooks (kill the schtasks dependency), then #3 the broken browser/computer-use fix.\n\n**YouTube replication** — one engine, five channels (Money Matrix, ExplaiNation, god did fx, moviegasm, flick rush), heavy-twist at ScriptEngineer. The open piece is building the fetch-transcript step so you drop in a URL and get a twisted script out. The fetch_transcript.py you wanted is already in the Hermes repo, ready to vendor in.\n\n**Website flip** — plan locked: global prospects, one-off sale, Gmail outreach, cheap hosting. Design bar set (Hortons-level, real photos, no Picsum). El Dorado and Rockford Lane are blacklisted styles permanently. Next real step is prospect hunting — pulling businesses off Google Maps with their real info and branding.\n\nMy suggested day: either finish the voice gap (I need a Gemini key from you, or we wire sounddevice) or point me at a channel URL and I'll build the transcript-scraping step. Both are an hour of work, not a project.",
-      "next_run": 1786075200.0,
-      "runs": 1,
+      "last_output": "\n> milo · nvidia/nemotron-3-ultra-550b-a55b\n\n! permission requested: external_directory (C:\\Users\\user\\Desktop\\Milo Workspace\\website-flip\\*); auto-rejecting\n✗ cd \"C:\\Users\\user\\Desktop\\Milo Workspace\\website-flip\" && python followups.py due failed\nError: The user rejected permission to use this specific tool call.",
+      "next_run": 1786248000.0,
+      "runs": 3,
       "failures": 0
     },
     {
@@ -186,11 +186,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1786068039.7698112,
+      "last_run": 1786154406.58037,
       "last_status": "ok",
       "last_output": "d, twitter-engager.md, ui-designer.md, ui-finish-gate-reviewer.md, uswds-developer.md, ux-architect.md, ux-researcher.md, video-optimization-specialist.md, video-streaming-engineer.md, visual-storyteller.md, voice-ai-integration-engineer.md, webassembly-engineer.md, wechat-mini-program-developer.md, wechat-official-account-manager.md, weibo-strategist.md, whimsy-injector.md, wordpress-performance-engineer.md, wordpress-shopping-cart-engineer.md, x-twitter-intelligence-analyst.md, xiaohongshu-specialist.md, zhihu-strategist.md\n    gemini         GEMINI.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, account-strategist.md, aeo-foundations-architect.md, agentic-search-optimizer.md, ai-citation-strategist.md, ai-data-remediation-engineer.md, ai-engineer.md, api-platform-engineer.md, app-store-optimizer.md, autonomous-optimization-architect.md, backend-architect.md, baidu-seo-specialist.md, behavioral-nudge-engine.md, bilibili-content-strategist.md, book-co-author.md, bookkeeper-controller.md, brand-guardian.md, carousel-growth-engine.md, china-e-commerce-operator.md, china-market-localization-strategist.md, cms-developer.md, code-reviewer.md, codebase-onboarding-engineer.md, content-creator.md, cross-border-e-commerce-specialist.md, data-engineer.md, data-visualization-engineer.md, database-optimizer.md, database-reliability-engineer.md, deal-strategist.md, desktop-app-engineer.md, developer-tooling-engineer.md, devops-automator.md, discovery-coach.md, douyin-strategist.md, drupal-performance-engineer.md, drupal-shopping-cart-engineer.md, email-intelligence-engineer.md, email-marketing-strategist.md, embedded-firmware-engineer.md, feedback-synthesizer.md, feishu-integration-developer.md, filament-optimization-specialist.md, financial-analyst.md, finops-engineer.md, fp-a-analyst.md, frontend-developer.md, gaussdb-expert-engineer.md, git-workflow-master.md, global-podcast-strategist.md, growth-hacker.md, identity-access-engineer.md, image-prompt-engineer.md, incident-response-commander.md, inclusive-visuals-specialist.md, instagram-curator.md, internationalization-engineer.md, investment-researcher.md, iot-fleet-engineer.md, it-service-manager.md, kuaishou-strategist.md, linkedin-content-creator.md, livestream-commerce-coach.md, llm-post-training-engineer.md, minimal-change-engineer.md, mobile-app-builder.md, mobile-release-engineer.md, multi-agent-systems-architect.md, multi-platform-publisher.md, network-engineer.md, offer-lead-gen-strategist.md, orgscript-engineer.md, outbound-strategist.md, payments-billing-engineer.md, persona-walkthrough-specialist.md, pipeline-analyst.md, podcast-strategist.md, pr-communications-manager.md, privacy-engineer.md, private-domain-operator.md, product-manager.md, prompt-engineer.md, proposal-strategist.md, rag-pipeline-engineer.md, rapid-prototyper.md, realtime-collaboration-engineer.md, reddit-community-builder.md, rust-refactoring-specialist.md, sales-coach.md, sales-engineer.md, search-relevance-engineer.md, section-508-accessibility-specialist.md, senior-developer.md, seo-specialist.md, short-video-editing-coach.md, social-media-strategist.md, software-architect.md, solidity-smart-contract-engineer.md, sprint-prioritizer.md, sre-site-reliability-engineer.md, tax-strategist.md, technical-writer.md, tiktok-strategist.md, trend-researcher.md, twitter-engager.md, ui-designer.md, ui-finish-gate-reviewer.md, uswds-developer.md, ux-architect.md, ux-researcher.md, video-optimization-specialist.md, video-streaming-engineer.md, visual-storyteller.md, voice-ai-integration-engineer.md, webassembly-engineer.md, wechat-mini-program-developer.md, wechat-official-account-manager.md, weibo-strategist.md, whimsy-injector.md, wordpress-performance-engineer.md, wordpress-shopping-cart-engineer.md, x-twitter-intelligence-analyst.md, xiaohongshu-specialist.md, zhihu-strategist.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 5 harness(es) in sync",
-      "next_run": 1786154400.0,
-      "runs": 1,
+      "next_run": 1786240800.0,
+      "runs": 2,
       "failures": 0
     },
     {
@@ -212,12 +212,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0510957,
-      "last_run": 1786065908.805975,
-      "last_status": "ok",
-      "last_output": "[ok] vault clean, nothing to commit",
-      "next_run": 1786087513.138377,
-      "runs": 4,
-      "failures": 0
+      "last_run": 1786177516.4405773,
+      "last_status": "failed (1)",
+      "last_output": "[x] vault clean, nothing to commit",
+      "next_run": 1786199116.9391704,
+      "runs": 9,
+      "failures": 2
     }
   ]
 }
