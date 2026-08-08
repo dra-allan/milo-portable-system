@@ -949,6 +949,7 @@ class YouTubeDownloader:
                 'id': vid,
                 'title': entry.get('title', '') or '',
                 'duration': entry.get('duration') or 0,
+                'view_count': entry.get('view_count') or 0,
                 'url': entry.get('url') or f"https://www.youtube.com/watch?v={vid}",
                 'channel_id': channel_id,
             })
