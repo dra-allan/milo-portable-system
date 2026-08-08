@@ -90,7 +90,7 @@ capital_mindset:
   channels:
 #    - "UC3L18k-_-KBy4N7B19GgUHg" # Alex Hormozi - existing
 #    - "UC_f1oP2XwG8kP9a-pL-qWQA" # My First Million - existing
-    - "UCcefcZRL2jbA_cBbn2W0pLg" # Y Combinator - existing
+#    - "UCcefcZRL2jbA_cBbn2W0pLg" # Y Combinator - existing
     - "@AlexHormozi"
     - "@MyFirstMillionPod"
     - "@YCombinator"
@@ -103,7 +103,7 @@ capital_mindset:
     - "@AcquiredFM"
     - "@a16z"
     - "@Lennyspodcast"
-    - "@FoundersPodcast"
+#    - "@FoundersPodcast"
     - "@StanfordGSB"
     - "@harvardbusinessreview"
     - "@TheDiaryOfACEO"
