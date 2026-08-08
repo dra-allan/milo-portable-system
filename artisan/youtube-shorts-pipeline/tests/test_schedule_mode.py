@@ -63,6 +63,9 @@ class FakeDB:
                      channel_id='', published_at=None):
         self.recorded.append((video_id, niche))
 
+    def source_performance(self):
+        return {}
+
 
 class FakeProcessor:
     def find_highlight_segments(self, *a, **k):
@@ -106,7 +109,7 @@ class TestRunNicheGate(unittest.TestCase):
             _isolate_config(Path(td))
             pipeline = _make_pipeline(Path(td))
             seen = []
-            pipeline.process_video_for_shorts = lambda vid, niche, force=False, local_only=False: (seen.append(vid) or True)
+            pipeline.process_video_for_shorts = lambda vid, niche, force=False, local_only=False, source_channel='': (seen.append(vid) or True)
 
             started = pipeline.run_niche('unbound', max_videos=1)
 
@@ -118,7 +121,7 @@ class TestRunNicheGate(unittest.TestCase):
             _isolate_config(Path(td))
             pipeline = _make_pipeline(Path(td))
             seen = []
-            pipeline.process_video_for_shorts = lambda vid, niche, force=False, local_only=False: (seen.append(vid) or True)
+            pipeline.process_video_for_shorts = lambda vid, niche, force=False, local_only=False, source_channel='': (seen.append(vid) or True)
 
             started = pipeline.run_niche('flick_shorts', max_videos=1)
 
@@ -139,6 +142,7 @@ class TestScheduledSweepBudget(unittest.TestCase):
                 'unbound': {'channels': ['@ch0']},
             }
             config.schedule_max_videos = 1
+            config.schedule_max_total = 1
             calls = []
 
             class FakePipeline:
@@ -163,7 +167,7 @@ class TestScheduledSweepBudget(unittest.TestCase):
             config.schedule_max_videos = 3
             pipeline = _make_pipeline(Path(td), authed_channels=('flick_shorts', 'capital_mindset'))
             processed = []
-            pipeline.process_video_for_shorts = lambda vid, niche, force=False, local_only=False: (processed.append((vid, niche)) or True)
+            pipeline.process_video_for_shorts = lambda vid, niche, force=False, local_only=False, source_channel='': (processed.append((vid, niche)) or True)
 
             # Production run_niche is bound-gated: unbound niche starts 0 and
             # never calls process_video_for_shorts.
