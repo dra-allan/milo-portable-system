@@ -608,51 +608,30 @@ class ShortsPipeline:
                     pass
 
     def _generate_unique_title(self, hook_text: str, niche: str, clip_index: int) -> str:
-        """Generate a unique title based on the short content"""
-        if not hook_text:
+        """Generate a unique, attention-optimized title for a Short.
+
+        Runs the raw hook through the rule-based title optimizer unless
+        ``TITLE_OPTIMIZER=off`` in .env, then appends the niche + #Shorts
+        hashtags that YouTube uses for the Shorts feed.
+        """
+        base = hook_text
+        if self.config.title_optimizer:
+            try:
+                from .title_optimizer import optimize_title
+                niche_cfg = self.config.get_niche_config(niche)
+                base = optimize_title(
+                    hook_text, niche=niche,
+                    keywords=niche_cfg.get('keywords', []),
+                    clip_index=clip_index,
+                )
+            except Exception:
+                logger.warning("Title optimizer failed; using raw hook", exc_info=True)
+                base = hook_text or ''
+
+        base = ' '.join((base or '').split()).strip()
+        if not base:
             return f"{niche} clip #{clip_index} #Shorts"
-
-        # Clean the hook text
-        cleaned_text = ' '.join(hook_text.split())  # Remove extra whitespace
-
-        # Extract key phrases or interesting parts
-        words = cleaned_text.split()
-
-        # For very short hooks, use them directly
-        if len(words) <= 5:
-            base_title = cleaned_text
-        else:
-            # Try to find a compelling segment
-            # Look for questions, exclamations, or interesting phrases
-            base_title = cleaned_text
-
-            # If it's too long, truncate intelligently
-            if len(base_title) > 60:
-                # Try to break at a sentence boundary
-                if '.' in base_title[:50]:
-                    breakpoint = base_title.find('.', 20, 50)
-                    if breakpoint != -1:
-                        base_title = base_title[:breakpoint+1]
-                    else:
-                        base_title = base_title[:57] + "..."
-                elif '!' in base_title[:50]:
-                    breakpoint = base_title.find('!', 20, 50)
-                    if breakpoint != -1:
-                        base_title = base_title[:breakpoint+1]
-                    else:
-                        base_title = base_title[:57] + "..."
-                elif '?' in base_title[:50]:
-                    breakpoint = base_title.find('?', 20, 50)
-                    if breakpoint != -1:
-                        base_title = base_title[:breakpoint+1]
-                    else:
-                        base_title = base_title[:57] + "..."
-                else:
-                    # Just truncate and add ellipsis
-                    base_title = base_title[:57] + "..."
-
-        # Add niche and Shorts hashtag
-        return f"{base_title.strip()} #{niche} #Shorts"
+        return f"{base} #{niche} #Shorts"
 
     def _upload_clips(self, created: List[Dict], video_id: str, niche: str,
                       niche_keywords: List[str]) -> None:
@@ -1070,6 +1049,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--channel', default=None,
                         help='Override target YouTube channel for --mode upload-existing '
                              '(defaults to niche-bound channel)')
+    parser.add_argument('--source', default=None,
+                        help='With --mode upload-existing: only clips cut from this '
+                             'source video (URL or 11-character ID)')
+    parser.add_argument('--segment', type=int, default=None, metavar='N',
+                        help='With --mode upload-existing: only this clip/segment index')
+    parser.add_argument('--interactive', action='store_true',
+                        help='With --mode upload-existing: list every candidate clip '
+                             'grouped by niche/source and pick which ones to upload')
     parser.add_argument('--force', action='store_true',
                         help='Redo finished work: ignore the DB dedup entry, the '
                              'cached transcript and any already-rendered clips')
@@ -1183,45 +1170,97 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
     """Upload rendered-but-unpublished shorts to YouTube.
-    
-    Queries the database for clips with youtube_short_id IS NULL,
-    applies optional niche/channel filters, and uploads up to the
+
+    Queries the database for clips with youtube_short_id IS NULL, applies
+    optional niche/channel/source/segment filters, and uploads up to the
     configured limit. Respects quota limits and updates DB on success.
+
+    Cross-channel safety: when ``--channel`` is passed, only clips whose niche
+    is bound to that channel are auto-selected -- the old behaviour picked the
+    oldest clips from *every* niche and posted them to whatever channel was
+    chosen, which is how a clip from another niche's folder ended up on the
+    wrong channel. ``--interactive`` instead shows every candidate grouped by
+    niche/source and lets you choose exactly which clips to publish.
     """
-    # Determine upload limit
     upload_limit = args.upload_limit
     if upload_limit is None:
         upload_limit = getattr(pipeline.config, 'upload_max_per_run', 5)
     logger.info("Upload limit: %d clips", upload_limit)
-    
-    # Get unuploaded shorts from database
-    unuploaded = pipeline.db.unuploaded_shorts(limit=upload_limit * 3)
+
+    # Pull a larger candidate pool so interactive selection has the full
+    # picture; the cap is still enforced at upload time.
+    pool_size = max(upload_limit * 3, 100)
+    unuploaded = pipeline.db.unuploaded_shorts(limit=pool_size)
     if not unuploaded:
         logger.info("No un-uploaded shorts found in database")
         return 0
-    
-    # Apply niche filter if specified
+
+    # --- Filters --------------------------------------------------------
     if args.niche:
         unuploaded = [r for r in unuploaded if r.get('niche') == args.niche]
         logger.info("Filtered to niche '%s': %d clips", args.niche, len(unuploaded))
-    
-    # Apply upload limit
-    unuploaded = unuploaded[:upload_limit]
+
+    if args.source:
+        src = extract_video_id(args.source) if not args.source.isalnum() or len(args.source) > 11 else args.source
+        unuploaded = [r for r in unuploaded if r.get('source_video_id') == src]
+        logger.info("Filtered to source '%s': %d clips", src, len(unuploaded))
+
+    if args.segment is not None:
+        unuploaded = [r for r in unuploaded if r.get('segment_index') == args.segment]
+        logger.info("Filtered to segment %d: %d clips", args.segment, len(unuploaded))
+
     if not unuploaded:
         logger.info("No clips to upload after filtering")
         return 0
-    
+
+    # Cross-channel safety: a channel override must not drag in clips whose
+    # niche belongs to a different channel. Interactive mode shows the user
+    # each clip's target channel so they can override deliberately.
+    if args.channel and not args.interactive:
+        scoped = []
+        for r in unuploaded:
+            clip_niche = r.get('niche') or args.niche or ''
+            bound = pipeline.config.get_niche_channel(clip_niche) if clip_niche else args.channel
+            if bound == args.channel or not clip_niche:
+                scoped.append(r)
+            else:
+                logger.info(
+                    "Skipping clip %s#%s (niche '%s' binds to channel '%s', "
+                    "not '%s') -- pass --interactive to override",
+                    r['source_video_id'], r['segment_index'], clip_niche, bound, args.channel,
+                )
+        unuploaded = scoped
+        if not unuploaded:
+            logger.warning(
+                "No clips bound to channel '%s'. Use --interactive to pick "
+                "clips from another niche on purpose.", args.channel
+            )
+            return 0
+
+    # --- Interactive selection ------------------------------------------
+    if args.interactive:
+        selected = _interactive_pick_shorts(pipeline, unuploaded, upload_limit)
+        if not selected:
+            logger.info("No clips selected; nothing to upload")
+            return 0
+        unuploaded = selected
+    else:
+        unuploaded = unuploaded[:upload_limit]
+        if not unuploaded:
+            logger.info("No clips to upload after filtering")
+            return 0
+
     logger.info("Preparing to upload %d clip(s)", len(unuploaded))
-    
+
     uploaded_count = 0
     errors = 0
-    
+
     for clip in unuploaded:
         source_video_id = clip['source_video_id']
         segment_index = clip['segment_index']
         local_path = clip['local_path']
         clip_niche = clip.get('niche') or args.niche
-        
+
         # Validate file exists
         if not local_path or not Path(local_path).exists():
             logger.warning(
@@ -1230,7 +1269,7 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             )
             errors += 1
             continue
-        
+
         # Resolve target channel
         channel = args.channel
         if not channel:
@@ -1243,7 +1282,7 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
                 )
                 errors += 1
                 continue
-        
+
         # Verify channel is authenticated
         authed = pipeline.config.authenticated_channels()
         if authed and channel not in authed:
@@ -1253,7 +1292,7 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             )
             errors += 1
             continue
-        
+
         # Get uploader for channel
         try:
             uploader = pipeline._uploader_for_channel(channel)
@@ -1264,17 +1303,18 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             )
             errors += 1
             continue
-        
-        # Build title/description/tags from clip data
+
+        # Build title/description/tags from clip data (title goes through the
+        # optimizer so a published clip gets a headline, not a raw hook).
         highlight_text = clip.get('title') or clip_niche or 'Short'
         hook = highlight_text.strip().replace('\n', ' ')
         short_title = pipeline._generate_unique_title(hook, clip_niche or 'short', segment_index)
-        
+
         keywords = []
         if clip_niche:
             niche_config = pipeline.config.get_niche_config(clip_niche)
             keywords = niche_config.get('keywords', [])
-        
+
         description = (
             f"Full video: https://youtube.com/watch?v={source_video_id}\n\n"
             f"Follow for more {clip_niche} content!\n"
@@ -1282,7 +1322,7 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             + ' '.join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
         )
         tags = [clip_niche, 'Shorts'] + [kw for kw in keywords[:10] if kw]
-        
+
         # Upload with quota error handling
         try:
             short_id = uploader.upload_short(
@@ -1307,7 +1347,7 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             )
             errors += 1
             continue
-        
+
         if not short_id:
             logger.error(
                 "Upload returned no video ID for %s#%s",
@@ -1315,7 +1355,7 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             )
             errors += 1
             continue
-        
+
 # Mark as uploaded in database
         try:
             pipeline.db.mark_short_uploaded(source_video_id, segment_index, short_id)
@@ -1331,9 +1371,79 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             )
             # Still count as uploaded since it's on YouTube
             uploaded_count += 1
-    
+
     logger.info("Upload complete: %d uploaded, %d errors", uploaded_count, errors)
     return 0 if errors == 0 else 1
+
+
+def _interactive_pick_shorts(pipeline, clips, upload_limit: int) -> List[Dict]:
+    """Show candidate clips grouped by niche/source and let the user choose.
+
+    Displays each clip with a number, its niche, the source video title, the
+    segment, the optimized title preview, score, and target channel. The user
+    can answer with numbers/ranges (``1,2,4-6``), ``all``, or ``q`` to abort.
+    Returns the subset of ``clips`` the user selected.
+    """
+    if not clips:
+        return []
+    print("\n" + "=" * 78)
+    print(f"  Un-uploaded shorts available ({len(clips)} total)")
+    print("=" * 78)
+
+    # Group by (niche, source_video_id) preserving DB order.
+    groups = []
+    seen = set()
+    for c in clips:
+        key = (c.get('niche') or '', c['source_video_id'])
+        if key not in seen:
+            seen.add(key)
+            groups.append(key)
+
+    index = 0
+    for niche, source_id in groups:
+        grp = [c for c in clips if (c.get('niche') or '', c['source_video_id']) == (niche, source_id)]
+        source_title = grp[0].get('source_title') or source_id
+        bound = pipeline.config.get_niche_channel(niche) if niche else '(no niche)'
+        print(f"\n  [{niche or 'no-niche'} -> channel {bound}]")
+        print(f"    source: {source_title}  ({source_id})")
+        for c in grp:
+            index += 1
+            hook = (c.get('title') or '').strip().replace('\n', ' ')
+            preview = pipeline._generate_unique_title(hook, niche or 'short', c['segment_index'])
+            dur = max(0, (c.get('end_time') or 0) - (c.get('start_time') or 0))
+            score = c.get('score') or 0
+            mark = "NEW" if c.get('local_path') else "MISSING"
+            print(f"    [{index:>2}] seg {c['segment_index']:>2} | {dur:>3.0f}s | "
+                  f"score {score:>5.1f} | {mark}")
+            print(f"          {preview}")
+
+    print("\n" + "-" * 78)
+    print("Select clips to upload. Formats: 1,2,3 | 1-5 | all | q (quit)")
+    print(f"Up to {upload_limit} will be posted.")
+    while True:
+        raw = input("Selection: ").strip().lower()
+        if raw in ('q', 'quit', ''):
+            return []
+        if raw == 'all':
+            return clips[:upload_limit]
+        try:
+            picks = set()
+            for part in raw.replace(' ', '').split(','):
+                if not part:
+                    continue
+                if '-' in part:
+                    lo, hi = part.split('-', 1)
+                    picks.update(range(int(lo), int(hi) + 1))
+                else:
+                    picks.add(int(part))
+            if not picks:
+                raise ValueError
+            selected = [c for i, c in enumerate(clips, 1) if i in picks]
+            if not selected:
+                raise ValueError
+            return selected[:upload_limit]
+        except (ValueError, TypeError):
+            print("Couldn't read that. Try e.g. '1,2,4-6', 'all', or 'q'.")
 
 
 def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,

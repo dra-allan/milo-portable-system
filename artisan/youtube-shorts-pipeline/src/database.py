@@ -237,7 +237,8 @@ class PipelineDatabase:
                 rows = conn.execute(
                     """SELECT g.source_video_id, g.segment_index, g.start_time,
                               g.end_time, g.score, g.local_path, g.title,
-                              COALESCE(p.niche, '') AS niche
+                              COALESCE(p.niche, '') AS niche,
+                              COALESCE(p.title, '') AS source_title
                        FROM generated_shorts g
                        LEFT JOIN processed_videos p
                               ON p.youtube_video_id = g.source_video_id
