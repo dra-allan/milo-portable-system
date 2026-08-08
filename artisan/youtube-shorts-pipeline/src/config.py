@@ -175,6 +175,9 @@ class Config:
         self.upload_backlog = self._bool('UPLOAD_BACKLOG', True)
         # Channel key used when a niche has no explicit `channel:` binding.
         self.upload_default_channel = (os.getenv('UPLOAD_DEFAULT_CHANNEL') or '').strip()
+        # Run raw clip hooks through the rule-based title optimizer when
+        # generating Short titles. Off => the raw hook is used verbatim.
+        self.title_optimizer = self._bool('TITLE_OPTIMIZER', True)
 
         # --- Scheduled discovery -----------------------------------------
         # Candidates pulled per channel before dedup/filtering. Must be >=
