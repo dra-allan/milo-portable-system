@@ -489,7 +489,14 @@ class VideoEditor:
 
         temp_dir = Path(config.temp_dir)
         temp_dir.mkdir(parents=True, exist_ok=True)
-        ass_path = temp_dir / f"{sanitize_filename(out.stem)}.ass"
+        # The ASS temp filename must not contain single or double quotes:
+        # FFmpeg's filtergraph parser consumes ' inside subtitles='...' and the
+        # render fails with "Unable to open <name-without-apostrophe>". Clip
+        # hooks are full of apostrophes ("I'm", "you're"), so strip them here.
+        # Only the internal caption file is affected; the visible .mp4 output
+        # keeps its original name.
+        safe_stem = sanitize_filename(out.stem).replace("'", '').replace('"', '')
+        ass_path = temp_dir / f"{safe_stem}.ass"
         # Render to a temp file next to the destination so the final move is
         # always same-filesystem (fixes the cross-device rename failure).
         staging = out.with_name(f".{out.stem}.partial.mp4")
@@ -714,7 +721,10 @@ class VideoEditor:
         if not Path(input_path).exists():
             logger.error("Input video not found: %s", input_path)
             return False
-        ass_path = Path(config.temp_dir) / f"{Path(output_path).stem}.ass"
+        # Same quote-stripping as create_short_from_segment(): a ' in the
+        # filename breaks FFmpeg's subtitles='...' filtergraph quoting.
+        safe_stem = Path(output_path).stem.replace("'", '').replace('"', '')
+        ass_path = Path(config.temp_dir) / f"{safe_stem}.ass"
         if not self.write_ass(transcript_segments, ass_path,
                               time_offset=time_offset, font_size=font_size):
             logger.warning("No captions to burn; copying input through")
