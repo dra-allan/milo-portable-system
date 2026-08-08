@@ -47,6 +47,7 @@ PHASE 6: CLIP PLAN CACHE + OVERLAPPED FETCH/RENDER
 import argparse
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -377,7 +378,8 @@ class ShortsPipeline:
     # ------------------------------------------------------------------
     def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
                                  force: bool = False,
-                                 local_only: bool = False) -> bool:
+                                 local_only: bool = False,
+                                 source_channel: str = '') -> bool:
         """Download -> transcribe -> find highlights -> render -> (upload).
 
         Every stage is resumable: an existing download, transcript or rendered
@@ -387,6 +389,9 @@ class ShortsPipeline:
         Args:
             local_only: never download; fail if the video is not already in
                 the local library. Used by --from-library.
+            source_channel: the configured source handle the video came from
+                (e.g. ``@AlexHormozi``). Stored on the processed-video row so
+                the performance feedback loop can rank sources.
         """
         video_id = extract_video_id(video_id) or video_id
         logger.info("Starting processing for video %s", video_id)
@@ -504,7 +509,7 @@ class ShortsPipeline:
             logger.info("Step 4/6: Creating Shorts from highlights")
             self.db.record_video(
                 video_id, title, niche, duration,
-                channel_id=metadata.get('uploader', '') or '',
+                channel_id=source_channel or (metadata.get('uploader', '') or ''),
                 published_at=metadata.get('upload_date'),
             )
 
@@ -705,6 +710,16 @@ class ShortsPipeline:
             )
             tags = [item_niche, 'Shorts'] + [kw for kw in item_keywords[:10] if kw]
 
+            # Anti-burst pacing: space uploads by a random delay so a batch
+            # doesn't hit the feed together. Skipped for the first clip.
+            if self.stats['shorts_uploaded'] and self.config.upload_pacing_max:
+                delay = random.uniform(
+                    self.config.upload_pacing_min, self.config.upload_pacing_max
+                )
+                logger.info("Pacing: waiting %.0f-%.0fs before next upload",
+                            self.config.upload_pacing_min, delay)
+                time.sleep(delay)
+
             try:
                 short_id = uploader.upload_short(
                     video_path=item['path'],
@@ -764,7 +779,8 @@ class ShortsPipeline:
 
         lookback = lookback or getattr(self.config, 'discovery_lookback', 10)
         result = discover_candidates(self.downloader, self.db, niche,
-                                     max_videos=max_videos, lookback=lookback)
+                                     max_videos=max_videos, lookback=lookback,
+                                     source_performance=self.db.source_performance())
 
         for skip in result.skipped_already_processed:
             logger.info("Niche '%s': %s already processed -- skipping", niche, skip)
@@ -774,6 +790,9 @@ class ShortsPipeline:
         if result.skipped_negative_keywords:
             logger.info("Niche '%s': %d negative-keyword titles -- skipping",
                         niche, len(result.skipped_negative_keywords))
+        if result.skipped_min_views:
+            logger.info("Niche '%s': %d below min_views threshold -- skipping",
+                        niche, len(result.skipped_min_views))
 
         if not result.candidates:
             logger.info("Niche '%s': no new discoverable videos (queried %d channel(s))",
@@ -786,7 +805,9 @@ class ShortsPipeline:
         started = 0
         for entry in candidates:
             vid = entry['id']
-            ok = self.process_video_for_shorts(vid, niche)
+            ok = self.process_video_for_shorts(
+                vid, niche, source_channel=entry.get('_source_channel', ''),
+            )
             if ok:
                 started += 1
         return started
@@ -1261,6 +1282,16 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
         local_path = clip['local_path']
         clip_niche = clip.get('niche') or args.niche
 
+        # Anti-burst pacing: space uploads by a random delay so a batch
+        # doesn't hit the feed together. Skipped for the first clip.
+        if uploaded_count and pipeline.config.upload_pacing_max:
+            delay = random.uniform(
+                pipeline.config.upload_pacing_min, pipeline.config.upload_pacing_max
+            )
+            logger.info("Pacing: waiting %.0f-%.0fs before next upload",
+                        pipeline.config.upload_pacing_min, delay)
+            time.sleep(delay)
+
         # Validate file exists
         if not local_path or not Path(local_path).exists():
             logger.warning(
@@ -1519,14 +1550,17 @@ def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
 
 
 def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
-    """Run every channel-bound niche up to a global per-run video budget.
+    """Run every channel-bound niche up to per-niche and per-sweep budgets.
 
-    Each run_niche returns how many videos it started; the sweep stops once
-    the budget is exhausted so 20+ niches can't trigger 20 download cycles
-    when only a handful will be uploaded. Niches without an authenticated
-    upload channel are skipped inside run_niche (they can't publish).
+    Each niche gets its own cap (its ``max_videos:`` in niches.yaml, falling
+    back to SCHEDULE_MAX_VIDEOS) so a busy niche can't starve the others. The
+    whole sweep is still clamped by SCHEDULE_MAX_TOTAL so a stack of hungry
+    niches can't trigger 20 download cycles in one run. Niches without an
+    authenticated upload channel are skipped inside run_niche (they can't
+    publish).
     """
-    budget = getattr(config, 'schedule_max_videos', 3)
+    per_niche_default = getattr(config, 'schedule_max_videos', 3)
+    total_budget = getattr(config, 'schedule_max_total', 0)
     niches = [args.niche] if args.niche else config.niche_names()
     if not niches:
         logger.error("No niches configured and no video specified. Nothing to do.")
@@ -1534,11 +1568,17 @@ def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
 
     started_total = 0
     for niche in niches:
-        if started_total >= budget:
-            logger.info("Scheduled sweep budget (%d videos) exhausted", budget)
+        cap = int(config.get_niche_config(niche).get('max_videos') or 0)
+        if cap <= 0:
+            cap = per_niche_default
+        if total_budget:
+            cap = min(cap, total_budget - started_total)
+        if cap <= 0:
+            logger.info("Scheduled sweep total budget (%d videos) exhausted",
+                        total_budget)
             break
-        remaining = budget - started_total
-        started = pipeline.run_niche(niche, max_videos=remaining)
+        logger.info("Niche '%s': per-run cap %d video(s)", niche, cap)
+        started = pipeline.run_niche(niche, max_videos=cap)
         started_total += started
     logger.info("Scheduled sweep started %d video(s)", started_total)
     return started_total
@@ -1559,6 +1599,25 @@ def _run_schedule(pipeline: 'ShortsPipeline', args) -> int:
     run_times = [t.split('#')[0].strip()
                  for t in os.getenv('RUN_TIMES', '0 9 * * *,0 14 * * *,0 19 * * *').split(',')]
     run_times = [t for t in run_times if t]
+
+    # Anti-burst jitter: add a random minute offset to each fixed run time so
+    # the pipeline never fires on the same :00 every day. A daily sweep landing
+    # at 9:00:00 vs 9:27:31 doesn't matter to us but varies the moment the
+    # batch enters YouTube's feed test.
+    jitter = getattr(config, 'schedule_jitter_minutes', 0)
+    if jitter:
+        jittered = []
+        for cron in run_times:
+            parts = cron.split()
+            if len(parts) == 5:
+                try:
+                    parts[0] = str(random.randint(0, min(jitter, 59)))
+                except (ValueError, TypeError):
+                    pass
+            jittered.append(' '.join(parts))
+        run_times = jittered
+        logger.info("Run times jittered by up to %d minute(s): %s",
+                    jitter, ', '.join(run_times))
 
     def job():
         try:

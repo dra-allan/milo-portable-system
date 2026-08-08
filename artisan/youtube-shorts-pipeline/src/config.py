@@ -37,6 +37,8 @@ DEFAULT_NICHE = {
     'min_duration': 300,
     'max_duration': 7200,
     'min_score': 0.0,
+    'min_views': 0,
+    'max_videos': 0,
 }
 
 
@@ -183,10 +185,32 @@ class Config:
         # Candidates pulled per channel before dedup/filtering. Must be >=
         # schedule_max_videos so already-processed videos can't starve a run.
         self.discovery_lookback = self._int('DISCOVERY_LOOKBACK', 10, minimum=1)
-        # Global cap on videos STARTED per scheduled run across all niches.
-        # Quota: ~10k units/day, one upload ~1600 -> ~6 uploads/day. Discovery
-        # and transcription cost real time/money, so default to 3 videos/run.
+        # Default cap on videos STARTED per scheduled run per niche. A niche
+        # can override with `max_videos:` in niches.yaml; SCHEDULE_MAX_TOTAL
+        # (below) still clamps the whole sweep so a stack of hungry niches
+        # can't blow the day's quota in one run. Quota: ~10k units/day, one
+        # upload ~1600 -> ~6 uploads/day, so a few videos/run is the norm.
         self.schedule_max_videos = self._int('SCHEDULE_MAX_VIDEOS', 3, minimum=1)
+        # Hard ceiling on videos started across ALL niches in one sweep.
+        # 0 = unlimited (per-niche caps rule). Default matches the upload
+        # quota reality: ~6 uploads/day.
+        self.schedule_max_total = self._int('SCHEDULE_MAX_TOTAL', 6, minimum=0)
+
+        # --- Upload pacing (anti-burst) ----------------------------------
+        # Random delay in seconds between successive uploads in the same run,
+        # so a batch of clips doesn't land on YouTube in one burst. YouTube's
+        # Shorts algorithm feeds each upload on its own; posting 5 clips in 82
+        # seconds (what we saw in production logs) makes them compete with
+        # each other for the same first-test audience.
+        self.upload_pacing_min = self._int('UPLOAD_PACING_MIN', 45, minimum=0)
+        self.upload_pacing_max = self._int('UPLOAD_PACING_MAX', 180, minimum=0)
+        if self.upload_pacing_max < self.upload_pacing_min:
+            self.upload_pacing_max = self.upload_pacing_min
+        # Random minute-offset (0..n) added to each scheduled run time, so
+        # fixed 9AM/2PM/7PM windows become 9:xx / 2:xx / 7:xx instead of
+        # everyone firing at :00. Set 0 to keep exact times.
+        self.schedule_jitter_minutes = self._int('SCHEDULE_JITTER_MINUTES', 45,
+                                                 minimum=0)
 
         # --- Encoding ----------------------------------------------------
         # 'slow' over 'medium': at a fixed CRF a slower preset spends more time
