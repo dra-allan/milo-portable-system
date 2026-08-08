@@ -36,9 +36,9 @@ Follow the Procedure. End state = demo site live on GitHub Pages + cold email
 sent + prospect logged to memory.
 
 ## Quick Reference
-- Prospect sheet: `C:\Users\user\milo-workspace\website-flip\prospects\`
-- Outreach log: `C:\Users\user\milo-workspace\website-flip\outreach\`
-- Demo sites: `C:\Users\user\milo-workspace\website-flip\sites\<slug>\`
+- Prospect sheet: `C:\Users\user\Desktop\Milo Workspace\website-flip\prospects\`
+- Outreach log: `C:\Users\user\Desktop\Milo Workspace\website-flip\outreach\`
+- Demo sites: `C:\Users\user\Desktop\Milo Workspace\website-flip\sites\<slug>\`
 - Verify business: Idaho SOS `https://sosbiz.idaho.gov/search` (JS-rendered) or
   `https://www.buildzoom.com` search (reliable, shows license + permit counts)
 - Find contact email: business Facebook page `.../posts/` (strips auth wall, page
@@ -54,7 +54,7 @@ sent + prospect logged to memory.
    Bizapedia is captcha-blocked and SOSBiz search is JS-rendered — neither
    scrapes; prefer BuildZoom and chamberofcommerce.com listings.
 3. **Log prospect.** Append to
-   `milo-workspace\website-flip\prospects\<date>-<city>-batch.md` with all
+   `C:\Users\user\Desktop\Milo Workspace\website-flip\prospects\<date>-<city>-batch.md` with all
    gathered facts.
 4. **Build demo.** In `sites\<slug>\` build a single `index.html` (inline CSS/JS,
    no build step). Load a design skill (design-taste-frontend, brandkit,
@@ -81,7 +81,7 @@ sent + prospect logged to memory.
    Principles that work: subject line = headline; sell the feeling not the
    product; name the elephant in the room; story that is also the problem;
    include the LIVE demo link; keep it short. Save to
-   `outreach\<date>-<slug>-cold-email.md`.
+   `C:\Users\user\Desktop\Milo Workspace\website-flip\outreach\<date>-<slug>-cold-email.md`.
 9. **Send via Composio Gmail.** Subject per step 8, body = draft, recipient
    field MUST be `recipient_email` (not `to`). One send. Log the thread id.
 10. **Remember.** `milo remember` the sent email + thread + follow-up date
