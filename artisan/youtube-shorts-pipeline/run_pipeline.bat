@@ -38,6 +38,8 @@ if not "%~1"=="" (
 :main
 cls
 echo.
+echo [DEBUG] Entering main menu
+echo.
 echo ================================================================
 echo           YouTube Shorts Pipeline - Easy Runner
 echo ================================================================
@@ -74,6 +76,8 @@ goto main
 :full_sweep
 cls
 echo.
+echo [DEBUG] Entering full_sweep
+echo.
 echo ================================================================
 echo           Run Full Sweep Now
 echo ================================================================
@@ -96,6 +100,8 @@ goto main
 :test
 cls
 echo.
+echo [DEBUG] Entering test
+echo.
 echo Running in Test Mode...
 echo.
 call venv\Scripts\activate
@@ -107,6 +113,8 @@ goto main
 
 :url
 cls
+echo.
+echo [DEBUG] Entering url
 echo.
 echo Process YouTube URL/Video ID
 echo.
@@ -136,6 +144,8 @@ goto main
 :schedule
 cls
 echo.
+echo [DEBUG] Entering schedule
+echo.
 echo Starting Scheduled Pipeline (runs at 9AM, 2PM, 7PM daily)
 echo.
 echo Press Ctrl+C to stop the scheduler
@@ -149,6 +159,8 @@ goto main
 
 :library
 cls
+echo.
+echo [DEBUG] Entering library
 echo.
 echo Select a downloaded video from the library:
 echo.
@@ -198,12 +210,14 @@ for /f "delims=" %%v in ('powershell -NoProfile -Command "& {
 rem Check if we got a selection
 if not defined VIDEOFIXED (
     echo.
+    echo [DEBUG] No selection made in library
     echo Selection cancelled or error.
     echo.
     pause
     goto main
 )
 echo.
+echo [DEBUG] Video selected in library: %VIDEOFIXED%
 echo Selected video ID: %VIDEOFIXED%
 echo.
 set /p niche="Enter niche (optional, leave blank for auto): "
@@ -221,6 +235,8 @@ goto main
 
 :upload_existing
 cls
+echo.
+echo [DEBUG] Entering upload_existing
 echo.
 echo Upload Existing Local Shorts
 echo.
@@ -245,6 +261,8 @@ goto upload_existing
 :upload_interactive
 cls
 echo.
+echo [DEBUG] Entering upload_interactive
+echo.
 echo Review and Pick Clips
 echo.
 echo This lists every rendered-but-unpublished clip grouped by niche and
@@ -260,6 +278,8 @@ goto upload_existing
 
 :upload_by_niche
 cls
+echo.
+echo [DEBUG] Entering upload_by_niche
 echo.
 set /p niche="Enter niche name (e.g., flick_shorts, capital_mindset): "
 if "%niche%"=="" (
@@ -278,6 +298,8 @@ goto upload_existing
 :upload_by_channel
 cls
 echo.
+echo [DEBUG] Entering upload_by_channel
+echo.
 set /p channel="Enter channel key (e.g., flick_shorts, capital_mindset): "
 if "%channel%"=="" (
     echo Channel key is required.
@@ -295,6 +317,8 @@ goto upload_existing
 :upload_all
 cls
 echo.
+echo [DEBUG] Entering upload_all
+echo.
 echo Uploading all pending shorts (respects UPLOAD_MAX_PER_RUN limit)...
 echo.
 call venv\Scripts\activate
@@ -310,6 +334,8 @@ if not "%~1"=="" (
     set "bg_choice=%~1"
 ) else (
     cls
+    echo.
+    echo [DEBUG] Entering set_background
     echo.
     echo Set Background Mode
     echo.
@@ -356,6 +382,8 @@ if not "%~1"=="" (
     set "cap_choice=%~1"
 ) else (
     cls
+    echo.
+    echo [DEBUG] Entering set_caption
     echo.
     echo Set Caption Style
     echo.
@@ -410,6 +438,7 @@ goto :eof
 :exit
 cls
 echo.
+echo [DEBUG] Entering exit
 echo Goodbye!
 timeout /t 2 > nul
 exit
