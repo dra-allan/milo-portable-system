@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786160722.3893554,
+  "updated_at": 1786161666.7281432,
   "routines": [
     {
       "name": "curate-skills",
@@ -77,11 +77,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786160706.606371,
+      "last_run": 1786161307.4916975,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     71\n  notes        7\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786161019.5520744,
-      "runs": 216,
+      "next_run": 1786161620.4778678,
+      "runs": 217,
       "failures": 7
     },
     {
@@ -104,11 +104,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786160719.5554059,
+      "last_run": 1786161320.4808273,
       "last_status": "ok",
       "last_output": "[ok] vault clean, nothing to commit",
-      "next_run": 1786161022.389057,
-      "runs": 212,
+      "next_run": 1786161623.228145,
+      "runs": 213,
       "failures": 25
     },
     {
@@ -159,11 +159,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1786075553.5237615,
+      "last_run": 1786161606.641911,
       "last_status": "ok",
-      "last_output": "\n> milo · deepseek-v4-flash-free\n\n⚙ milo_vault_search {\"query\":\"2026-08-07\",\"limit\":5}\n⚙ milo_mem_context {\"query\":\"current priorities open work today\"}\n⚙ milo_vault_search {\"limit\":8,\"query\":\"website flip batch cold emails\"}\n⚙ milo_vault_search {\"limit\":8,\"query\":\"rebase push blocked git recovery\"}\n! permission requested: external_directory (C:\\Users\\user\\Desktop\\dra-brains\\*); auto-rejecting\n✗ Glob \"01 - Daily Notes/*2026-08-07*\" failed in C:/Users/user/Desktop/dra-brains\nError: The user rejected permission to use this specific tool call.",
-      "next_run": 1786161600.0,
-      "runs": 2,
+      "last_output": "\n> milo · nvidia/nemotron-3-ultra-550b-a55b\n\n! permission requested: external_directory (C:\\Users\\user\\Desktop\\Milo Workspace\\website-flip\\*); auto-rejecting\n✗ cd \"C:\\Users\\user\\Desktop\\Milo Workspace\\website-flip\" && python followups.py due failed\nError: The user rejected permission to use this specific tool call.",
+      "next_run": 1786248000.0,
+      "runs": 3,
       "failures": 0
     },
     {
