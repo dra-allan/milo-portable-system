@@ -9,7 +9,7 @@ if exist .env (
     for /f "tokens=1,* delims==" %%a in ('findstr /b /i "CAPTION_STYLE=" .env') do set "CAPTION_STYLE=%%b"
 )
 
-:: If arguments are provided, skip the menu and go directly to the selected option
+:: If arguments are provided, skip the menu
 if not "%~1"=="" (
     if "%~1"=="1" goto full_sweep
     if "%~1"=="2" goto url
@@ -17,19 +17,9 @@ if not "%~1"=="" (
     if "%~1"=="4" goto upload_existing
     if "%~1"=="5" goto library
     if "%~1"=="6" goto test
-    if "%~1"=="7" (
-        call :set_background %~2
-        shift
-        shift
-        goto main
-    )
-    if "%~1"=="9" (
-        call :set_caption %~2
-        shift
-        shift
-        goto main
-    )
-    if "%~1"=="10" goto exit
+    if "%~1"=="7" goto set_background
+    if "%~1"=="9" goto set_caption
+    if "%~1"=="10" goto exit_script
     echo Invalid option: %~1
     pause
     goto main
@@ -38,27 +28,26 @@ if not "%~1"=="" (
 :main
 cls
 echo.
-echo [DEBUG] Entering main menu
-echo.
 echo ================================================================
 echo           YouTube Shorts Pipeline - Easy Runner
 echo ================================================================
 echo.
-echo Current BackgroundMode: %BACKGROUND_MODE%
-echo Current CaptionStyle:   %CAPTION_STYLE%
+echo  Current BackgroundMode : %BACKGROUND_MODE%
+echo  Current CaptionStyle   : %CAPTION_STYLE%
 echo.
-echo  1. Run Full Sweep Now (auto-discover ^& process all niches)
-echo  2. Process a YouTube URL/Video ID
-echo  3. Run in Scheduled Mode (9AM, 2PM, 7PM daily)
-echo  4. Upload Existing Local Shorts
-echo  5. Process from Library (downloaded videos)
-echo  6. Run in Test Mode (check components)
-echo  7. Set BackgroundMode
-echo  8. (reserved)
-echo  9. Set CaptionStyle
-echo 10. Exit
+echo   1. Run Full Sweep Now (auto-discover ^& process all niches)
+echo   2. Process a YouTube URL/Video ID
+echo   3. Run in Scheduled Mode (9AM, 2PM, 7PM daily)
+echo   4. Upload Existing Local Shorts
+echo   5. Process from Library (downloaded videos)
+echo   6. Run in Test Mode (check components)
+echo   7. Set BackgroundMode
+echo   9. Set CaptionStyle
+echo  10. Exit
 echo.
-set /p choice="Select an option (1-10): "
+set "choice="
+set /p choice="Select an option: "
+set "choice=%choice: =%"
 if "%choice%"=="1" goto full_sweep
 if "%choice%"=="2" goto url
 if "%choice%"=="3" goto schedule
@@ -66,17 +55,14 @@ if "%choice%"=="4" goto upload_existing
 if "%choice%"=="5" goto library
 if "%choice%"=="6" goto test
 if "%choice%"=="7" goto set_background
-if "%choice%"=="8" goto main
 if "%choice%"=="9" goto set_caption
-if "%choice%"=="10" goto exit
+if "%choice%"=="10" goto exit_script
 echo Invalid choice! Please try again.
 timeout /t 2 > nul
 goto main
 
 :full_sweep
 cls
-echo.
-echo [DEBUG] Entering full_sweep
 echo.
 echo ================================================================
 echo           Run Full Sweep Now
@@ -100,9 +86,11 @@ goto main
 :test
 cls
 echo.
-echo [DEBUG] Entering test
+echo ================================================================
+echo           Test Mode
+echo ================================================================
 echo.
-echo Running in Test Mode...
+echo Running component checks...
 echo.
 call venv\Scripts\activate
 python -m src.main --mode test
@@ -114,21 +102,25 @@ goto main
 :url
 cls
 echo.
-echo [DEBUG] Entering url
+echo ================================================================
+echo           Process YouTube URL / Video ID
+echo ================================================================
 echo.
-echo Process YouTube URL/Video ID
-echo.
-echo Optional flags to append: --force --no-upload --niche ^<name^>
+echo Tip: append --force to reprocess an already-done video.
+echo Type 'back' to return to the main menu.
 echo.
 set "url="
-set /p url="Enter YouTube URL or Video ID: "
+set /p url="YouTube URL or Video ID: "
+set "url=%url: =%"
+if /i "%url%"=="back" goto main
 if "%url%"=="" goto url
 set "FORCE_FLAG="
 echo %url% | findstr /c:"--force" >nul && set "FORCE_FLAG=--force"
 set "url=%url:--force=%"
 set "url=%url: =%"
 echo.
-set /p niche="Enter niche (optional, leave blank for auto): "
+set "niche="
+set /p niche="Niche (optional, press Enter for auto): "
 if "%niche%"=="" (
     call venv\Scripts\activate
     python -m src.main --mode once "%url%" %FORCE_FLAG%
@@ -144,11 +136,12 @@ goto main
 :schedule
 cls
 echo.
-echo [DEBUG] Entering schedule
+echo ================================================================
+echo           Scheduled Mode
+echo ================================================================
 echo.
-echo Starting Scheduled Pipeline (runs at 9AM, 2PM, 7PM daily)
-echo.
-echo Press Ctrl+C to stop the scheduler
+echo Running at 9AM, 2PM, and 7PM daily.
+echo Press Ctrl+C to stop.
 echo.
 call venv\Scripts\activate
 python -m src.main --mode schedule
@@ -160,11 +153,10 @@ goto main
 :library
 cls
 echo.
-echo [DEBUG] Entering library
+echo ================================================================
+echo           Process from Library
+echo ================================================================
 echo.
-echo Select a downloaded video from the library:
-echo.
-rem Find all .info.json files in data\temp
 if not exist "%~dp0data\temp\*" (
     echo No downloaded videos found in data\temp.
     echo Please download a video first using option 2.
@@ -172,55 +164,79 @@ if not exist "%~dp0data\temp\*" (
     pause
     goto main
 )
-rem Use PowerShell to list and select
-for /f "delims=" %%v in ('powershell -NoProfile -Command "& {
-    $files = Get-ChildItem -Path '%~dp0data\temp' -Filter '*.info.json' -File |
-             Sort-Object Name
-    if ($files.Count -eq 0) { exit 1 }
-    $selection = 0
-    while ($selection -lt 1 -or $selection -gt $files.Count) {
-        Write-Host 'Available videos:' -ForegroundColor Cyan
-        for ($i = 0; $i -lt $files.Count; $i++) {
-            try {
-                $json = Get-Content -Raw -Path $($files[$i].FullName) | ConvertFrom-Json
-                $title = $json.title
-                if (-not $title) { $title = $json.id }
-            } catch {
-                $title = $($files[$i].BaseName)
-            }
-            Write-Host  ($i+1). ') ' $title
-        }
-        Write-Host ''
-        $choice = Read-Host 'Enter number to select (or 0 to cancel)'
-        if ($choice -eq 0) { exit 0 }
-        $selection = [int]$choice
+
+:: Write the selected video ID to a temp file so batch can read it cleanly.
+:: (Parsing for/f output from an interactive PS script is unreliable.)
+set "SEL_FILE=%TEMP%\yt_pipeline_sel.txt"
+del "%SEL_FILE%" 2>nul
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& {
+    $dir = '%~dp0data\temp'
+    $files = Get-ChildItem -Path $dir -Filter '*.info.json' -File -ErrorAction SilentlyContinue | Sort-Object Name
+    if (-not $files -or $files.Count -eq 0) {
+        Write-Host '  No .info.json files found in library.' -ForegroundColor Yellow
+        Read-Host 'Press Enter to return'
+        exit 1
     }
-    $selectedFile = $files[$selection-1].FullName
-    $json = Get-Content -Raw -Path $selectedFile | ConvertFrom-Json
+    Write-Host '  Available videos:' -ForegroundColor Cyan
+    Write-Host ''
+    for ($i = 0; $i -lt $files.Count; $i++) {
+        try {
+            $json = Get-Content -Raw -Path $files[$i].FullName | ConvertFrom-Json
+            $t = if ($json.title) { $json.title } else { $json.id }
+        } catch {
+            $t = $files[$i].BaseName
+        }
+        Write-Host ('  ' + ($i + 1) + '. ' + $t)
+    }
+    Write-Host ''
+    Write-Host '  0. Back to Main Menu' -ForegroundColor Yellow
+    Write-Host ''
+    $sel = -1
+    while ($sel -lt 0) {
+        $raw = Read-Host 'Enter number'
+        if ($raw -eq '0' -or $raw -eq '') { exit 0 }
+        try {
+            $n = [int]$raw
+            if ($n -ge 1 -and $n -le $files.Count) { $sel = $n }
+            else { Write-Host '  Out of range, try again.' -ForegroundColor Red }
+        } catch {
+            Write-Host '  Enter a number.' -ForegroundColor Red
+        }
+    }
+    $json = Get-Content -Raw -Path $files[$sel - 1].FullName | ConvertFrom-Json
     $videoId = $json.id
-    $title = $json.title
-    if (-not $videoId) { $videoId = $json.id } # ensure
-    # Output selected ID for batch to capture
-    Write-Host 'SELECTED_ID:' $videoId
-    Write-Host 'SELECTED_TITLE:' $title
-}" 2^>nul') do (
-    if "%%v"=="SELECTED_ID:" set "VIDEOFIXED=%%w"
-    if "%%v"=="SELECTED_TITLE:" set "VIDEOTITLE=%%w"
+    Write-Host ''
+    Write-Host ('  Selected: ' + $json.title) -ForegroundColor Green
+    Write-Host ''
+    Set-Content -Path $env:TEMP\yt_pipeline_sel.txt -Value $videoId -Encoding ASCII
+}"
+
+if not exist "%SEL_FILE%" (
+    echo.
+    echo Returning to main menu...
+    timeout /t 1 > nul
+    goto main
 )
-rem Check if we got a selection
+
+set "VIDEOFIXED="
+for /f "usebackq delims=" %%v in ("%SEL_FILE%") do (
+    if not defined VIDEOFIXED set "VIDEOFIXED=%%v"
+)
+del "%SEL_FILE%" 2>nul
+
 if not defined VIDEOFIXED (
-    echo.
-    echo [DEBUG] No selection made in library
-    echo Selection cancelled or error.
-    echo.
+    echo Selection cancelled.
     pause
     goto main
 )
+
+echo Selected ID: %VIDEOFIXED%
 echo.
-echo [DEBUG] Video selected in library: %VIDEOFIXED%
-echo Selected video ID: %VIDEOFIXED%
-echo.
-set /p niche="Enter niche (optional, leave blank for auto): "
+set "niche="
+set /p niche="Niche (optional, Enter for auto, 'back' to cancel): "
+set "niche=%niche: =%"
+if /i "%niche%"=="back" goto main
 if "%niche%"=="" (
     call venv\Scripts\activate
     python -m src.main --mode once "%VIDEOFIXED%"
@@ -236,24 +252,26 @@ goto main
 :upload_existing
 cls
 echo.
-echo [DEBUG] Entering upload_existing
+echo ================================================================
+echo           Upload Existing Local Shorts
+echo ================================================================
 echo.
-echo Upload Existing Local Shorts
+echo  This uploads rendered-but-unpublished shorts to YouTube.
 echo.
-echo This will upload rendered-but-unpublished shorts to YouTube.
+echo  1. Upload by Niche
+echo  2. Upload by Channel Override
+echo  3. Upload All Pending
+echo  4. Review and Pick Clips (interactive)
+echo  0. Back to Main Menu
 echo.
-echo 1. Upload by Niche (upload all pending clips for a specific niche)
-echo 2. Upload by Channel Override (force upload to specific channel)
-echo 3. Upload All Pending (upload up to limit across all niches)
-echo 4. Review and Pick Clips (interactive - choose exactly which clips)
-echo 5. Back to Main Menu
-echo.
-set /p ue_choice="Select an option (1-5): "
+set "ue_choice="
+set /p ue_choice="Select an option: "
+set "ue_choice=%ue_choice: =%"
+if "%ue_choice%"=="0" goto main
 if "%ue_choice%"=="1" goto upload_by_niche
 if "%ue_choice%"=="2" goto upload_by_channel
 if "%ue_choice%"=="3" goto upload_all
 if "%ue_choice%"=="4" goto upload_interactive
-if "%ue_choice%"=="5" goto main
 echo Invalid choice!
 timeout /t 2 > nul
 goto upload_existing
@@ -261,13 +279,12 @@ goto upload_existing
 :upload_interactive
 cls
 echo.
-echo [DEBUG] Entering upload_interactive
+echo ================================================================
+echo           Review and Pick Clips
+echo ================================================================
 echo.
-echo Review and Pick Clips
-echo.
-echo This lists every rendered-but-unpublished clip grouped by niche and
-echo source video, with the optimized title each would get. You pick exactly
-echo which clips to post (e.g. "1,2,4-6" or "all").
+echo Lists every rendered-but-unpublished clip grouped by niche.
+echo Pick exactly which clips to post (e.g. "1,2,4-6" or "all").
 echo.
 call venv\Scripts\activate
 python -m src.main --mode upload-existing --interactive
@@ -279,14 +296,20 @@ goto upload_existing
 :upload_by_niche
 cls
 echo.
-echo [DEBUG] Entering upload_by_niche
+echo ================================================================
+echo           Upload by Niche
+echo ================================================================
 echo.
-set /p niche="Enter niche name (e.g., flick_shorts, capital_mindset): "
+echo Type 'back' to return.
+echo.
+set "niche="
+set /p niche="Niche name (e.g., flick_shorts): "
+set "niche=%niche: =%"
+if /i "%niche%"=="back" goto upload_existing
 if "%niche%"=="" (
     echo Niche name is required.
-    echo.
     pause
-    goto upload_existing
+    goto upload_by_niche
 )
 call venv\Scripts\activate
 python -m src.main --mode upload-existing --niche "%niche%"
@@ -298,14 +321,20 @@ goto upload_existing
 :upload_by_channel
 cls
 echo.
-echo [DEBUG] Entering upload_by_channel
+echo ================================================================
+echo           Upload by Channel Override
+echo ================================================================
 echo.
-set /p channel="Enter channel key (e.g., flick_shorts, capital_mindset): "
+echo Type 'back' to return.
+echo.
+set "channel="
+set /p channel="Channel key (e.g., flick_shorts): "
+set "channel=%channel: =%"
+if /i "%channel%"=="back" goto upload_existing
 if "%channel%"=="" (
     echo Channel key is required.
-    echo.
     pause
-    goto upload_existing
+    goto upload_by_channel
 )
 call venv\Scripts\activate
 python -m src.main --mode upload-existing --channel "%channel%"
@@ -317,7 +346,9 @@ goto upload_existing
 :upload_all
 cls
 echo.
-echo [DEBUG] Entering upload_all
+echo ================================================================
+echo           Upload All Pending
+echo ================================================================
 echo.
 echo Uploading all pending shorts (respects UPLOAD_MAX_PER_RUN limit)...
 echo.
@@ -329,97 +360,79 @@ pause
 goto upload_existing
 
 :set_background
-REM %1 = bg_choice (if passed as argument)
-if not "%~1"=="" (
-    set "bg_choice=%~1"
-) else (
-    cls
-    echo.
-    echo [DEBUG] Entering set_background
-    echo.
-    echo Set Background Mode
-    echo.
-    echo Current BackgroundMode: %BACKGROUND_MODE%
-    echo.
-    echo 0. Back to Main Menu
-    echo 1. crop      - Fill frame by cropping sides (default)
-    echo 2. blur      - Blurred background bars
-    echo 3. cheap     - Low-res blurred background (faster)
-    echo 4. black     - Solid black bars
-    echo 5. smart     - Person-aware cropping (face detection)
-    echo.
-    set /p bg_choice="Select background mode (0-5): "
-)
-echo Debug: bg_choice=[%bg_choice%]
+cls
+echo.
+echo ================================================================
+echo           Set Background Mode
+echo ================================================================
+echo.
+echo  Current: %BACKGROUND_MODE%
+echo.
+echo  0. Back to Main Menu
+echo  1. crop       - Fill frame by cropping sides
+echo  2. blur       - Blurred background bars
+echo  3. cheap      - Low-res blurred background (faster)
+echo  4. black      - Solid black bars
+echo  5. smart      - Person-aware cropping (face detection)
+echo.
+set "bg_choice="
+set /p bg_choice="Select background mode (0-5): "
+set "bg_choice=%bg_choice: =%"
 if "%bg_choice%"=="0" goto main
-if "%bg_choice%"=="1" (
-    set "new_mode=crop"
-) else if "%bg_choice%"=="2" (
-    set "new_mode=blur"
-) else if "%bg_choice%"=="3" (
-    set "new_mode=cheap"
-) else if "%bg_choice%"=="4" (
-    set "new_mode=black"
-) else if "%bg_choice%"=="5" (
-    set "new_mode=smart"
-) else (
+set "new_mode="
+if "%bg_choice%"=="1" set "new_mode=crop"
+if "%bg_choice%"=="2" set "new_mode=blur"
+if "%bg_choice%"=="3" set "new_mode=cheap"
+if "%bg_choice%"=="4" set "new_mode=black"
+if "%bg_choice%"=="5" set "new_mode=smart"
+if not defined new_mode (
     echo Invalid choice!
-    echo.
-    pause
+    timeout /t 2 > nul
     goto set_background
 )
-:: Update .env file
 call :update_env BACKGROUND_MODE %new_mode%
 set "BACKGROUND_MODE=%new_mode%"
-echo Background mode set to %BACKGROUND_MODE%
+echo.
+echo Background mode set to: %BACKGROUND_MODE%
 echo.
 pause
 goto main
 
 :set_caption
-REM %1 = cap_choice (if passed as argument)
-if not "%~1"=="" (
-    set "cap_choice=%~1"
-) else (
-    cls
-    echo.
-    echo [DEBUG] Entering set_caption
-    echo.
-    echo Set Caption Style
-    echo.
-    echo Current CaptionStyle: %CAPTION_STYLE%
-    echo.
-    echo 0. Back to Main Menu
-    echo 1. default   - Original Arial style (default)
-    echo 2. hormozi   - Alex Hormozi style (bold, dynamic colors)
-    echo 3. minimalist - Clean minimalist (sans-serif, white with shadow)
-    echo 4. pop       - Pop & bounce (neon highlights, black outline)
-    echo 5. kinetic   - Kinetic karaoke (word-by-word highlight)
-    echo.
-    set /p cap_choice="Select caption style (0-5): "
-)
-echo Debug: cap_choice=[%cap_choice%]
+cls
+echo.
+echo ================================================================
+echo           Set Caption Style
+echo ================================================================
+echo.
+echo  Current: %CAPTION_STYLE%
+echo.
+echo  0. Back to Main Menu
+echo  1. default    - Original Arial style
+echo  2. hormozi    - Alex Hormozi style (bold, dynamic colors)
+echo  3. minimalist - Clean minimalist (sans-serif, white with shadow)
+echo  4. pop        - Pop ^& bounce (neon highlights, black outline)
+echo  5. kinetic    - Kinetic karaoke (word-by-word highlight)
+echo.
+set "cap_choice="
+set /p cap_choice="Select caption style (0-5): "
+set "cap_choice=%cap_choice: =%"
 if "%cap_choice%"=="0" goto main
-if "%cap_choice%"=="1" (
-    set "new_style=default"
-) else if "%cap_choice%"=="2" (
-    set "new_style=hormozi"
-) else if "%cap_choice%"=="3" (
-    set "new_style=minimalist"
-) else if "%cap_choice%"=="4" (
-    set "new_style=pop"
-) else if "%cap_choice%"=="5" (
-    set "new_style=kinetic"
-) else (
+set "new_style="
+if "%cap_choice%"=="1" set "new_style=default"
+if "%cap_choice%"=="2" set "new_style=hormozi"
+if "%cap_choice%"=="3" set "new_style=minimalist"
+if "%cap_choice%"=="4" set "new_style=pop"
+if "%cap_choice%"=="5" set "new_style=kinetic"
+if not defined new_style (
     echo Invalid choice!
-    echo.
-    pause
+    timeout /t 2 > nul
     goto set_caption
 )
-:: Update .env file
 call :update_env CAPTION_STYLE %new_style%
 set "CAPTION_STYLE=%new_style%"
-echo Caption style set to %CAPTION_STYLE%
+echo.
+echo Caption style set to: %CAPTION_STYLE%
 echo.
 pause
 goto main
@@ -429,16 +442,15 @@ rem %1 = key, %2 = value
 if exist .env (
     findstr /v /i "%1=" .env > .env.tmp
 ) else (
-    > .env.tmp
+    type nul > .env.tmp
 )
 echo %1=%2>> .env.tmp
 move /y .env.tmp .env > nul
 goto :eof
 
-:exit
+:exit_script
 cls
 echo.
-echo [DEBUG] Entering exit
 echo Goodbye!
 timeout /t 2 > nul
 exit
