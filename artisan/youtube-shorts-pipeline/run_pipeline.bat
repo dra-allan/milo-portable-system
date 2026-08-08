@@ -192,15 +192,31 @@ echo.
 echo 1. Upload by Niche (upload all pending clips for a specific niche)
 echo 2. Upload by Channel Override (force upload to specific channel)
 echo 3. Upload All Pending (upload up to limit across all niches)
-echo 4. Back to Main Menu
+echo 4. Review and Pick Clips (interactive - choose exactly which clips)
+echo 5. Back to Main Menu
 echo.
-set /p ue_choice="Select an option (1-4): "
+set /p ue_choice="Select an option (1-5): "
 if "%ue_choice%"=="1" goto upload_by_niche
 if "%ue_choice%"=="2" goto upload_by_channel
 if "%ue_choice%"=="3" goto upload_all
-if "%ue_choice%"=="4" goto main
+if "%ue_choice%"=="4" goto upload_interactive
+if "%ue_choice%"=="5" goto main
 echo Invalid choice!
 timeout /t 2 > nul
+goto upload_existing
+
+:upload_interactive
+cls
+echo.
+echo Review and Pick Clips
+echo.
+echo This lists every rendered-but-unpublished clip grouped by niche and
+echo source video, with the optimized title each would get. You pick exactly
+echo which clips to post (e.g. "1,2,4-6" or "all").
+echo.
+call venv\Scripts\activate
+python -m src.main --mode upload-existing --interactive
+pause
 goto upload_existing
 
 :upload_by_niche

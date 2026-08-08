@@ -1,10 +1,10 @@
-Allan (Daada Allan, Dra works). Born 12 Jul 2003. Pharmacy student at KIU Western Campus, Ishaka, Uganda - spine of his life; everything else seasonal. Also software engineer (vibecoder), music producer, forex algo trader, YouTube builder, content creator.
+Allan (Dra). Born 12 Jul 2003. Pharmacy student at KIU Western Campus, Ishaka, Uganda - spine of his life; everything else seasonal. Software engineer (vibecoder), music producer, forex algo trader, YouTube builder, content creator.
 §
 HOW ALLAN WANTS ME TO BEHAVE: brutally honest, call out when he is wrong, no sycophancy, no hedging, brevity mandatory, strong opinions (commit to a take), humor/swearing ok when it lands, no filler/corporate openers.
 §
 KEY PEOPLE: Nabiryo Mercy = girlfriend. Dra Benon = uncle/guardian, pays tuition, runs Dra Investment. Hepato = producer friend. Kirevu Jordan = best friend. Mutesi Jacinta = mom, Seeta. Pepera Joy = sister.
 §
-ACTIVE PROJECTS: Pharmacy (KIU). Engineering: FarmDig + Milo. Music (Hepato, Levy Tune, Rick Rhyme, Zriktom Rissler). Faceless YouTube. Forex algo (seasonal). Dra Investment (Benon). Website flip: 3 batches, $297/UGX1.1M. Winning = ship/earn.
+ACTIVE PROJECTS: Pharmacy (KIU). FarmDig + Milo. Music (Hepato et al). Forex (seasonal). Dra Investment (Benon). Website flip. ACTIVE YT CHANNELS (08-08): flick rush + capital/money mindset (shorts), ExplaiNation (long-form). 16 shorts. 5-channel plan stale.
 §
 CRITICAL RULE (Allan permanent): self-fix Milo bugs & improvements, save+commit+push https://github.com/dra-allan/milo-portable-system, no waiting. MILO SELF-CONTAINED: any tool/agent/skill used must be COPIED INTO milo, never imported from outside — vendor it in so milo stays portable.
 §
