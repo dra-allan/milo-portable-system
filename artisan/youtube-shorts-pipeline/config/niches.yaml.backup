@@ -1243,7 +1243,7 @@ science_space:
 
 books_big_ideas:
   channels:
-    # - "@FoundersPodcast"  # DOES NOT HAVE VIDEOS TAB
+    - "@FoundersPodcast"
     - "@TimFerriss"
     - "@AliAbdaal"
     - "@TheDiaryOfACEO"
