@@ -126,11 +126,9 @@ def optimize_title(hook: str, niche: str = '', keywords=None,
         return _truncate(text, max_len)
 
     # Plain statement. Frame it with the niche's label so the title reads as a
-    # headline, but only when the budget fits.
+    # headline, then trim the whole thing to budget if needed.
     frame = NICHE_FRAME.get(niche) or GENERIC_FRAME
     framed = f"{frame}: {text}"
     if len(framed) <= max_len:
         return framed
-
-    # No room for framing; fall back to a clean truncated statement.
-    return _truncate(text, max_len)
+    return _truncate(framed, max_len)
