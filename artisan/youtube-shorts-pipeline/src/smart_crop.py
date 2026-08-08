@@ -57,6 +57,11 @@ try:  # package-relative first (python -m src.main)
 except ImportError:  # pragma: no cover - direct script execution
     from utils import setup_logger
 
+try:
+    from .config import config
+except ImportError:  # pragma: no cover
+    from config import config
+
 logger = setup_logger(__name__)
 
 try:
@@ -397,7 +402,7 @@ def _dedupe(boxes: List[Box], iou_threshold: float = 0.35) -> List[Box]:
     return kept
 
 
-def _load_cascades() -> List:
+def _load_cascades(use_profile: bool = False) -> List:
     """Load available Haar cascades, tolerating a partial OpenCV install."""
     if not OPENCV_AVAILABLE or not hasattr(cv2, 'CascadeClassifier'):
         return []
@@ -405,8 +410,10 @@ def _load_cascades() -> List:
     if not base:
         return []
     cascades = []
-    for name in ('haarcascade_frontalface_default.xml',
-                 'haarcascade_profileface.xml'):
+    names = ['haarcascade_frontalface_default.xml']
+    if use_profile:
+        names.append('haarcascade_profileface.xml')
+    for name in names:
         path = os.path.join(base, name)
         if not os.path.exists(path):
             continue
@@ -419,8 +426,7 @@ def _load_cascades() -> List:
     return cascades
 
 
-def detect_faces_in_frame(frame, cascades: Sequence, min_size_ratio: float = 0.045
-                          ) -> List[Box]:
+def detect_faces_in_frame(frame, cascades: Sequence) -> List[Box]:
     """Detect faces in one BGR frame, in source pixels.
 
     Detection runs on a frame downscaled to ~640px wide (Haar cost grows with
@@ -442,12 +448,12 @@ def detect_faces_in_frame(frame, cascades: Sequence, min_size_ratio: float = 0.0
     gray = cv2.cvtColor(work, cv2.COLOR_BGR2GRAY)
     gray = cv2.equalizeHist(gray)      # helps a lot on dark/backlit footage
 
-    min_side = max(24, int(round(min(gray.shape[:2]) * float(min_size_ratio))))
+    min_side = max(24, int(round(min(gray.shape[:2]) * float(config.smart_min_size_ratio))))
     found: List[Box] = []
     for clf in cascades:
         try:
             rects = clf.detectMultiScale(
-                gray, scaleFactor=1.15, minNeighbors=6,
+                gray, scaleFactor=1.15, minNeighbors=config.smart_min_neighbors,
                 minSize=(min_side, min_side),
                 flags=getattr(cv2, 'CASCADE_SCALE_IMAGE', 0),
             )
@@ -455,13 +461,17 @@ def detect_faces_in_frame(frame, cascades: Sequence, min_size_ratio: float = 0.0
             logger.debug("detectMultiScale failed: %s", exc)
             continue
         for (x, y, w, h) in rects:
-            found.append(Box(x / scale, y / scale, w / scale, h / scale))
-
+            # Aspect-ratio filter: keep roughly square detections
+            if w == 0 or h == 0:
+                continue
+            aspect = w / float(h)
+            if 0.7 <= aspect <= 1.3:
+                found.append(Box(x / scale, y / scale, w / scale, h / scale))
     return _dedupe(found)
 
 
 def _cluster_tracks(per_frame: Sequence[List[Box]], src_w: int, src_h: int,
-                    tol: float = 0.16) -> List[Tuple[Box, int]]:
+                    tol: float = 0.16, max_size_variance: float = 0.3) -> List[Tuple[Box, int]]:
     """Group per-frame detections into persistent people.
 
     This replaces the old "average every detection together" step, which
@@ -469,6 +479,9 @@ def _cluster_tracks(per_frame: Sequence[List[Box]], src_w: int, src_h: int,
     to a track when their centre is within ``tol`` (as a fraction of frame
     width) of the track's running mean; each track then reports its mean box
     and how many frames it appeared in.
+
+    Additionally tracks are rejected if the size variance exceeds
+    ``max_size_variance`` (as fraction of mean size).
 
     Returns [(mean_box, frames_seen)], largest-presence first.
     """
@@ -490,7 +503,9 @@ def _cluster_tracks(per_frame: Sequence[List[Box]], src_w: int, src_h: int,
             if best is None:
                 tracks.append({
                     'cx': box.cx, 'cy': box.cy,
-                    'w': box.w, 'h': box.h, 'n': 1,
+                    'w': box.w, 'h': box.h,
+                    'w2': box.w * box.w, 'h2': box.h * box.h,
+                    'n': 1,
                 })
             else:
                 t = tracks[best]
@@ -500,11 +515,28 @@ def _cluster_tracks(per_frame: Sequence[List[Box]], src_w: int, src_h: int,
                 t['cy'] += (box.cy - t['cy']) / n
                 t['w'] += (box.w - t['w']) / n
                 t['h'] += (box.h - t['h']) / n
+                # Sum of squares for variance
+                t['w2'] += box.w * box.w
+                t['h2'] += box.h * box.h
                 t['n'] = n
                 used.add(best)
 
     out: List[Tuple[Box, int]] = []
     for t in tracks:
+        if t['n'] < 2:
+            # Too few samples to compute variance reliably; keep
+            pass
+        else:
+            # Compute variance of width and height
+            mean_w = t['w'] / t['n']
+            mean_h = t['h'] / t['n']
+            var_w = (t['w2'] / t['n']) - (mean_w * mean_w)
+            var_h = (t['h2'] / t['n']) - (mean_h * mean_h)
+            # Relative variance (standard deviation / mean)
+            rel_var_w = (var_w ** 0.5) / mean_w if mean_w != 0 else float('inf')
+            rel_var_h = (var_h ** 0.5) / mean_h if mean_h != 0 else float('inf')
+            if rel_var_w > config.smart_max_size_variance or rel_var_h > config.smart_max_size_variance:
+                continue  # reject this track due to size instability
         box = Box(t['cx'] - t['w'] / 2.0, t['cy'] - t['h'] / 2.0, t['w'], t['h'])
         out.append((box, int(t['n'])))
     out.sort(key=lambda pair: pair[1], reverse=True)
@@ -526,7 +558,7 @@ def analyse_people(video_path: str, start_time: float, end_time: float,
         logger.info("OpenCV not installed; smart framing unavailable")
         return [], 0, 0
 
-    cascades = _load_cascades()
+    cascades = _load_cascades(use_profile=config.smart_use_profile_cascade)
     if not cascades:
         logger.warning("No Haar cascade data found in this OpenCV install; "
                        "smart framing unavailable")
@@ -563,10 +595,12 @@ def analyse_people(video_path: str, start_time: float, end_time: float,
         logger.info("Smart framing: no frames could be sampled")
         return [], src_w, src_h
 
-    tracks = _cluster_tracks(per_frame, src_w, src_h)
+    tracks = _cluster_tracks(per_frame, src_w, src_h,
+                            tol=config.smart_track_tol,
+                            max_size_variance=config.smart_max_size_variance)
     frames = len(per_frame)
-    threshold = max(2, int(round(frames * float(min_presence))))
-    people = [box for box, seen in tracks if seen >= threshold][:max(1, int(max_people))]
+    threshold = max(2, int(round(frames * float(config.smart_min_presence))))
+    people = [box for box, seen in tracks if seen >= threshold][:max(1, int(config.smart_max_people))]
 
     logger.info(
         "Smart framing: %d frame(s) sampled, %d track(s), %d person(s) kept "
@@ -592,16 +626,35 @@ def build_smart_filters(video_path: str, start_time: float, end_time: float,
     found nobody -- in which case the caller should use a normal backdrop mode.
     """
     people, src_w, src_h = analyse_people(
-        video_path, start_time, end_time, samples=samples,
-        min_presence=min_presence, max_people=max_people,
+        video_path, start_time, end_time, samples=config.smart_samples,
+        min_presence=config.smart_min_presence, max_people=config.smart_max_people,
     )
     if not people or not src_w or not src_h:
         return None
 
     tiles = plan_layout(people, src_w, src_h, width=width, height=height,
-                        zoom=zoom, headroom=headroom, max_people=max_people)
+                        zoom=zoom, headroom=headroom, max_people=config.smart_max_people)
     if not tiles:
         return None
+
+    # Additional guard: if multiple tracks are too close horizontally,
+    # treat as single person (likely false duplicate).
+    if len(tiles) > 1:
+        centers = []
+        for tile in tiles:
+            cx = tile.crop.x + tile.crop.w / 2.0
+            centers.append(cx)
+        # Compute minimum horizontal distance between any two centers
+        min_dist = float('inf')
+        for i in range(len(centers)):
+            for j in range(i + 1, len(centers)):
+                dist = abs(centers[i] - centers[j])
+                if dist < min_dist:
+                    min_dist = dist
+        threshold_dist = 0.2 * src_w  # 20% of source width
+        if min_dist < threshold_dist:
+            # Collapse to single tile: pick the one with largest area
+            tiles = [max(tiles, key=lambda t: t.crop.w * t.crop.h)]
 
     filters, label = build_layout_filters(tiles, width=width, height=height,
                                           scaler=scaler)
