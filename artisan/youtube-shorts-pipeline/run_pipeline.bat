@@ -64,6 +64,7 @@ if "%choice%"=="4" goto upload_existing
 if "%choice%"=="5" goto library
 if "%choice%"=="6" goto test
 if "%choice%"=="7" goto set_background
+if "%choice%"=="8" goto main
 if "%choice%"=="9" goto set_caption
 if "%choice%"=="10" goto exit
 echo Invalid choice! Please try again.
@@ -144,7 +145,7 @@ echo.
 echo Select a downloaded video from the library:
 echo.
 rem Find all .info.json files in data\temp
-if not exist "%~dp0data\temp\*.info.json" (
+if not exist "%~dp0data\temp\*" (
     echo No downloaded videos found in data\temp.
     echo Please download a video first using option 2.
     pause
@@ -289,18 +290,20 @@ if not "%~1"=="" (
     cls
     echo.
     echo Set Background Mode
-    .
+    echo.
     echo Current BackgroundMode: %BACKGROUND_MODE%
-    .
+    echo.
+    echo 0. Back to Main Menu
     echo 1. crop      - Fill frame by cropping sides (default)
     echo 2. blur      - Blurred background bars
     echo 3. cheap     - Low-res blurred background (faster)
     echo 4. black     - Solid black bars
     echo 5. smart     - Person-aware cropping (face detection)
-    .
-    set /p bg_choice="Select background mode (1-5): "
+    echo.
+    set /p bg_choice="Select background mode (0-5): "
 )
 echo Debug: bg_choice=[%bg_choice%]
+if "%bg_choice%"=="0" goto main
 if "%bg_choice%"=="1" (
     set "new_mode=crop"
 ) else if "%bg_choice%"=="2" (
@@ -331,18 +334,20 @@ if not "%~1"=="" (
     cls
     echo.
     echo Set Caption Style
-    .
+    echo.
     echo Current CaptionStyle: %CAPTION_STYLE%
-    .
+    echo.
+    echo 0. Back to Main Menu
     echo 1. default   - Original Arial style (default)
     echo 2. hormozi   - Alex Hormozi style (bold, dynamic colors)
     echo 3. minimalist - Clean minimalist (sans-serif, white with shadow)
     echo 4. pop       - Pop & bounce (neon highlights, black outline)
     echo 5. kinetic   - Kinetic karaoke (word-by-word highlight)
-    .
-    set /p cap_choice="Select caption style (1-5): "
+    echo.
+    set /p cap_choice="Select caption style (0-5): "
 )
 echo Debug: cap_choice=[%cap_choice%]
+if "%cap_choice%"=="0" goto main
 if "%cap_choice%"=="1" (
     set "new_style=default"
 ) else if "%cap_choice%"=="2" (
