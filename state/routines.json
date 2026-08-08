@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786207220.706784,
+  "updated_at": 1786207822.497701,
   "routines": [
     {
       "name": "curate-skills",
@@ -77,11 +77,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786207211.8459744,
+      "last_run": 1786207813.57098,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     84\n  notes        8\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1786207519.2112718,
-      "runs": 289,
+      "next_run": 1786208120.9630861,
+      "runs": 290,
       "failures": 7
     },
     {
@@ -104,12 +104,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786207219.2220175,
+      "last_run": 1786207820.9661708,
       "last_status": "failed (1)",
       "last_output": "[x] vault clean, nothing to commit",
-      "next_run": 1786207520.7063863,
-      "runs": 284,
-      "failures": 47
+      "next_run": 1786208122.4974377,
+      "runs": 285,
+      "failures": 48
     },
     {
       "name": "memory-hygiene",
