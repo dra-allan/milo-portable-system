@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786149927.40028,
+  "updated_at": 1786150807.1287615,
   "routines": [
     {
       "name": "curate-skills",
@@ -22,11 +22,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0468326,
-      "last_run": 1786064409.4113426,
+      "last_run": 1786150806.8411167,
       "last_status": "ok",
-      "last_output": "------------------------------------------------------------------------------\n curator\n------------------------------------------------------------------------------\n  0 stale, 0 archived, 0 revived, 3 lint errors, 12 possible duplicates\n  !   ('3d-scene-developer', 'warn', 'description should end with a period')\n  !   ('accessibility-auditor', 'warn', 'description should end with a period')\n  !   ('account-strategist', 'warn', 'description should end with a period')\n  !   ('accounts-payable-agent', 'warn', 'description should end with a period')\n  !   ('ad-creative-strategist', 'warn', 'description should end with a period')\n  !   ('agentic-identity-trust-architect', 'warn', 'description should end with a period')\n  !   ('agents-orchestrator', 'warn', 'description should end with a period')\n  !   ('aging-parent-care-companion', 'warn', 'description should end with a period')\n  !   ('ai-engineer', 'warn', 'description should end with a period')\n  !   ('analytics-reporter', 'warn', 'description should end with a period')\n\n  ! 12 possible duplicate pair(s)\n    drupal-shopping-cart-engineer ~ wordpress-shopping-cart-engineer\n    data-visualization-engineer ~ webassembly-engineer\n    tiktok-strategist ~ zhihu-strategist\n    game-designer ~ narrative-designer\n    technical-artist ~ unreal-technical-artist\n  merge them: milo curate --merge",
-      "next_run": 1786150800.0,
-      "runs": 1,
+      "last_output": "curator not due yet",
+      "next_run": 1786237200.0,
+      "runs": 2,
       "failures": 0
     },
     {
@@ -77,11 +77,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786149908.0997708,
+      "last_run": 1786150506.8438134,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     71\n  notes        7\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786150223.154103,
-      "runs": 198,
+      "next_run": 1786150823.9326053,
+      "runs": 199,
       "failures": 7
     },
     {
@@ -104,11 +104,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786149923.1578186,
+      "last_run": 1786150523.9354944,
       "last_status": "ok",
       "last_output": "[ok] vault clean, nothing to commit",
-      "next_run": 1786150227.4000463,
-      "runs": 194,
+      "next_run": 1786150828.0965471,
+      "runs": 195,
       "failures": 25
     },
     {
