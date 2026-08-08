@@ -282,8 +282,18 @@ class Config:
         # A detection must appear in this fraction of sampled frames to count
         # as a person. This is the false-positive filter: Haar cascades fire on
         # background texture in isolated frames.
-        self.smart_min_presence = self._float('SMART_MIN_PRESENCE', 0.34,
+        self.smart_min_presence = self._float('SMART_MIN_PRESENCE', 0.40,
                                               minimum=0.0)
+        # Minimum size of a detection relative to the smaller side of the
+        # work frame (before scaling up). Higher values reject tiny false
+        # positives from texture.
+        self.smart_min_size_ratio = self._float('SMART_MIN_SIZE_RATIO', 0.08,
+                                                minimum=0.01)
+        # Minimum number of overlapping detections required to retain a
+        # candidate (higher = stricter).
+        self.smart_min_neighbors = self._int('SMART_MIN_NEIGHBORS', 8, minimum=1)
+        # Whether to also load the profile Haar cascade (often noisy).
+        self.smart_use_profile_cascade = self._bool('SMART_USE_PROFILE_CASCADE', False)
         # Cap on people given their own grid tile. Above 4 each tile is too
         # small to read on a phone.
         self.smart_max_people = self._int('SMART_MAX_PEOPLE', 4, minimum=1)
@@ -292,6 +302,14 @@ class Config:
         # How far below the face to place the framing centre, in face-heights.
         # 0 centres the face itself, which crops the body off.
         self.smart_headroom = self._float('SMART_HEADROOM', 0.55, minimum=0.0)
+        # Maximum allowed size variance for a track (as fraction of mean size).
+        # Prevents a single blob that grows/shrinks from being mistaken for a person.
+        self.smart_max_size_variance = self._float('SMART_MAX_SIZE_VARIANCE', 0.3,
+                                                   minimum=0.0, maximum=1.0)
+        # Tracking tolerance: maximum centre shift (as fraction of frame width)
+        # allowed between frames for a detection to be considered the same person.
+        self.smart_track_tol = self._float('SMART_TRACK_TOL', 0.12,
+                                           minimum=0.01, maximum=0.5)
         # Backdrop used when smart framing finds nobody.
         self.smart_fallback_mode = (os.getenv('SMART_FALLBACK_MODE') or 'cheap').lower()
         if self.smart_fallback_mode not in ('cheap', 'blur', 'black', 'crop'):
@@ -330,7 +348,7 @@ class Config:
         return value
 
     @staticmethod
-    def _float(name: str, default: float, minimum: float = None) -> float:
+    def _float(name: str, default: float, minimum: float = None, maximum: float = None) -> float:
         raw = os.getenv(name)
         if raw is None or str(raw).strip() == '':
             value = float(default)
@@ -342,6 +360,8 @@ class Config:
                 value = float(default)
         if minimum is not None and value < minimum:
             value = float(minimum)
+        if maximum is not None and value > maximum:
+            value = float(maximum)
         return value
 
     @staticmethod
