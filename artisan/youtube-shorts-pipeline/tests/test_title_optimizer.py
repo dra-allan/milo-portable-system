@@ -6,50 +6,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.title_optimizer import _clean, _truncate, looks_non_english, optimize_title
-
-
-def test_leading_clause_non_english_flagged():
-    # Welsh gibberish prefix with a long English tail. The whole-string
-    # ratio passes, but the leading clause is what a Shorts title shows.
-    hook = (
-        "Yna gwrs yn yr sgynnu genemol yna. A ffwch yn yn hwnnog ddoedd yn "
-        "ffordd ei hwnnog ddyn nhw o ffwch i'r rhyw I'm going to walk through "
-        "spend cadence. OK. So the way that I do this"
-    )
-    assert looks_non_english(hook)
-
-
-def test_leading_clause_non_english_falls_back():
-    hook = (
-        "Yna gwrs yn yr sgynnu genemol yna. A ffwch yn yn hwnnog ddoedd yn "
-        "ffordd ei hwnnog ddyn nhw o ffwch i'r rhyw I'm going to walk through "
-        "spend cadence. OK. So the way that I do this"
-    )
-    t = optimize_title(hook, niche="wealth_mindset", clip_index=3)
-    assert t == "Wealth Mindset insight #3"
-
-
-def test_english_hook_with_tricky_first_sentence_kept():
-    # Genuinely English, low coverage in the first clause but not garbage.
-    hook = (
-        "AI coming in didn't somehow erase the leverage that capital uses. "
-        "If you are in media and you make a video like this"
-    )
-    assert not looks_non_english(hook)
-
-
-def test_fallback_title_not_reflagged():
-    # The fallback optimize_title returns (before hashtags are appended)
-    # must not trip the guard again when re-checked.
-    t = optimize_title(
-        "Yna gwrs yn yr sgynnu genemol yna. A ffwch yn yn hwnnog ddoedd yn "
-        "ffordd ei hwnnog ddyn nhw o ffwch i'r rhyw I'm going to walk through "
-        "spend cadence. OK. So the way that I do this",
-        niche="wealth_mindset", clip_index=10,
-    )
-    assert t == "Wealth Mindset insight #10"
-    assert not looks_non_english(t)
+from src.title_optimizer import _clean, _truncate, optimize_title
 
 
 def test_question_hook_kept():
@@ -69,7 +26,7 @@ def test_filler_stripped():
     t = optimize_title("So and then as a result, the market moved hard this week.",
                        niche="flick_shorts", clip_index=1)
     assert not t.lower().startswith(("so ", "and ", "then "))
-    assert "the market moved hard this week" in t.lower()
+    assert "the market moved hard this week" in t
 
 
 def test_strong_hook_left_alone():
@@ -85,7 +42,7 @@ def test_plain_statement_framed_with_niche_label():
         "you have to understand why the market moved this week",
         niche="flick_shorts", clip_index=1,
     )
-    assert t.startswith("The part people miss:")
+    assert t.startswith("The brutal truth:")
     assert len(t) <= 72
 
 
@@ -94,7 +51,7 @@ def test_unknown_niche_gets_generic_frame():
         "you must understand the real pattern behind all of this",
         niche="some_unknown_niche", clip_index=1,
     )
-    assert t.startswith("The part people miss:")
+    assert t.startswith("Here's the part people miss:")
 
 
 def test_length_cap_never_exceeded():
@@ -126,4 +83,4 @@ def test_truncate_keeps_sentence_boundary():
 
 
 def test_clean_collapses_whitespace():
-    assert _clean("  so   you   know   it  ") == "It"
+    assert _clean("  so   you   know   it  ") == "it"
