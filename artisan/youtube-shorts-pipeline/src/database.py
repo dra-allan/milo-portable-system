@@ -358,3 +358,41 @@ class PipelineDatabase:
         except Exception as exc:
             logger.warning("Could not read performance summary: %s", exc)
         return out
+
+    def source_performance(self) -> Dict[str, Dict]:
+        """Per-source-channel clip performance from the feedback loop.
+
+        Aggregates the latest stats for every uploaded short grouped by the
+        source channel it was clipped from (``processed_videos.channel_id``
+        holds the configured source handle, e.g. ``@AlexHormozi``). This is
+        what lets discovery order sources: winners first, underperformers
+        soft-demoted. Shorts still climbing are counted at their last snapshot.
+        """
+        out: Dict[str, Dict] = {}
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """SELECT p.channel_id AS source_channel,
+                              COUNT(*) AS recorded,
+                              COALESCE(AVG(sp.views), 0) AS avg_views,
+                              COALESCE(MAX(sp.views), 0) AS max_views,
+                              SUM(CASE WHEN sp.views >= 200 THEN 1 ELSE 0 END) AS winners
+                       FROM short_performance sp
+                       JOIN generated_shorts g
+                         ON g.youtube_short_id = sp.youtube_short_id
+                       JOIN processed_videos p
+                         ON p.youtube_video_id = g.source_video_id
+                       WHERE p.channel_id != ''
+                       GROUP BY p.channel_id"""
+                ).fetchall()
+                for r in rows:
+                    out[r['source_channel']] = {
+                        'recorded': r['recorded'],
+                        'avg_views': round(r['avg_views'], 1),
+                        'max_views': r['max_views'],
+                        'winners': r['winners'],
+                    }
+        except Exception as exc:
+            logger.warning("Could not read source performance: %s", exc)
+        return out
+        return out

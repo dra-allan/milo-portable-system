@@ -5,7 +5,13 @@ expensive parts -- download, transcription, rendering -- are downstream and
 must never run on a video we already processed or that can't produce a usable
 clip. So discovery is a pure filter pipeline: fetch candidates per channel,
 drop placeholders, drop already-processed IDs, drop out-of-band durations,
-drop negative-keyword titles, then rank and slice to the budget.
+drop negative-keyword titles, drop below-threshold view counts, then rank and
+slice to the budget.
+
+Sources are also ranked from the performance feedback loop: a channel whose
+recent clips perform well is queried first, one that consistently underperforms
+is deprioritised (soft demotion) rather than dropped, so a slow start never
+kills a source outright but a proven winner gets fed first.
 """
 
 from dataclasses import dataclass, field
@@ -18,10 +24,32 @@ class DiscoveryResult:
     skipped_already_processed: List[str] = field(default_factory=list)
     skipped_duration: List[str] = field(default_factory=list)
     skipped_negative_keywords: List[str] = field(default_factory=list)
+    skipped_min_views: List[str] = field(default_factory=list)
     channels_queried: List[str] = field(default_factory=list)
 
 
-def discover_candidates(downloader, db, niche, max_videos: int, lookback: int) -> DiscoveryResult:
+def _source_rank(channels: List[str], source_performance: Dict[str, Dict]) -> List[str]:
+    """Order source channels: proven performers first, then untested, then
+    confirmed underperformers last (soft demotion).
+
+    ``source_performance`` maps a channel key to stats gathered from the
+    feedback loop (``recorded`` clips, ``avg_views``, ``last_views``). A
+    channel with no recorded clips yet keeps its natural position so new
+    sources still get discovered.
+    """
+    def order_key(channel: str):
+        info = (source_performance or {}).get(channel) or {}
+        if not info.get('recorded'):
+            # Untested: middle band, stable within group order.
+            return (1, 0, channel)
+        avg = float(info.get('avg_views') or 0)
+        return (0 if avg >= 200 else 2, -avg, channel)
+
+    return sorted(channels, key=order_key)
+
+
+def discover_candidates(downloader, db, niche, max_videos: int, lookback: int,
+                        source_performance: Dict[str, Dict] = None) -> DiscoveryResult:
     """Return the videos a scheduled run should process for `niche`.
 
     Args:
@@ -32,12 +60,15 @@ def discover_candidates(downloader, db, niche, max_videos: int, lookback: int) -
         max_videos: how many videos to keep for the run.
         lookback: how many recent videos to pull per channel before filtering
             (must be >= max_videos so dedup can't starve the result).
+        source_performance: optional dict of channel key -> stats from the
+            feedback loop; used to order source channels (winners first).
     """
     from .config import config
 
     cfg = config.get_niche_config(niche)
     channels = [c for c in (cfg.get('channels') or [])
                 if c and not str(c).startswith('UCXXXXX')]
+    channels = _source_rank(channels, source_performance or {})
 
     result = DiscoveryResult()
     lookback = max(lookback, max_videos)
@@ -74,6 +105,16 @@ def discover_candidates(downloader, db, niche, max_videos: int, lookback: int) -
                 result.skipped_negative_keywords.append(vid)
                 continue
 
+            # View-count gate: only clip from sources the algorithm already
+            # proved. view_count comes back from the flat listing, so this
+            # costs nothing extra. 0 = gate disabled.
+            min_views = int(cfg.get('min_views') or 0)
+            if min_views and (entry.get('view_count') or 0) < min_views:
+                result.skipped_min_views.append(vid)
+                continue
+
+            entry = dict(entry)
+            entry['_source_channel'] = channel
             result.candidates.append(entry)
 
     return result
