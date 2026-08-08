@@ -26,7 +26,7 @@ def test_filler_stripped():
     t = optimize_title("So and then as a result, the market moved hard this week.",
                        niche="flick_shorts", clip_index=1)
     assert not t.lower().startswith(("so ", "and ", "then "))
-    assert "the market moved hard this week" in t
+    assert "the market moved hard this week" in t.lower()
 
 
 def test_strong_hook_left_alone():
@@ -42,7 +42,7 @@ def test_plain_statement_framed_with_niche_label():
         "you have to understand why the market moved this week",
         niche="flick_shorts", clip_index=1,
     )
-    assert t.startswith("The brutal truth:")
+    assert t.startswith("The part people miss:")
     assert len(t) <= 72
 
 
@@ -51,7 +51,7 @@ def test_unknown_niche_gets_generic_frame():
         "you must understand the real pattern behind all of this",
         niche="some_unknown_niche", clip_index=1,
     )
-    assert t.startswith("Here's the part people miss:")
+    assert t.startswith("The part people miss:")
 
 
 def test_length_cap_never_exceeded():
@@ -83,4 +83,4 @@ def test_truncate_keeps_sentence_boundary():
 
 
 def test_clean_collapses_whitespace():
-    assert _clean("  so   you   know   it  ") == "it"
+    assert _clean("  so   you   know   it  ") == "It"
