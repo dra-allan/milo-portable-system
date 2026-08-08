@@ -1,0 +1,18 @@
+[Unit]
+Description=YouTube Shorts pipeline scheduler (discover -> transcribe -> render -> upload)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__PIPELINE_ROOT__
+Environment=PATH=__PIPELINE_ROOT__/venv/bin:%(h)s/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=__PIPELINE_ROOT__/venv/bin/python -m src.main --mode schedule
+Restart=on-failure
+RestartSec=30
+# Long-running; cap memory in case a runaway Whisper pass leaks.
+MemoryMax=4G
+PrivateTmp=false
+
+[Install]
+WantedBy=default.target
