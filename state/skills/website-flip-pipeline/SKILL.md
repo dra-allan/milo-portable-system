@@ -8,7 +8,7 @@ origin: learned
 lifecycle: active
 pinned: true
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-08
 ---
 # Website Flip Pipeline
 
@@ -39,6 +39,7 @@ sent + prospect logged to memory.
 - Prospect sheet: `C:\Users\user\milo-workspace\website-flip\prospects\`
 - Outreach log: `C:\Users\user\milo-workspace\website-flip\outreach\`
 - Demo sites: `C:\Users\user\milo-workspace\website-flip\sites\<slug>\`
+- Pexels key: `PEXELS_API_KEY` in `C:\Users\user\Desktop\Milo Workspace\website-flip\.env`
 - Verify business: Idaho SOS `https://sosbiz.idaho.gov/search` (JS-rendered) or
   `https://www.buildzoom.com` search (reliable, shows license + permit counts)
 - Find contact email: business Facebook page `.../posts/` (strips auth wall, page
@@ -61,6 +62,9 @@ sent + prospect logged to memory.
    high-end-visual-design) and follow the marketing vault copy rules — NEVER
    write em-dashes in the copy (they read as AI); use commas/parentheses.
    Wire the estimate/contact form to the business's REAL email if found.
+   **Design is a HARD RULE:** real Pexels photos per trade (key in
+   `website-flip\.env`), ZERO picsum, and each site in a batch must have a
+   distinct layout. See HARD RULES below.
 5. **Polish (the things that sell it):**
    - hero image must stretch to match the text column (`align-items: stretch`
      on the row + `height:100%` on the img, mobile fallback `aspect-ratio`)
@@ -87,10 +91,50 @@ sent + prospect logged to memory.
 10. **Remember.** `milo remember` the sent email + thread + follow-up date
     (~3-4 days out, one follow-up max).
 
+## HARD RULES (never skip, ALLAN VERDICT 2026-08-08)
+These override everything. Violating either = a rejected batch and a wasted
+deploy cycle. They apply to ANY model or agent running Milo, in any session.
+
+1. **REAL PHOTOS ONLY. ZERO PICSUM.**
+   - Every image on a demo site MUST be a real, on-topic Pexels photo.
+   - `picsum.photos` (and any other placeholder service) is BANNED. The
+     business is being shown a finished product; a placeholder reads as
+     unfinished and kills the sale.
+   - Pexels key: read `PEXELS_API_KEY` from
+     `C:\Users\user\Desktop\Milo Workspace\website-flip\.env`.
+   - Photos must match the TRADE: electrician sites use electrician/panel
+     photos, landscapers use lawn/garden photos, painters use roller/wall
+     photos, plumbers use pipe/sink photos. Generic or mismatched stock is
+     still wrong.
+   - Fetch by keyword, pick landscape-orientation shots that fit hero/bento/
+     gallery slots, then hard-code the `images.pexels.com` URLs into the HTML.
+
+2. **NO CLONE TEMPLATES. Every site in a batch must be structurally distinct.**
+   - Reusing ONE template and just swapping the accent color or brand name is
+     a FAIL. Allan called this out on the Eagle ID batch: "the sites you build
+     are the same".
+   - Vary the layout per site: bento grid, split hero, centered hero + swatch
+     bar, asymmetric hero + stacked images, feature-row lists, photo grids,
+     marquees, different section ORDER. Change structure, not just color.
+   - Shared base CSS (tokens, nav, buttons, reveal) is fine and expected; the
+     BODY LAYOUT and hero treatment must differ meaningfully per site.
+
+## Verification GATE (run BEFORE deploy, and again on the live URL)
+1. `picsum` count == 0 in the generated HTML.
+2. `images.pexels.com` count >= 5 per site.
+3. Each site in the batch has a DIFFERENT hero section class and a different
+   primary layout section (compare across the batch, not just one site).
+4. Inline JS parses: extract `<script>...</script>`, run `node --check`.
+   (Use RAW string templates in any generator so backslash-n survives Python.)
+Only after all four pass, push to GitHub Pages.
+
 ## Pitfalls
 - Sending is irreversible — verify the recipient address before the send call.
 - GitHub Pages silently no-ops on the first push; the empty-commit push is
   mandatory or the site 404s.
+- A `TEMPLATE = """` (non-raw) triple-quoted string with `\n` inside a JS
+  mailto body converts to real newlines and throws a SyntaxError in the page;
+  always write templates as RAW strings (`r"""`).
 - Bizapedia = captcha. SOSBiz = JS-rendered DOM. Don't waste time scraping
   either; use BuildZoom.
 - Facebook `/posts/` trick only reveals the page ID, not the email — click
