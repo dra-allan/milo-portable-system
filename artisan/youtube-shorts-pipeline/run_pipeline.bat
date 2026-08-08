@@ -11,24 +11,25 @@ if exist .env (
 
 :: If arguments are provided, skip the menu and go directly to the selected option
 if not "%~1"=="" (
-    if "%~1"=="1" goto test
+    if "%~1"=="1" goto full_sweep
     if "%~1"=="2" goto url
     if "%~1"=="3" goto schedule
-    if "%~1"=="4" goto library
-    if "%~1"=="5" (
+    if "%~1"=="4" goto upload_existing
+    if "%~1"=="5" goto library
+    if "%~1"=="6" goto test
+    if "%~1"=="7" (
         call :set_background %~2
         shift
         shift
         goto main
     )
-    if "%~1"=="6" (
+    if "%~1"=="9" (
         call :set_caption %~2
         shift
         shift
         goto main
     )
-    if "%~1"=="7" goto upload_existing
-    if "%~1"=="8" goto exit
+    if "%~1"=="10" goto exit
     echo Invalid option: %~1
     pause
     goto main
@@ -44,26 +45,49 @@ echo.
 echo Current BackgroundMode: %BACKGROUND_MODE%
 echo Current CaptionStyle:   %CAPTION_STYLE%
 echo.
-echo 1. Run in Test Mode (check components)
-echo 2. Process a YouTube URL/Video ID
-echo 3. Run in Scheduled Mode (9AM, 2PM, 7PM daily)
-echo 4. Process from Library (downloaded videos)
-echo 5. Set BackgroundMode
-echo 6. Set CaptionStyle
-echo 7. Upload Existing Local Shorts
-echo 8. Exit
+echo  1. Run Full Sweep Now (auto-discover ^& process all niches)
+echo  2. Process a YouTube URL/Video ID
+echo  3. Run in Scheduled Mode (9AM, 2PM, 7PM daily)
+echo  4. Upload Existing Local Shorts
+echo  5. Process from Library (downloaded videos)
+echo  6. Run in Test Mode (check components)
+echo  7. Set BackgroundMode
+echo  8. (reserved)
+echo  9. Set CaptionStyle
+echo 10. Exit
 echo.
-set /p choice="Select an option (1-8): "
-if "%choice%"=="1" goto test
+set /p choice="Select an option (1-10): "
+if "%choice%"=="1" goto full_sweep
 if "%choice%"=="2" goto url
 if "%choice%"=="3" goto schedule
-if "%choice%"=="4" goto library
-if "%choice%"=="5" goto set_background
-if "%choice%"=="6" goto set_caption
-if "%choice%"=="7" goto upload_existing
-if "%choice%"=="8" goto exit
+if "%choice%"=="4" goto upload_existing
+if "%choice%"=="5" goto library
+if "%choice%"=="6" goto test
+if "%choice%"=="7" goto set_background
+if "%choice%"=="9" goto set_caption
+if "%choice%"=="10" goto exit
 echo Invalid choice! Please try again.
 timeout /t 2 > nul
+goto main
+
+:full_sweep
+cls
+echo.
+echo ================================================================
+echo           Run Full Sweep Now
+echo ================================================================
+echo.
+echo This runs one complete automated sweep across all niches:
+echo  - Discovers new videos from each niche's source channels
+echo  - Downloads, transcribes, finds highlights, renders Shorts
+echo  - Uploads to YouTube (if enabled^)
+echo  - Respects per-niche caps and backlog-first logic
+echo.
+echo Press Ctrl+C at any time to cancel.
+echo.
+call venv\Scripts\activate
+python -m src.main --mode once
+pause
 goto main
 
 :test
