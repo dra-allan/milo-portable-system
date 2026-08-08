@@ -88,6 +88,8 @@ echo Press Ctrl+C at any time to cancel.
 echo.
 call venv\Scripts\activate
 python -m src.main --mode once
+echo.
+echo Pipeline execution completed.
 pause
 goto main
 
@@ -98,6 +100,8 @@ echo Running in Test Mode...
 echo.
 call venv\Scripts\activate
 python -m src.main --mode test
+echo.
+echo Test mode completed.
 pause
 goto main
 
@@ -124,6 +128,8 @@ if "%niche%"=="" (
     call venv\Scripts\activate
     python -m src.main --mode once "%url%" --niche "%niche%" %FORCE_FLAG%
 )
+echo.
+echo URL processing completed.
 pause
 goto main
 
@@ -136,6 +142,8 @@ echo Press Ctrl+C to stop the scheduler
 echo.
 call venv\Scripts\activate
 python -m src.main --mode schedule
+echo.
+echo Scheduler stopped.
 pause
 goto main
 
@@ -148,6 +156,7 @@ rem Find all .info.json files in data\temp
 if not exist "%~dp0data\temp\*" (
     echo No downloaded videos found in data\temp.
     echo Please download a video first using option 2.
+    echo.
     pause
     goto main
 )
@@ -182,17 +191,18 @@ for /f "delims=" %%v in ('powershell -NoProfile -Command "& {
     # Output selected ID for batch to capture
     Write-Host 'SELECTED_ID:' $videoId
     Write-Host 'SELECTED_TITLE:' $title
-}' 2^>nul') do (
+}" 2^>nul') do (
     if "%%v"=="SELECTED_ID:" set "VIDEOFIXED=%%w"
     if "%%v"=="SELECTED_TITLE:" set "VIDEOTITLE=%%w"
 )
+rem Check if we got a selection
 if not defined VIDEOFIXED (
     echo.
     echo Selection cancelled or error.
+    echo.
     pause
     goto main
 )
-
 echo.
 echo Selected video ID: %VIDEOFIXED%
 echo.
@@ -204,6 +214,8 @@ if "%niche%"=="" (
     call venv\Scripts\activate
     python -m src.main --mode once "%VIDEOFIXED%" --niche "%niche%"
 )
+echo.
+echo Library processing completed.
 pause
 goto main
 
@@ -241,6 +253,8 @@ echo which clips to post (e.g. "1,2,4-6" or "all").
 echo.
 call venv\Scripts\activate
 python -m src.main --mode upload-existing --interactive
+echo.
+echo Interactive upload completed.
 pause
 goto upload_existing
 
@@ -250,11 +264,14 @@ echo.
 set /p niche="Enter niche name (e.g., flick_shorts, capital_mindset): "
 if "%niche%"=="" (
     echo Niche name is required.
+    echo.
     pause
     goto upload_existing
 )
 call venv\Scripts\activate
 python -m src.main --mode upload-existing --niche "%niche%"
+echo.
+echo Niche upload completed.
 pause
 goto upload_existing
 
@@ -264,11 +281,14 @@ echo.
 set /p channel="Enter channel key (e.g., flick_shorts, capital_mindset): "
 if "%channel%"=="" (
     echo Channel key is required.
+    echo.
     pause
     goto upload_existing
 )
 call venv\Scripts\activate
 python -m src.main --mode upload-existing --channel "%channel%"
+echo.
+echo Channel upload completed.
 pause
 goto upload_existing
 
@@ -279,6 +299,8 @@ echo Uploading all pending shorts (respects UPLOAD_MAX_PER_RUN limit)...
 echo.
 call venv\Scripts\activate
 python -m src.main --mode upload-existing
+echo.
+echo All pending uploads completed.
 pause
 goto upload_existing
 
@@ -316,6 +338,7 @@ if "%bg_choice%"=="1" (
     set "new_mode=smart"
 ) else (
     echo Invalid choice!
+    echo.
     pause
     goto set_background
 )
@@ -323,6 +346,7 @@ if "%bg_choice%"=="1" (
 call :update_env BACKGROUND_MODE %new_mode%
 set "BACKGROUND_MODE=%new_mode%"
 echo Background mode set to %BACKGROUND_MODE%
+echo.
 pause
 goto main
 
@@ -360,6 +384,7 @@ if "%cap_choice%"=="1" (
     set "new_style=kinetic"
 ) else (
     echo Invalid choice!
+    echo.
     pause
     goto set_caption
 )
@@ -367,6 +392,7 @@ if "%cap_choice%"=="1" (
 call :update_env CAPTION_STYLE %new_style%
 set "CAPTION_STYLE=%new_style%"
 echo Caption style set to %CAPTION_STYLE%
+echo.
 pause
 goto main
 
