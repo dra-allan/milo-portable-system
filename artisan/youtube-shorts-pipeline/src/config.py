@@ -84,6 +84,14 @@ class Config:
                 self.max_segment_length, self.min_segment_length
             )
         self.max_clips_per_video = self._int('MAX_CLIPS_PER_VIDEO', 5, minimum=1)
+        # Cap for sources the feedback loop has proven (avg views >= 200). A
+        # winning channel gets more clips per pull than a first-timer, so the
+        # expensive download/transcribe pays off more often.
+        self.max_clips_per_video_winner = self._int(
+            'MAX_CLIPS_PER_VIDEO_WINNER', 8, minimum=1
+        )
+        # 200+ avg views = proven winner (matches discovery._source_rank).
+        self.winner_avg_views = self._int('WINNER_AVG_VIEWS', 200, minimum=0)
         self.min_gap_between_clips = self._int('MIN_GAP_BETWEEN_CLIPS', 30, minimum=0)
 
         # --- Whisper -----------------------------------------------------
@@ -195,6 +203,16 @@ class Config:
         # 0 = unlimited (per-niche caps rule). Default matches the upload
         # quota reality: ~6 uploads/day.
         self.schedule_max_total = self._int('SCHEDULE_MAX_TOTAL', 6, minimum=0)
+        # Pull-once model (Allan's design): a sweep that already has un-uploaded
+        # clips for a niche should POST those instead of pulling+downloading a
+        # new source. Only pull again when the clip supply runs out. This is
+        # what turns "3 downloads a day" into "1 download, posted all day".
+        self.schedule_backlog_first = self._bool('SCHEDULE_BACKLOG_FIRST', True)
+        # A niche's clip supply is considered exhausted when fewer than this
+        # many un-uploaded clips remain (default 1 = pull only when nothing is
+        # left to post). Lower = re-pull sooner, higher = keep pulling while
+        # anything remains posted.
+        self.schedule_backlog_min = self._int('SCHEDULE_BACKLOG_MIN', 1, minimum=0)
 
         # --- Upload pacing (anti-burst) ----------------------------------
         # Random delay in seconds between successive uploads in the same run,
