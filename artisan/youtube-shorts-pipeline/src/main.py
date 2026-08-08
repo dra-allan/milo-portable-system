@@ -472,13 +472,28 @@ class ShortsPipeline:
 
             # -- 3. find highlights ----------------------------------------
             logger.info("Step 3/6: Finding highlight segments")
+            # Winners (proven by the feedback loop) get a deeper render cap than
+            # first-timers: the download/transcribe is already paid for, so more
+            # clips from the same source is pure margin. The deep plan is still
+            # capped by MAX_CANDIDATES regardless of which cap applies.
+            clip_cap = self.config.max_clips_per_video
+            if source_channel:
+                perf = (self.db.source_performance() or {}).get(source_channel) or {}
+                if perf.get('recorded') and float(perf.get('avg_views') or 0) >= \
+                        self.config.winner_avg_views:
+                    clip_cap = max(clip_cap, self.config.max_clips_per_video_winner)
+                    logger.info(
+                        "Source '%s' is a proven winner (avg %.0f views) -- "
+                        "raising clip cap to %d",
+                        source_channel, float(perf.get('avg_views') or 0), clip_cap,
+                    )
             highlights = self.processor.find_highlight_segments(
                 transcript,
                 niche_keywords=niche_keywords,
                 min_segment_length=self.config.min_segment_length,
                 max_segment_length=self.config.max_segment_length,
                 min_gap_between=self.config.min_gap_between_clips,
-                max_clips=self.config.max_clips_per_video,
+                max_clips=clip_cap,
                 max_candidates=getattr(self.config, 'max_candidates', None),
                 min_score=float(niche_config.get('min_score') or 0.0),
             )
@@ -1477,15 +1492,142 @@ def _interactive_pick_shorts(pipeline, clips, upload_limit: int) -> List[Dict]:
             print("Couldn't read that. Try e.g. '1,2,4-6', 'all', or 'q'.")
 
 
+def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
+                                count: int, force: bool = False,
+                                args=None) -> int:
+    """Render N additional clips from a saved clip plan.
+
+    This is the real ``--render-more`` path: it loads the deep ranked plan
+    cached after transcription, skips every candidate that already has a
+    rendered clip (so a mid-render crash is resumed, not redone), renders the
+    next N in rank order, records them, and uploads them. It never downloads
+    and never re-transcribes: both are already on disk.
+    """
+    plan = pipeline.load_clip_plan(video_id)
+    if not plan:
+        logger.error(
+            "No cached clip plan for %s. Run the pipeline on it once first "
+            "(or --force) so a deep plan is written.", video_id
+        )
+        return 1
+    candidates = plan.get('candidates') or []
+    if not candidates:
+        logger.error("Clip plan for %s has no candidates", video_id)
+        return 1
+    done = pipeline.db.rendered_segment_indices(video_id)
+    # segment_index in the DB is the 1-based position in the candidates list.
+    remaining = [(i + 1, c) for i, c in enumerate(candidates)
+                 if (i + 1) not in done]
+    if not remaining:
+        logger.info("Video %s: all %d planned clips already rendered -- nothing to do",
+                    video_id, len(candidates))
+        return 0
+
+    picks = remaining[:count] if count > 0 else remaining
+    logger.info(
+        "Render-more: %d candidate(s) remain, %d already rendered, rendering %d more",
+        len(remaining), len(candidates) - len(remaining), len(picks),
+    )
+
+    video_path = pipeline.downloader.find_local_video(video_id)
+    if not video_path:
+        logger.error(
+            "No local copy of %s. --render-more never downloads; re-run the "
+            "pipeline on the video so its download is restored.", video_id
+        )
+        return 1
+    transcript = pipeline.load_cached_transcript(video_id)
+    if not transcript:
+        logger.error(
+            "No cached transcript for %s. --render-more never re-transcribes; "
+            "re-run the pipeline on the video once to rebuild it.", video_id
+        )
+        return 1
+
+    title = plan.get('title') or video_id
+    niche = plan.get('niche') or guess_niche({'title': title})
+    niche_keywords = plan.get('niche_keywords') or []
+    safe_title = sanitize_filename(title) or video_id
+    shorts_dir = Path(config.shorts_dir) / niche / safe_title
+    shorts_dir.mkdir(parents=True, exist_ok=True)
+
+    created: List[Dict] = []
+    for seg_index, highlight in picks:
+        hook_text = (highlight.get('text') or '').strip()
+        safe_hook = sanitize_filename(hook_text) if hook_text else f"clip{seg_index}"
+        if len(safe_hook) > 50:
+            safe_hook = safe_hook[:50]
+        output_path = str(shorts_dir / f"{seg_index:02d}_{safe_hook}.mp4")
+        existing = Path(output_path)
+        if not force and existing.exists() and existing.stat().st_size > 64 * 1024:
+            logger.info("Resume: clip %d already rendered -- skipping", seg_index)
+            created.append({'index': seg_index, 'path': output_path, 'highlight': highlight})
+            pipeline.db.record_short(
+                video_id, seg_index, highlight['start'], highlight['end'],
+                title=title, local_path=output_path, score=highlight.get('score'),
+            )
+            continue
+
+        logger.info(
+            "Rendering clip %d: %.1f-%.1fs (score %.2f)",
+            seg_index, highlight['start'], highlight['end'],
+            highlight.get('score', 0.0),
+        )
+        clip_transcript = [
+            seg for seg in transcript
+            if not (seg['end'] <= highlight['start']
+                    or seg['start'] >= highlight['end'])
+        ]
+        ok = pipeline.video_editor.create_short_from_segment(
+            video_path=str(video_path),
+            start_time=highlight['start'],
+            end_time=highlight['end'],
+            transcript_segments=clip_transcript,
+            output_path=output_path,
+            add_branding=False,
+        )
+        if not ok or not Path(output_path).exists():
+            logger.error("Failed to create clip %d", seg_index)
+            pipeline.stats['errors'] += 1
+            continue
+
+        pipeline.stats['shorts_created'] += 1
+        created.append({'index': seg_index, 'path': output_path, 'highlight': highlight})
+        pipeline.db.record_short(
+            video_id, seg_index, highlight['start'], highlight['end'],
+            title=title, local_path=output_path, score=highlight.get('score'),
+        )
+
+    if not created:
+        logger.error("No clips could be rendered from the plan for %s", video_id)
+        return 1
+
+    if pipeline.upload_enabled:
+        logger.info("Uploading %d render-more Shorts", len(created))
+        pipeline._upload_clips(created, video_id, niche, niche_keywords)
+    else:
+        logger.info("Upload disabled; %d render-more clips kept locally.", len(created))
+    pipeline.stats['videos_processed'] += 1
+    return 0
+
+
 def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
                            count: int, force: bool = False, args=None) -> int:
     """List (and optionally process) videos already downloaded to data/temp.
 
-    This is the resume entry point: it never downloads. run_pipeline.bat's
-    "Process from Library" option used to shell out to a fragile inline
-    PowerShell script that parsed .info.json files by hand; this replaces it
-    with a real code path.
+    Two entry points share this function:
+
+    * ``--mode library`` (count=0): the interactive library browser -- lists
+      every downloaded video and lets the user pick one to process.
+    * ``--render-more N`` (count>0): replays the saved clip plan for the target
+      video and renders N more clips with zero re-download / re-transcribe.
+
+    The library path never downloads; it was written to replace run_pipeline.bat's
+    fragile inline PowerShell that parsed .info.json files by hand.
     """
+    if count > 0:
+        return _render_more_from_clip_plan(pipeline, video_id, count, force, args)
+
     entries = pipeline.downloader.list_library()
     if not entries:
         print(f"No downloaded videos found in {config.temp_dir}")
@@ -1549,18 +1691,116 @@ def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
     return 0 if stats['videos_processed'] > 0 else 1
 
 
+def _niche_backlog_supply(pipeline: 'ShortsPipeline', niche: str) -> List[Dict]:
+    """Un-uploaded, on-disk clips for a niche (oldest first).
+
+    Used by the pull-once scheme: if a niche still has clips waiting to post,
+    the sweep should spend its uploads on those instead of downloading and
+    clipping yet another source video. Clips whose file vanished are excluded
+    so a missing file can't keep a niche 'supplied' forever.
+    """
+    try:
+        rows = pipeline.db.unuploaded_shorts(limit=100)
+    except AttributeError:
+        return []
+    return [r for r in rows
+            if (r.get('niche') or '') == niche and r.get('local_path')
+            and Path(r['local_path']).exists()]
+
+
+def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int) -> int:
+    """Post up to ``cap`` un-uploaded clips for a niche, oldest first.
+
+    Mirrors ``_upload_existing_shorts`` but scoped to one niche and called by
+    the scheduler instead of the CLI. Returns how many clips uploaded. Quota
+    errors abort the run (the clips stay on disk and are retried later).
+    """
+    channel = config.get_niche_channel(niche)
+    authed = config.authenticated_channels()
+    if not channel or (channel not in authed and authed):
+        return 0
+    try:
+        uploader = pipeline._uploader_for_channel(channel)
+    except Exception as exc:
+        logger.error("Cannot start uploader for channel '%s': %s", channel, exc)
+        return 0
+
+    clips = _niche_backlog_supply(pipeline, niche)[:cap]
+    if not clips:
+        return 0
+    uploaded = 0
+    for clip in clips:
+        source_video_id = clip['source_video_id']
+        segment_index = clip['segment_index']
+        local_path = clip['local_path']
+        clip_niche = clip.get('niche') or niche
+        keywords = (config.get_niche_config(clip_niche)
+                    .get('keywords', [])) if clip_niche else []
+
+        if uploaded and config.upload_pacing_max:
+            delay = random.uniform(config.upload_pacing_min, config.upload_pacing_max)
+            logger.info("Pacing: waiting %.0f-%.0fs before next upload",
+                        config.upload_pacing_min, delay)
+            time.sleep(delay)
+
+        hook = (clip.get('title') or '').strip().replace('\n', ' ')
+        short_title = pipeline._generate_unique_title(hook, clip_niche, segment_index)
+        description = (
+            f"Full video: https://youtube.com/watch?v={source_video_id}\n\n"
+            f"Follow for more {clip_niche} content!\n"
+            f"#Shorts #{clip_niche} "
+            + ' '.join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
+        )
+        tags = [clip_niche, 'Shorts'] + [kw for kw in keywords[:10] if kw]
+        try:
+            short_id = uploader.upload_short(
+                video_path=local_path, title=short_title,
+                description=description, tags=tags,
+            )
+        except Exception as exc:
+            err_str = str(exc).lower()
+            if 'quota' in err_str or '403' in err_str or 'rate' in err_str:
+                logger.error("YouTube quota/rate limit hit draining backlog: %s", exc)
+                break
+            logger.error("Backlog upload failed for %s#%s: %s",
+                         source_video_id, segment_index, exc)
+            continue
+        if short_id:
+            pipeline.stats['shorts_uploaded'] += 1
+            uploaded += 1
+            pipeline.db.mark_short_uploaded(source_video_id, segment_index, short_id)
+            try:
+                stats = uploader.fetch_statistics(short_id)
+                if stats:
+                    pipeline.db.record_performance(
+                        short_id, source_video_id, segment_index,
+                        views=stats['views'], likes=stats['likes'],
+                        comments=stats['comments'], favorites=stats['favorites'],
+                    )
+            except Exception as exc:
+                logger.warning("Could not snapshot stats for %s: %s", short_id, exc)
+        else:
+            logger.error("Backlog upload failed for %s#%s (kept locally)",
+                         source_video_id, segment_index)
+    logger.info("Backlog drain: %d/%d clip(s) uploaded for niche '%s'",
+                uploaded, len(clips), niche)
+    return uploaded
+
+
 def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
     """Run every channel-bound niche up to per-niche and per-sweep budgets.
 
-    Each niche gets its own cap (its ``max_videos:`` in niches.yaml, falling
-    back to SCHEDULE_MAX_VIDEOS) so a busy niche can't starve the others. The
-    whole sweep is still clamped by SCHEDULE_MAX_TOTAL so a stack of hungry
-    niches can't trigger 20 download cycles in one run. Niches without an
-    authenticated upload channel are skipped inside run_niche (they can't
-    publish).
+    Pull-once model: each niche first checks its un-uploaded clip supply. If
+    there are clips waiting (SCHEDULE_BACKLOG_FIRST, default on), the sweep
+    posts those instead of downloading a fresh source video -- so the morning
+    pull's clips drip out across the afternoon and evening sweeps, and a new
+    video is only pulled once the supply runs out. Niches with no authenticated
+    upload channel are skipped inside run_niche (they can't publish).
     """
     per_niche_default = getattr(config, 'schedule_max_videos', 3)
     total_budget = getattr(config, 'schedule_max_total', 0)
+    backlog_first = getattr(config, 'schedule_backlog_first', True)
+    backlog_min = max(1, getattr(config, 'schedule_backlog_min', 1) or 1)
     niches = [args.niche] if args.niche else config.niche_names()
     if not niches:
         logger.error("No niches configured and no video specified. Nothing to do.")
@@ -1577,6 +1817,21 @@ def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
             logger.info("Scheduled sweep total budget (%d videos) exhausted",
                         total_budget)
             break
+
+        # Pull-once: if a niche still has clips to post, drain them instead of
+        # pulling another video. The cap here is the per-run video cap, but the
+        # backlog drain posts clips -- so cap it by upload_max_per_run too.
+        if backlog_first and pipeline.upload_enabled:
+            supply = _niche_backlog_supply(pipeline, niche)
+            if len(supply) >= backlog_min:
+                logger.info(
+                    "Niche '%s': %d clip(s) already waiting to post -- "
+                    "skipping pull, draining backlog (pull-once)",
+                    niche, len(supply),
+                )
+                _upload_backlog_supply(pipeline, niche, config.upload_max_per_run)
+                continue
+
         logger.info("Niche '%s': per-run cap %d video(s)", niche, cap)
         started = pipeline.run_niche(niche, max_videos=cap)
         started_total += started

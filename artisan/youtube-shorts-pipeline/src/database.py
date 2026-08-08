@@ -196,6 +196,26 @@ class PipelineDatabase:
         except Exception as exc:
             logger.warning("Could not mark short uploaded: %s", exc)
 
+    def rendered_segment_indices(self, source_video_id: str) -> set:
+        """Which 1-based segment indices already have a generated_short row.
+
+        Used by ``--render-more`` so it can resume from the next unrendered
+        clip in a cached plan instead of re-rendering (or skipping) clips that
+        already exist on disk.
+        """
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT segment_index FROM generated_shorts "
+                    "WHERE source_video_id = ?",
+                    (source_video_id,),
+                ).fetchall()
+            return {int(r[0]) for r in rows}
+        except Exception as exc:
+            logger.warning("Could not read rendered segments for %s: %s",
+                           source_video_id, exc)
+            return set()
+
     def stats(self) -> Dict[str, int]:
         out = {'processed_videos': 0, 'generated_shorts': 0, 'uploaded_shorts': 0}
         try:
