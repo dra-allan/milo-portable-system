@@ -52,9 +52,10 @@ class FakeDownloader:
 
 
 class FakeDB:
-    def __init__(self, processed_ids=()):
+    def __init__(self, processed_ids=(), unuploaded=()):
         self.processed = set(processed_ids)
         self.recorded = []
+        self.unuploaded = list(unuploaded)
 
     def is_video_processed(self, video_id):
         return video_id in self.processed
@@ -62,6 +63,18 @@ class FakeDB:
     def record_video(self, video_id, title, niche, duration=0,
                      channel_id='', published_at=None):
         self.recorded.append((video_id, niche))
+
+    def unuploaded_shorts(self, limit=50):
+        return self.unuploaded[:limit]
+
+    def mark_short_uploaded(self, source_video_id, segment_index, youtube_short_id):
+        pass
+
+    def record_performance(self, *a, **k):
+        pass
+
+    def rendered_segment_indices(self, source_video_id):
+        return set()
 
     def source_performance(self):
         return {}
@@ -143,9 +156,12 @@ class TestScheduledSweepBudget(unittest.TestCase):
             }
             config.schedule_max_videos = 1
             config.schedule_max_total = 1
+            config.schedule_backlog_first = False
             calls = []
 
             class FakePipeline:
+                upload_enabled = False
+
                 def run_niche(self, niche, max_videos=1, lookback=None):
                     calls.append(niche)
                     return 1
@@ -165,6 +181,7 @@ class TestScheduledSweepBudget(unittest.TestCase):
             from src.main import _run_scheduled_sweep
 
             config.schedule_max_videos = 3
+            config.schedule_backlog_first = False
             pipeline = _make_pipeline(Path(td), authed_channels=('flick_shorts', 'capital_mindset'))
             processed = []
             pipeline.process_video_for_shorts = lambda vid, niche, force=False, local_only=False, source_channel='': (processed.append((vid, niche)) or True)
@@ -176,6 +193,95 @@ class TestScheduledSweepBudget(unittest.TestCase):
             processed_niches = [n for _v, n in processed]
             self.assertNotIn('unbound', processed_niches)
             self.assertEqual(sorted(processed_niches), ['capital_mindset', 'flick_shorts'])
+
+
+class TestPullOnceBacklog(unittest.TestCase):
+    """Pull-once: sweeps drain existing clip supply instead of pulling again."""
+
+    def _make_pipeline_with_backlog(self, td, unuploaded):
+        from src.config import config
+        from src.main import ShortsPipeline
+        config.niches = {
+            'flick_shorts': {'channels': ['@ch1'], 'channel': 'flick_shorts'},
+        }
+        config.authenticated_channels = lambda: ['flick_shorts']
+        config.schedule_backlog_first = True
+        config.upload_max_per_run = 5
+        config.upload_pacing_min = 0
+        config.upload_pacing_max = 0
+
+        pipeline = ShortsPipeline.__new__(ShortsPipeline)
+        pipeline.config = config
+        pipeline.upload_enabled = True
+        pipeline.db = FakeDB(unuploaded=unuploaded)
+        pipeline.stats = {'videos_processed': 0, 'shorts_created': 0,
+                          'shorts_uploaded': 0, 'errors': 0}
+        pipeline._uploaders = {}
+        pipeline._uploader_for_channel = lambda ch: _FakeUploader()
+        return pipeline
+
+    def test_backlog_supply_skips_pull_and_uploads_existing(self):
+        with _workspace() as td:
+            _isolate_config(Path(td))
+            from src.main import _run_scheduled_sweep
+            clips = [
+                {'source_video_id': 'aaa11111111', 'segment_index': 1,
+                 'local_path': str(Path(td) / 'clips' / '01.mp4'),
+                 'niche': 'flick_shorts', 'title': 'Hook one'},
+                {'source_video_id': 'aaa11111111', 'segment_index': 2,
+                 'local_path': str(Path(td) / 'clips' / '02.mp4'),
+                 'niche': 'flick_shorts', 'title': 'Hook two'},
+            ]
+            Path(td).joinpath('clips').mkdir(exist_ok=True)
+            for c in clips:
+                Path(c['local_path']).write_bytes(b'fake-mp4')
+
+            pulled = []
+            pipeline = self._make_pipeline_with_backlog(td, clips)
+            pipeline.run_niche = lambda niche, max_videos=1, lookback=None: (pulled.append(niche) or 0)
+
+            _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
+
+            # 2 clips >= backlog_min(1): drain both, no pull.
+            self.assertEqual(pulled, [])
+            self.assertEqual(pipeline.stats['shorts_uploaded'], 2)
+
+    def test_rich_backlog_means_no_pull(self):
+        with _workspace() as td:
+            _isolate_config(Path(td))
+            from src.main import _run_scheduled_sweep
+            clips = []
+            Path(td).joinpath('clips').mkdir(exist_ok=True)
+            for i in range(6):
+                clips.append({
+                    'source_video_id': f'aaa111111{i}',
+                    'segment_index': i + 1,
+                    'local_path': str(Path(td) / 'clips' / f'{i:02d}.mp4'),
+                    'niche': 'flick_shorts', 'title': f'Hook {i}',
+                })
+                Path(clips[-1]['local_path']).write_bytes(b'fake-mp4')
+
+            pulled = []
+            pipeline = self._make_pipeline_with_backlog(td, clips)
+            pipeline.run_niche = lambda niche, max_videos=1, lookback=None: (pulled.append(niche) or 0)
+
+            _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
+
+            # 6 clips >= backlog_min(5): drain, no pull.
+            self.assertEqual(pulled, [])
+            self.assertEqual(pipeline.stats['shorts_uploaded'], 5)
+
+
+class _FakeUploader:
+    def __init__(self):
+        self.count = 0
+
+    def upload_short(self, video_path, title, description, tags):
+        self.count += 1
+        return f'vid{self.count}'
+
+    def fetch_statistics(self, short_id):
+        return {'views': 1, 'likes': 0, 'comments': 0, 'favorites': 0}
 
 
 class TestDiscoverDryRun(unittest.TestCase):
