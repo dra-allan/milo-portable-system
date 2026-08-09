@@ -647,7 +647,6 @@ def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
                     os.remove(audio_path)
                 except OSError:
                     pass
-
     def _upload_clips(self, created: List[Dict], video_id: str, niche: str,
                       niche_keywords: List[str]) -> None:
         # Route this niche to its bound channels. If a niche has no token on
