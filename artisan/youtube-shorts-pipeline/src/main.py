@@ -752,10 +752,10 @@ class ShortsPipeline:
             filtered.append(item)
         queue = filtered
 
-        # Per-channel daily budget (Allan's rule: max 5 shorts/channel/day).
+        # Per-channel daily budget (Allan's rule: max 6 shorts/channel/day).
         # Seed from what's already on YouTube for each bound channel, then keep
         # a running tally so a single sweep can't blow a channel's budget either.
-        per_channel_cap = getattr(self.config, 'upload_max_per_channel', 5)
+        per_channel_cap = self.config.upload_max_per_channel
         channel_budget = {
             ch: max(0, per_channel_cap - self.db.uploaded_count_for_channel_since(ch))
             for ch in channels
@@ -1453,7 +1453,7 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
 
         # Per-channel daily cap: don't post more than UPLOAD_MAX_PER_CHANNEL
         # shorts to one channel in 24h, even when uploading by hand.
-        per_channel_cap = getattr(pipeline.config, 'upload_max_per_channel', 5)
+        per_channel_cap = pipeline.config.upload_max_per_channel
         used_this_channel = pipeline.db.uploaded_count_for_channel_since(channel)
         if used_this_channel >= per_channel_cap:
             logger.info(
@@ -1867,8 +1867,8 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int) -> 
     # budget is shared across all of this niche's channels, so one source can't
     # burst across the whole network. Each channel also has its own
     # UPLOAD_MAX_PER_CHANNEL daily budget.
-    per_source_cap = getattr(config, 'upload_max_per_source', 3)
-    per_channel_cap = getattr(config, 'upload_max_per_channel', 5)
+    per_source_cap = config.upload_max_per_source
+    per_channel_cap = config.upload_max_per_channel
     src_left = {}
     for clip in supply:
         src = clip['source_video_id']
