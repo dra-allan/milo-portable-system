@@ -430,18 +430,22 @@ class Config:
         # A detection must appear in this fraction of sampled frames to count
         # as a person. This is the false-positive filter: Haar cascades fire on
         # background texture in isolated frames.
-        self.smart_min_presence = self._float('SMART_MIN_PRESENCE', 0.40,
+        # Lowered from 0.40 to 0.25 for higher sensitivity (more detections kept).
+        self.smart_min_presence = self._float('SMART_MIN_PRESENCE', 0.25,
                                               minimum=0.0)
         # Minimum size of a detection relative to the smaller side of the
         # work frame (before scaling up). Higher values reject tiny false
         # positives from texture.
-        self.smart_min_size_ratio = self._float('SMART_MIN_SIZE_RATIO', 0.08,
+        # Lowered from 0.08 to 0.05 to detect smaller/distant faces.
+        self.smart_min_size_ratio = self._float('SMART_MIN_SIZE_RATIO', 0.05,
                                                 minimum=0.01)
         # Minimum number of overlapping detections required to retain a
         # candidate (higher = stricter).
-        self.smart_min_neighbors = self._int('SMART_MIN_NEIGHBORS', 8, minimum=1)
+        # Lowered from 8 to 4 for higher sensitivity (fewer false negatives).
+        self.smart_min_neighbors = self._int('SMART_MIN_NEIGHBORS', 4, minimum=1)
         # Whether to also load the profile Haar cascade (often noisy).
-        self.smart_use_profile_cascade = self._bool('SMART_USE_PROFILE_CASCADE', False)
+        # Enabled for higher sensitivity - catches side/angled faces.
+        self.smart_use_profile_cascade = self._bool('SMART_USE_PROFILE_CASCADE', True)
         # Cap on people given their own grid tile. Above 4 each tile is too
         # small to read on a phone.
         self.smart_max_people = self._int('SMART_MAX_PEOPLE', 4, minimum=1)
@@ -452,11 +456,13 @@ class Config:
         self.smart_headroom = self._float('SMART_HEADROOM', 0.55, minimum=0.0)
         # Maximum allowed size variance for a track (as fraction of mean size).
         # Prevents a single blob that grows/shrinks from being mistaken for a person.
-        self.smart_max_size_variance = self._float('SMART_MAX_SIZE_VARIANCE', 0.3,
+        # Increased from 0.3 to 0.4 for more lenient size filtering.
+        self.smart_max_size_variance = self._float('SMART_MAX_SIZE_VARIANCE', 0.4,
                                                    minimum=0.0, maximum=1.0)
         # Tracking tolerance: maximum centre shift (as fraction of frame width)
         # allowed between frames for a detection to be considered the same person.
-        self.smart_track_tol = self._float('SMART_TRACK_TOL', 0.12,
+        # Increased from 0.12 to 0.18 for more lenient tracking across frames.
+        self.smart_track_tol = self._float('SMART_TRACK_TOL', 0.18,
                                            minimum=0.01, maximum=0.5)
         # Backdrop used when smart framing finds nobody.
         self.smart_fallback_mode = (os.getenv('SMART_FALLBACK_MODE') or 'cheap').lower()
