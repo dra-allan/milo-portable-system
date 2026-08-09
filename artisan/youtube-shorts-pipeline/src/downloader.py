@@ -90,6 +90,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -148,6 +149,10 @@ class YouTubeDownloader:
         # YouTube and re-log the same ERROR. Re-probed after a cooldown.
         self.dead_channels_path = Path(config.data_dir) / 'dead_channels.json'
         self._dead_channels = self._load_dead_channels()
+        # Listings now run in parallel, so the cache is read/written from
+        # several threads. Without this, two threads can interleave a
+        # dict-mutate + json.dump and write a truncated file.
+        self._dead_lock = threading.Lock()
         self.dead_channel_cooldown = int(
             getattr(config, 'dead_channel_cooldown_days', 14) or 14
         )
@@ -191,12 +196,15 @@ class YouTubeDownloader:
             'noprogress': True,
             'quiet': True,
             'no_warnings': True,
-            # Enhanced retry and fragmentation handling
-            'extractor_retries': 5,
+            # Retry handling. The old values (2**n up to 60s, plus a mandatory
+            # 5-20s sleep before EVERY download) added minutes of pure waiting
+            # per sweep even when nothing failed -- the sleep_interval applies
+            # to successful downloads too. Backoff is kept for genuine
+            # failures, capped much lower, and the unconditional pre-download
+            # sleep is gone.
+            'extractor_retries': 3,
             'fragment_retries': 10,
-            'retry_sleep': lambda n: min(60, 2 ** n),  # longer exponential backoff
-            'sleep_interval': 5,
-            'max_sleep_interval': 20,
+            'retry_sleep': lambda n: min(8, 2 ** n),
             # Try to bypass age restrictions and regional blocks
             'age_limit': None,
             'bypass_geoblock': True,
@@ -204,7 +212,11 @@ class YouTubeDownloader:
             'prefer_free_formats': True,
             # Additional robustness flags
             'keep_video': True,
+            'concurrent_fragment_downloads': int(
+                os.getenv('YTDLP_FRAGMENT_CONCURRENCY') or 4),
         }
+        # Player-client selection / cookies: the actual fix for 403 Forbidden.
+        self.ydl_opts.update(self._client_opts())
 
     # ------------------------------------------------------------------
     # Shared yt-dlp option builders
@@ -212,12 +224,18 @@ class YouTubeDownloader:
     def _audio_opts(self) -> Dict:
         """Options for the audio-only discovery fetch.
 
-        No ``writeautosub`` and no re-encode: the goal is the smallest number
-        of bytes that Whisper can read. faster-whisper decodes via ffmpeg, so
-        the native m4a/opus stream is used as-is -- transcoding it to wav here
-        would add an ffmpeg pass over the whole file for no benefit.
+        No re-encode: the goal is the smallest number of bytes that Whisper can
+        read. faster-whisper decodes via ffmpeg, so the native m4a/opus stream
+        is used as-is -- transcoding it to wav here would add an ffmpeg pass
+        over the whole file for no benefit.
+
+        Subtitles ARE requested (they were not before). A published transcript
+        costs ~200 KB and about a second, and lets the pipeline skip the
+        Whisper pass entirely -- which was ~85% of total runtime. Even when it
+        turns out to be unusable, fetching it is far cheaper than the pass it
+        might replace.
         """
-        return {
+        opts = {
             'format': 'bestaudio/best',
             'outtmpl': str(self.audio_dir / f'%(id)s{ID_SEPARATOR}%(title).80B.%(ext)s'),
             'writeinfojson': True,
@@ -228,6 +246,84 @@ class YouTubeDownloader:
             'quiet': True,
             'no_warnings': True,
         }
+        opts.update(self._client_opts())
+        if getattr(config, 'use_youtube_subs', True):
+            opts.update({
+                'writesubtitles': True,       # uploader-provided (accurate)
+                'writeautomaticsub': True,    # YouTube ASR (fallback)
+                'subtitlesformat': 'vtt',
+                # Ask for the niche language first, then plain English. '-orig'
+                # is the untranslated track YouTube exposes for ASR.
+                'subtitleslangs': self._subtitle_langs(),
+            })
+        return opts
+
+    @staticmethod
+    def _client_opts() -> Dict:
+        """Options that decide WHICH YouTube client yt-dlp pretends to be.
+
+        This is the fix for the ``HTTP Error 403: Forbidden`` and
+        ``Sign in to confirm you're not a bot`` failures in the logs. Both come
+        from the default `web` client: YouTube ties its media URLs to a session
+        and rejects the fetch when the signature check does not line up. The
+        ``android_vr`` / ``ios`` clients return unthrottled, non-session-bound
+        URLs and need no login, so they succeed where `web` 403s -- and they are
+        faster, because there is no throttled-format workaround to run.
+
+        Cookies remain supported and take priority when configured, since they
+        are the only thing that works for age-restricted sources.
+        """
+        clients = [c.strip() for c in
+                   (os.getenv('YTDLP_PLAYER_CLIENTS')
+                    or 'android_vr,ios,web_safari').split(',') if c.strip()]
+        opts: Dict = {
+            'extractor_args': {'youtube': {'player_client': clients}},
+            # Fail over to the next client quickly instead of retrying a client
+            # that is structurally blocked.
+            'extractor_retries': 3,
+        }
+
+        cookies_file = (os.getenv('YTDLP_COOKIES_FILE') or '').strip()
+        if cookies_file and Path(cookies_file).exists():
+            opts['cookiefile'] = cookies_file
+            logger.debug("Using cookies file for yt-dlp: %s", cookies_file)
+        else:
+            browser = (os.getenv('YTDLP_COOKIES_FROM_BROWSER') or '').strip()
+            if browser:
+                opts['cookiesfrombrowser'] = (browser,)
+        return opts
+
+    @staticmethod
+    def _subtitle_langs() -> List[str]:
+        """Subtitle languages to request, most-wanted first."""
+        raw = (os.getenv('SUBTITLE_LANGS') or '').strip()
+        if raw:
+            return [x.strip() for x in raw.split(',') if x.strip()]
+        return ['en', 'en-orig', 'en-US', 'en-GB']
+
+    def find_local_subtitles(self, video_id: str) -> Optional[Path]:
+        """Any subtitle sidecar already downloaded for ``video_id``.
+
+        Preference order matters: a manually uploaded track is a real
+        transcript, an ``-orig``/auto track is ASR. Both beat running Whisper
+        for the purpose of locating highlights.
+        """
+        try:
+            matches = sorted(self.audio_dir.glob(
+                f"{glob_escape(video_id)}{ID_SEPARATOR}*.vtt"))
+            matches += sorted(self.audio_dir.glob(
+                f"{glob_escape(video_id)}{ID_SEPARATOR}*.srt"))
+        except OSError:
+            return None
+        if not matches:
+            return None
+
+        def rank(p: Path) -> tuple:
+            name = p.name.lower()
+            # Lower sorts first.
+            return (1 if '-orig' in name or '.auto' in name else 0, len(name))
+
+        return sorted(matches, key=rank)[0]
 
     def _section_opts(self, video_id: str, start: float, end: float) -> Dict:
         """Options for fetching a single clip range as its own small file.
@@ -241,7 +337,8 @@ class YouTubeDownloader:
         from yt_dlp.utils import download_range_func
 
         height = int(getattr(config, 'download_height', 1080) or 1080)
-        return {
+        opts = dict(self._client_opts())
+        opts.update({
             # Same reasoning as the full-download format above: prefer separate
             # streams (where the high-resolution renditions are) and sort ties
             # toward resolution then bitrate.
@@ -260,7 +357,13 @@ class YouTubeDownloader:
             'noprogress': True,
             'quiet': True,
             'no_warnings': True,
-        }
+            # Split each section's byte range across several HTTP connections.
+            # A section fetch is latency-bound on a single stream, so this is
+            # close to a linear speedup on the download stage.
+            'concurrent_fragment_downloads': int(
+                os.getenv('YTDLP_FRAGMENT_CONCURRENCY') or 4),
+        })
+        return opts
 
     # ------------------------------------------------------------------
     # Library index
@@ -570,6 +673,7 @@ class YouTubeDownloader:
                 }
 
         duration = info.get('duration') or self._probe_duration(audio_path)
+        subtitle_path = self.find_local_subtitles(video_id)
         return {
             'id': video_id,
             'title': info.get('title') or _title_from_filename(audio_path, video_id),
@@ -581,7 +685,9 @@ class YouTubeDownloader:
             'video_path': '',
             'audio_path': str(audio_path),
             'audio_only': True,
-            'subtitle_path': None,
+            # A published transcript, if YouTube had one. When present the
+            # caller skips the Whisper discovery pass entirely.
+            'subtitle_path': str(subtitle_path) if subtitle_path else None,
             'thumbnail': info.get('thumbnail', '') or '',
             'tags': info.get('tags') or [],
             'from_cache': False,
@@ -928,20 +1034,29 @@ class YouTubeDownloader:
         gets a fresh timestamp (and one log line), but every mid-cooldown sweep
         stays silent instead of spamming the same ERROR over and over.
         """
-        failed_at = self._dead_channels.get(channel_key)
-        if not failed_at:
-            return False
-        age_days = (time.time() - failed_at) / 86400.0
-        if age_days >= self.dead_channel_cooldown:
-            self._dead_channels.pop(channel_key, None)
-            self._save_dead_channels()
-            return False
-        return True
+        with self._dead_lock:
+            failed_at = self._dead_channels.get(channel_key)
+            if not failed_at:
+                return False
+            age_days = (time.time() - failed_at) / 86400.0
+            if age_days >= self.dead_channel_cooldown:
+                self._dead_channels.pop(channel_key, None)
+                self._save_dead_channels()
+                return False
+            return True
 
     def _mark_channel_dead(self, channel_key: str) -> None:
-        if channel_key not in self._dead_channels:
-            self._dead_channels[channel_key] = time.time()
-            self._save_dead_channels()
+        with self._dead_lock:
+            if channel_key not in self._dead_channels:
+                self._dead_channels[channel_key] = time.time()
+                self._save_dead_channels()
+
+    def _mark_channel_alive(self, channel_key: str) -> None:
+        """Clear a cached failure after a successful listing."""
+        with self._dead_lock:
+            if channel_key in self._dead_channels:
+                self._dead_channels.pop(channel_key, None)
+                self._save_dead_channels()
 
     # ------------------------------------------------------------------
     def search_videos_by_channel(self, channel_id: str, published_after: str = '',
@@ -982,13 +1097,14 @@ class YouTubeDownloader:
             handle = channel_id if channel_id.startswith('@') else f"@{channel_id}"
             url = f"https://www.youtube.com/{handle}/videos"
 
-        opts = {
+        opts = dict(self._client_opts())
+        opts.update({
             'quiet': True,
             'no_warnings': True,
             'extract_flat': 'in_playlist',
             'skip_download': True,
             'playlistend': max(1, int(max_results)),
-        }
+        })
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -1024,12 +1140,59 @@ class YouTubeDownloader:
 
         # Listing worked -- the channel is alive again. Drop any cached failure
         # so it's not skipped on the next sweep.
-        if channel_id in self._dead_channels:
-            self._dead_channels.pop(channel_id, None)
-            self._save_dead_channels()
+        self._mark_channel_alive(channel_id)
 
         logger.info("Found %d recent video(s) for channel %s", len(results), channel_id)
         return results
+
+    # ------------------------------------------------------------------
+    def search_videos_by_channels(self, channel_ids: Sequence[str],
+                                  max_results: int = 10,
+                                  workers: Optional[int] = None
+                                  ) -> Dict[str, List[Dict]]:
+        """List several channels concurrently.
+
+        Each listing is one metadata-only HTTP round trip taking 2-3 seconds.
+        Done serially, a 21-channel niche spends over a minute before any real
+        work begins -- and that cost grows linearly with every channel added,
+        which is exactly the scaling problem to avoid. The requests are
+        independent, so they overlap almost perfectly.
+
+        Returns ``{channel_id: [entries]}``. Channels that failed return an
+        empty list, matching ``search_videos_by_channel``.
+        """
+        channels = [c for c in (channel_ids or []) if c]
+        if not channels:
+            return {}
+
+        if workers is None:
+            workers = int(getattr(config, 'discovery_workers', 8) or 8)
+        workers = max(1, min(workers, len(channels)))
+
+        if workers == 1:
+            return {c: self.search_videos_by_channel(c, max_results=max_results)
+                    for c in channels}
+
+        # Live channels are the only ones that cost a network call; cached-dead
+        # ones return instantly, so they do not need a worker slot.
+        logger.info("Listing %d channel(s) with %d parallel request(s)",
+                    len(channels), workers)
+
+        def one(channel: str):
+            try:
+                return channel, self.search_videos_by_channel(
+                    channel, max_results=max_results)
+            except Exception as exc:
+                logger.warning("Channel listing raised for %s: %s", channel, exc)
+                return channel, []
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            pairs = list(pool.map(one, channels))
+
+        # Preserve the caller's channel order: it encodes source ranking
+        # (winners first), which decides which candidates survive the cap.
+        by_channel = dict(pairs)
+        return {c: by_channel.get(c, []) for c in channels}
 
 
 # ----------------------------------------------------------------------

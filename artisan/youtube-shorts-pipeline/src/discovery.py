@@ -129,14 +129,30 @@ def discover_candidates(downloader, db, niche, max_videos: int, lookback: int,
     result = DiscoveryResult()
     lookback = max(lookback, max_videos)
 
+    # List every channel first, in parallel where the downloader supports it.
+    # Serial listing cost 2-3s per channel and is the stage that scales worst
+    # as niches grow, so it is done as one batch instead of inside the filter
+    # loop. Falls back to the per-channel call for any downloader (including
+    # the test doubles) that predates the batch method.
+    listings = {}
+    batch = getattr(downloader, 'search_videos_by_channels', None)
+    if callable(batch) and len(channels) > 1:
+        try:
+            listings = batch(channels, max_results=lookback) or {}
+        except Exception:
+            listings = {}
+
     for channel in channels:
         result.channels_queried.append(channel)
-        try:
-            found = downloader.search_videos_by_channel(
-                channel, published_after='', max_results=lookback
-            )
-        except Exception:
-            continue
+        if channel in listings:
+            found = listings.get(channel) or []
+        else:
+            try:
+                found = downloader.search_videos_by_channel(
+                    channel, published_after='', max_results=lookback
+                )
+            except Exception:
+                continue
         for entry in (found or []):
             vid = (entry or {}).get('id')
             if not vid:
