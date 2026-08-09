@@ -207,6 +207,57 @@ class Config:
         self.multichannel_upload_mode = os.getenv('MULTICHANNEL_UPLOAD_MODE', 'round_robin').lower()
         if self.multichannel_upload_mode not in ('round_robin', 'all', 'first'):
             self.multichannel_upload_mode = 'round_robin'
+        # Max clips to generate from one source video per discovery cycle.
+        # Prevents a single rich source from flooding the queue.
+        self.max_clips_per_source_per_cycle = self._int('MAX_CLIPS_PER_SOURCE_PER_CYCLE', 2, minimum=1)
+        # Max un-uploaded clips allowed per source video in the queue.
+        # Older clips beyond this are not generated (they'd just sit capped).
+        self.max_queued_per_source = self._int('MAX_QUEUED_PER_SOURCE', 3, minimum=1)
+
+        # --- Scheduled discovery -----------------------------------------
+        # Candidates pulled per channel before dedup/filtering. Must be >=
+        # schedule_max_videos so already-processed videos can't starve a run.
+        self.discovery_lookback = self._int('DISCOVERY_LOOKBACK', 10, minimum=1)
+        # Default cap on videos STARTED per scheduled run per niche. A niche
+        # can override with `max_videos:` in niches.yaml; SCHEDULE_MAX_TOTAL
+        # (below) still clamps the whole sweep so a stack of hungry niches
+        # can't blow the day's quota in one run. Quota: ~10k units/day, one
+        # upload ~1600 -> ~6 uploads/day, so a few videos/run is the norm.
+        self.schedule_max_videos = self._int('SCHEDULE_MAX_VIDEOS', 3, minimum=1)
+        # Hard ceiling on videos started across ALL niches in one sweep.
+        # 0 = unlimited (per-niche caps rule). Default matches the upload
+        # quota reality: ~6 uploads/day.
+        self.schedule_max_total = self._int('SCHEDULE_MAX_TOTAL', 6, minimum=0)
+        # Pull-once model (Allan's design): a sweep that already has un-uploaded
+        # clips for a niche should POST those instead of pulling+downloading a
+        # new source. Only pull again when the clip supply runs out. This is
+        # what turns "3 downloads a day" into "1 download, posted all day".
+        self.schedule_backlog_first = self._bool('SCHEDULE_BACKLOG_FIRST', True)
+        # A niche's clip supply is considered exhausted when fewer than this
+        # many un-uploaded clips remain (default 1 = pull only when nothing is
+        # left to post). Lower = re-pull sooner, higher = keep pulling while
+        # anything remains posted.
+        self.schedule_backlog_min = self._int('SCHEDULE_BACKLOG_MIN', 1, minimum=0)
+
+        # --- Queue health / backlog management -----------------------------
+        # Target total clips queued per niche (across all sources). Discovery
+        # will run to fill the queue when it drops below this.
+        self.queue_target_total = self._int('QUEUE_TARGET_TOTAL', 12, minimum=1)
+        # Minimum distinct source_video_ids in queue. If below, discovery runs
+        # to diversify the supply.
+        self.queue_min_distinct_sources = self._int('QUEUE_MIN_DISTINCT_SOURCES', 4, minimum=1)
+        # Maximum share of queue from a single source. If top source exceeds
+        # this share, discovery runs to diversify.
+        self.queue_max_top_source_share = self._float('QUEUE_MAX_TOP_SOURCE_SHARE', 0.50,
+                                                      minimum=0.0, maximum=1.0)
+        # Max un-uploaded clips per source before discovery skips it.
+        # The DB already enforces MAX_QUEUED_PER_SOURCE, this is for discovery logic.
+        self.queue_max_pending_per_source = self._int('QUEUE_MAX_PENDING_PER_SOURCE', 3, minimum=1)
+        # TTL for backlog clips in days. Clips older than this are marked
+        # 'expired' and no longer block discovery or upload.
+        self.backlog_ttl_days = self._int('BACKLOG_TTL_DAYS', 7, minimum=1)
+        # Max clips to generate from one source video per discovery cycle.
+        self.max_clips_generated_per_source_per_cycle = self._int('MAX_CLIPS_GENERATED_PER_SOURCE_PER_CYCLE', 2, minimum=1)
 
         # --- Scheduled discovery -----------------------------------------
         # Candidates pulled per channel before dedup/filtering. Must be >=
