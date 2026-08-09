@@ -188,6 +188,12 @@ class Config:
         # sweep -- exactly the "5 identical-title shorts in 9 minutes" burst we
         # saw 2026-08-09.
         self.upload_max_per_source = self._int('UPLOAD_MAX_PER_SOURCE', 3, minimum=1)
+        # Hard cap on how many Shorts each channel may publish per day.
+        # Allan's cadence rule: max 5 shorts per channel per 24h. Counts across
+        # all sweeps (9AM/2PM/7PM), so three runs can't stack 15 onto one
+        # channel -- the round-robin and the per-channel budget together keep
+        # every channel at a steady, algo-friendly 5/day max.
+        self.upload_max_per_channel = self._int('UPLOAD_MAX_PER_CHANNEL', 5, minimum=1)
         # When a run has room left in its cap, fill it with older clips that
         # were rendered but never uploaded (the "new mixed with old" queue).
         self.upload_backlog = self._bool('UPLOAD_BACKLOG', True)
