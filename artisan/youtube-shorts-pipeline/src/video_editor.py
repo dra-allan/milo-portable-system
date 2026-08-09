@@ -152,6 +152,12 @@ class VideoEditor:
     # Populated once per process by available_fonts(); see the note there on
     # libass' silent font substitution.
     _font_cache = None
+    # Result of the one-time hardware-encoder probe. None means "not probed
+    # yet", a string is the chosen encoder name. Cached on the class because
+    # the answer is a property of the machine, not of an instance, and renders
+    # now run concurrently -- probing per render would spawn an ffmpeg process
+    # per clip for an answer that cannot change.
+    _encoder_cache = None
 
     def __init__(self):
         self.ffmpeg = os.getenv('MILO_FFMPEG') or shutil.which('ffmpeg') or 'ffmpeg'
@@ -226,6 +232,157 @@ class VideoEditor:
             logger.debug("Could not probe framerate of %s: %s", path, exc)
             return None
 
+    # ------------------------------------------------------------------
+    # Encoder selection
+    # ------------------------------------------------------------------
+    # Hardware H.264 encoders in preference order. They do NOT share libx264's
+    # -crf/-preset vocabulary, which is why each needs its own flag mapping
+    # below instead of a blanket substitution.
+    _HW_ENCODERS = ('h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox')
+
+    def _resolve_encoder(self) -> str:
+        """Pick the H.264 encoder to use, probing ffmpeg once.
+
+        Encoding on the CPU competes with transcription for the same cores, and
+        transcription is the pipeline's real bottleneck. Handing the encode to a
+        GPU/fixed-function block is therefore worth more than the raw 5-10x
+        speedup suggests: it also gives the cores back.
+
+        Falls back to libx264 whenever a hardware encoder is absent or unusable,
+        so this can never make rendering fail.
+        """
+        if VideoEditor._encoder_cache is not None:
+            return VideoEditor._encoder_cache
+
+        setting = (getattr(config, 'video_encoder', 'auto') or 'auto').lower()
+        if setting in ('off', 'none', 'cpu', 'libx264', 'software'):
+            VideoEditor._encoder_cache = 'libx264'
+            return VideoEditor._encoder_cache
+
+        available = self._available_encoders()
+
+        if setting != 'auto':
+            # An explicit request is honoured only if ffmpeg actually has it;
+            # otherwise every render would die on "Unknown encoder".
+            if not available or setting in available:
+                VideoEditor._encoder_cache = setting
+            else:
+                logger.warning(
+                    "VIDEO_ENCODER=%s is not available in this ffmpeg build; "
+                    "falling back to libx264", setting,
+                )
+                VideoEditor._encoder_cache = 'libx264'
+            return VideoEditor._encoder_cache
+
+        chosen = 'libx264'
+        for name in self._HW_ENCODERS:
+            if name in available and self._encoder_works(name):
+                chosen = name
+                break
+
+        if chosen == 'libx264':
+            logger.info("No usable hardware H.264 encoder found; using libx264")
+        else:
+            logger.info("Hardware encoder selected: %s", chosen)
+        VideoEditor._encoder_cache = chosen
+        return chosen
+
+    def _available_encoders(self) -> set:
+        """Encoder names this ffmpeg build advertises."""
+        try:
+            result = subprocess.run([self.ffmpeg, '-hide_banner', '-encoders'],
+                                    capture_output=True, text=True, timeout=20)
+        except Exception as exc:
+            logger.debug("Could not list ffmpeg encoders: %s", exc)
+            return set()
+        if result.returncode != 0:
+            return set()
+        names = set()
+        for line in (result.stdout or '').splitlines():
+            parts = line.split()
+            # Lines look like " V....D h264_nvenc  NVIDIA NVENC H.264 encoder"
+            if len(parts) >= 2 and parts[0].startswith('V'):
+                names.add(parts[1])
+        return names
+
+    def _encoder_works(self, name: str) -> bool:
+        """Whether ``name`` can actually encode here, not just link.
+
+        Being listed by ``-encoders`` only proves ffmpeg was *built* with
+        support. The common failure is a build that lists h264_nvenc on a
+        machine with no NVIDIA driver -- it opens and then errors out. A
+        one-frame null encode settles it in well under a second and prevents
+        every clip in the sweep from dying on the same error.
+        """
+        cmd = [
+            self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
+            '-f', 'lavfi', '-i', 'color=c=black:s=256x256:d=0.1',
+            '-c:v', name, '-frames:v', '1', '-f', 'null', '-',
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        except Exception as exc:
+            logger.debug("Probe for %s failed to run: %s", name, exc)
+            return False
+        if result.returncode != 0:
+            logger.debug("Encoder %s present but not usable: %s",
+                         name, (result.stderr or '').strip()[-200:])
+            return False
+        return True
+
+    def _video_encode_args(self, threads: Optional[int] = None) -> List[str]:
+        """``-c:v`` plus quality/colour flags for the resolved encoder.
+
+        Each family spells "constant quality" differently, so VIDEO_CRF is
+        translated to the nearest equivalent and keeps meaning the same thing
+        regardless of which encoder is selected.
+        """
+        encoder = self._resolve_encoder()
+        crf = int(getattr(config, 'video_crf', 20) or 20)
+        preset = getattr(config, 'video_preset', 'veryfast')
+
+        if encoder == 'h264_nvenc':
+            # NVENC: -cq is its constant-quality control, on the same 0-51
+            # scale as CRF. 'film' has no NVENC equivalent and -tune film
+            # would be rejected, so hq is used instead.
+            args = ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
+                    '-rc', 'vbr', '-cq', str(crf), '-b:v', '0']
+        elif encoder == 'h264_qsv':
+            args = ['-c:v', 'h264_qsv', '-global_quality', str(crf),
+                    '-preset', 'faster']
+        elif encoder == 'h264_amf':
+            # AMF has no CRF; constrained-QP is the closest analogue.
+            args = ['-c:v', 'h264_amf', '-rc', 'cqp',
+                    '-qp_i', str(crf), '-qp_p', str(crf),
+                    '-quality', 'balanced']
+        elif encoder == 'h264_videotoolbox':
+            # VideoToolbox exposes a 1-100 quality scale, inverted vs CRF.
+            quality = max(1, min(100, int(round((51 - crf) / 51 * 100))))
+            args = ['-c:v', 'h264_videotoolbox', '-q:v', str(quality)]
+        else:
+            args = ['-c:v', 'libx264', '-preset', preset, '-crf', str(crf),
+                    # Film tuning turns OFF x264's default psychovisual
+                    # over-smoothing, which otherwise deliberately blurs fine
+                    # detail (skin texture, fabric) to save bits and reads as
+                    # "low quality" even at a good CRF.
+                    '-tune', 'film',
+                    # Two consecutive B-frames: better compression at equal
+                    # quality, so the CRF budget buys more detail.
+                    '-bf', '2']
+            if threads and int(threads) > 0:
+                args += ['-threads', str(int(threads))]
+
+        # Profile/level and colour metadata are encoder-independent and stated
+        # explicitly: some mobile players and NLEs reject unconstrained
+        # combinations, and unlabelled BT.709 gets read as BT.601, which
+        # visibly shifts skin tones.
+        args += ['-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.2',
+                 '-g', '60',
+                 '-colorspace', 'bt709', '-color_primaries', 'bt709',
+                 '-color_trc', 'bt709', '-color_range', 'tv']
+        return args
+
+    # ------------------------------------------------------------------
     def _choose_fps(self, path: str) -> Optional[float]:
         """Output framerate: the source's own, capped at ``video_max_fps``.
 
@@ -609,31 +766,12 @@ class VideoEditor:
             logger.warning("Source has no audio stream; rendering a silent clip")
             cmd += ['-an']
 
-        cmd += [
-            '-c:v', 'libx264',
-            '-preset', config.video_preset,
-            '-crf', str(config.video_crf),
-            '-pix_fmt', 'yuv420p',
-            # High profile + level 4.2 covers 1080x1920@60. The default
-            # (unconstrained) is fine for YouTube but some mobile players and
-            # editors refuse odd combinations, so state it.
-            '-profile:v', 'high',
-            '-level', '4.2',
-            # Film tuning turns OFF the psychovisual over-smoothing x264 applies
-            # by default. Without this, fine detail (skin texture, fabric) is
-            # deliberately blurred to save bits, which reads as "low quality"
-            # even at a good CRF.
-            '-tune', 'film',
-            # Two consecutive B-frames + CABAC: better compression at equal
-            # quality, so the CRF budget buys more detail.
-            '-bf', '2', '-g', '60',
-            # Colour metadata (see the filter comment above).
-            '-colorspace', 'bt709',
-            '-color_primaries', 'bt709',
-            '-color_trc', 'bt709',
-            '-color_range', 'tv',
-            '-movflags', '+faststart',
-        ]
+        # Encoder, quality and colour flags. Resolved once per process: this is
+        # a hardware encoder when the machine has one (freeing the CPU for
+        # transcription, the actual bottleneck), else libx264. The thread cap
+        # only applies to libx264 -- hardware encoders do not contend for cores.
+        cmd += self._video_encode_args(threads=threads)
+        cmd += ['-movflags', '+faststart']
 
         # Framerate: previously hard-coded to '-r 30', which silently threw away
         # half the frames of any 50/60fps source and made motion look choppy.
@@ -643,8 +781,8 @@ class VideoEditor:
         if target_fps:
             cmd += ['-r', f"{target_fps:g}"]
 
-        if threads and int(threads) > 0:
-            cmd += ['-threads', str(int(threads))]
+        # NOTE: the -threads cap is applied inside _video_encode_args(), which
+        # knows whether the resolved encoder is CPU-bound and can honour it.
         cmd += ['-y', str(staging)]
 
         # Timeouts must scale with the work: a fixed 30s killed any real clip.
@@ -731,10 +869,7 @@ class VideoEditor:
             '-i', input_path,
             '-filter_complex', ';'.join(filters),
             '-map', '[vout]', '-map', '0:a?',
-            '-c:v', 'libx264', '-preset', config.video_preset,
-            '-crf', str(config.video_crf), '-profile:v', 'high', '-tune', 'film',
-            '-colorspace', 'bt709', '-color_primaries', 'bt709',
-            '-color_trc', 'bt709', '-color_range', 'tv',
+        ] + self._video_encode_args() + [
             '-c:a', 'copy', '-y', output_path,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
@@ -765,10 +900,7 @@ class VideoEditor:
             '-vf', (f"format=yuv444p,"
                     f"subtitles='{self._escape_filter_path(ass_path)}':alpha=1,"
                     f"format=yuv420p"),
-            '-c:v', 'libx264', '-preset', config.video_preset,
-            '-crf', str(config.video_crf), '-profile:v', 'high', '-tune', 'film',
-            '-colorspace', 'bt709', '-color_primaries', 'bt709',
-            '-color_trc', 'bt709', '-color_range', 'tv',
+        ] + self._video_encode_args() + [
             '-c:a', 'copy', '-y', output_path,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
