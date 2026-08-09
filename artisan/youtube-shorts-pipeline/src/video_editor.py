@@ -566,9 +566,38 @@ class VideoEditor:
         ]
 
         if has_audio:
+            # Build audio filter chain with optional background music
+            audio_filter_parts = ['loudnorm=I=-16:TP=-1.5:LRA=11']
+            
+            # Add background music if enabled and available
+            if getattr(config, 'music_enabled', True):
+                music_dir = Path(getattr(config, 'music_dir', 'data/music'))
+                if music_dir.exists():
+                    import random
+                    music_files = list(music_dir.glob('*.mp3')) + list(music_dir.glob('*.wav')) + list(music_dir.glob('*.ogg')) + list(music_dir.glob('*.m4a'))
+                    if music_files:
+                        music_file = random.choice(music_files)
+                        music_volume = getattr(config, 'music_volume', 0.05)
+                        music_duck_factor = getattr(config, 'music_duck_factor', 0.3)
+                        
+                        # Build filter: mix source audio with background music
+                        # Duck music during speech using sidechaincompress
+                        music_filter = (
+                            f"[0:a:0]volume={music_volume},"
+                            f"aloop=loop=-1:size=2e+09[music];"
+                            f"[0:a:0][music]sidechaincompress="
+                            f"threshold=0.003:ratio=20:attack=5:release=200:"
+                            f"makeup={1/music_duck_factor}[mixed]"
+                        )
+                        audio_filter_parts = [music_filter]
+                    else:
+                        logger.warning("Music enabled but no tracks found in %s", music_dir)
+            
+            audio_filter = ';'.join(audio_filter_parts)
+            
             cmd += [
                 '-map', '0:a:0',
-                '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
+                '-af', audio_filter,
                 # 128k was audibly lossy on music beds. 192k at 48kHz is what
                 # YouTube itself recommends for stereo; the extra bytes are
                 # negligible next to the video track.
