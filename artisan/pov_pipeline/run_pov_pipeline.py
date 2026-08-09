@@ -272,7 +272,7 @@ def run_flow_images(project_dir: Path, profiles: str = "") -> bool:
         eprint("[images] FAIL - 'opencli' not on PATH (needed for Google Flow image generation)")
         return False
 
-    cmd = ["opencli", "flow", "images", "--file", str(batch)]
+    cmd = [opencli, "flow", "images", "--file", str(batch)]
     if profiles:
         cmd += ["--profiles", profiles]
 
@@ -306,7 +306,7 @@ def run_thumbnail(project_dir: Path) -> bool:
 
     out_file = project_dir / "04_THUMBNAIL" / "thumbnail.png"
     cmd = [
-        "opencli", "flow", "image-gen",
+        opencli, "flow", "image-gen",
         "--prompt", prompt,
         "--aspect", "16:9",
         "--out", str(out_file),
