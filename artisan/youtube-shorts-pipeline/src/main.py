@@ -376,10 +376,10 @@ class ShortsPipeline:
             logger.warning("Could not cache clip plan for %s: %s", video_id, exc)
 
     # ------------------------------------------------------------------
-def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
-                                  force: bool = False,
-                                  local_only: bool = False,
-                                  source_channel: str = '') -> bool:
+    def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
+                                 force: bool = False,
+                                 local_only: bool = False,
+                                 source_channel: str = '') -> bool:
         """Audio-only discovery -> transcribe -> find highlights -> section fetch -> render -> (upload).
 
         Every stage is resumable: an existing audio download, transcript, section
@@ -487,6 +487,7 @@ def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
                 max_clips=clip_cap,
                 max_candidates=getattr(self.config, 'max_candidates', None),
                 min_score=float(niche_config.get('min_score') or 0.0),
+                ranking_mode=bool(niche_config.get('ranking_mode')),
             )
             if not highlights:
                 logger.warning("No highlight segments found for video %s", video_id)
@@ -647,6 +648,32 @@ def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
                     os.remove(audio_path)
                 except OSError:
                     pass
+
+    def _generate_unique_title(self, hook_text: str, niche: str, clip_index: int) -> str:
+        """Generate a unique, attention-optimized title for a Short.
+
+        Runs the raw hook through the rule-based title optimizer unless
+        ``TITLE_OPTIMIZER=off`` in .env, then appends the niche + #Shorts
+        hashtags that YouTube uses for the Shorts feed.
+        """
+        base = hook_text
+        if self.config.title_optimizer:
+            try:
+                from .title_optimizer import optimize_title
+                niche_cfg = self.config.get_niche_config(niche)
+                base = optimize_title(
+                    hook_text, niche=niche,
+                    keywords=niche_cfg.get('keywords', []),
+                    clip_index=clip_index,
+                )
+            except Exception:
+                logger.warning("Title optimizer failed; using raw hook", exc_info=True)
+                base = hook_text or ''
+
+        base = ' '.join((base or '').split()).strip()
+        if not base:
+            return f"{niche} clip #{clip_index} #Shorts"
+        return f"{base} #{niche} #Shorts"
 
     def _upload_clips(self, created: List[Dict], video_id: str, niche: str,
                       niche_keywords: List[str]) -> None:
@@ -2093,18 +2120,6 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
         ', '.join(f"{ch}={n}" for ch, n in per_channel_uploaded.items() if n) or 'none',
     )
     return uploaded
-
-
-def _discover_and_render(pipeline: 'ShortsPipeline', niche: str, cap: int,
-                         channels: List[str]) -> int:
-    """Run fresh discovery and rendering for a niche."""
-    if not pipeline.upload_enabled:
-        return 0
-    max_videos = int(config.get_niche_config(niche).get('max_videos') or 0)
-    if max_videos <= 0:
-        max_videos = getattr(config, 'schedule_max_videos', 3)
-    max_videos = min(max_videos, cap)
-    return pipeline.run_niche(niche, max_videos=max_videos)
 
 
 def _discover_and_render(pipeline: 'ShortsPipeline', niche: str, cap: int,

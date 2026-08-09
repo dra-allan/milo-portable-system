@@ -14,8 +14,64 @@ is deprioritised (soft demotion) rather than dropped, so a slow start never
 kills a source outright but a proven winner gets fed first.
 """
 
+import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Dict, List
+
+
+@lru_cache(maxsize=2048)
+def _keyword_pattern(keyword: str):
+    """Compile a word-boundary matcher for one keyword or phrase.
+
+    Plain substring matching (``keyword in title``) silently rejects good
+    sources because short negative keywords appear *inside* ordinary words:
+
+        "live"    matches "De-liver-ed", "Lives", "Olive"
+        "dance"   matches "Abun-dance-", "Guidance"
+        "guide"   matches "Guide-d Missiles"
+        "concert" matches "Concert-ed"
+        "meme"    matches "Meme-nto"
+
+    On a ranking/top-10 niche that misfire rejected 5 of 6 realistic titles.
+    Matching on word boundaries keeps multi-word phrases working ("live
+    stream" still matches "Live stream: full show") while requiring whole
+    words, so "Deadliest Animals That Live" is only rejected by "live"
+    because the word really is present -- not by an accident of spelling.
+    """
+    # Collapse internal whitespace so "live  stream" and "live stream" agree,
+    # and allow any whitespace run between words of a phrase.
+    parts = [re.escape(p) for p in str(keyword).lower().split() if p]
+    if not parts:
+        return None
+    body = r'\s+'.join(parts)
+    # \b is wrong next to non-word chars (e.g. "#shorts", "vs."), so only
+    # anchor the edges that actually start/end with a word character.
+    left = r'\b' if re.match(r'\w', parts[0][0] if parts[0] else '') else ''
+    prefix = left if str(keyword).lower().lstrip()[:1].isalnum() else ''
+    suffix = r'\b' if str(keyword).lower().rstrip()[-1:].isalnum() else ''
+    return re.compile(prefix + body + suffix)
+
+
+def matches_keyword(text: str, keyword: str) -> bool:
+    """True if ``keyword`` occurs in ``text`` as a whole word/phrase."""
+    pattern = _keyword_pattern(keyword)
+    if pattern is None:
+        return False
+    return bool(pattern.search((text or '').lower()))
+
+
+def matched_keywords(text: str, keywords) -> List[str]:
+    """Every keyword from ``keywords`` present in ``text`` as a whole word."""
+    low = (text or '').lower()
+    hits = []
+    for kw in (keywords or []):
+        if not kw:
+            continue
+        pattern = _keyword_pattern(kw)
+        if pattern is not None and pattern.search(low):
+            hits.append(str(kw))
+    return hits
 
 
 @dataclass
@@ -99,9 +155,10 @@ def discover_candidates(downloader, db, niche, max_videos: int, lookback: int,
                 result.skipped_duration.append(vid)
                 continue
 
-            title = str(entry.get('title') or '').lower()
-            neg = [str(k).lower() for k in (cfg.get('negative_keywords') or []) if k]
-            if any(k in title for k in neg):
+            # Word-boundary matching, not substring: see _keyword_pattern.
+            title = str(entry.get('title') or '')
+            neg = [k for k in (cfg.get('negative_keywords') or []) if k]
+            if any(matches_keyword(title, k) for k in neg):
                 result.skipped_negative_keywords.append(vid)
                 continue
 
