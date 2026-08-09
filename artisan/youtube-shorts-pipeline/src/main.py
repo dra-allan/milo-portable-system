@@ -633,51 +633,24 @@ def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
                 video_id, len(created), shorts_dir,
             )
             return True
-
         except KeyboardInterrupt:
             logger.warning("Interrupted while processing %s", video_id)
             raise
         except Exception as exc:
             logger.error("Unexpected error processing %s: %s", video_id, exc, exc_info=True)
             self.stats['errors'] += 1
-            # Clean up audio on error
+            return False
+        finally:
+            # Clean up audio regardless of success or exception
             if audio_path:
                 try:
                     os.remove(audio_path)
                 except OSError:
                     pass
-            return False
-        # Clean up audio on success
-        if audio_path:
-            try:
-                os.remove(audio_path)
-            except OSError:
-                pass
-    def _generate_unique_title(self, hook_text: str, niche: str, clip_index: int) -> str:
-        """Generate a unique, attention-optimized title for a Short.
 
-        Runs the raw hook through the rule-based title optimizer unless
-        ``TITLE_OPTIMIZER=off`` in .env, then appends the niche + #Shorts
-        hashtags that YouTube uses for the Shorts feed.
-        """
-        base = hook_text
-        if self.config.title_optimizer:
-            try:
-                from .title_optimizer import optimize_title
-                niche_cfg = self.config.get_niche_config(niche)
-                base = optimize_title(
-                    hook_text, niche=niche,
-                    keywords=niche_cfg.get('keywords', []),
-                    clip_index=clip_index,
-                )
-            except Exception:
-                logger.warning("Title optimizer failed; using raw hook", exc_info=True)
-                base = hook_text or ''
+    def _upload_clips(self, created: List[Dict], video_id: str, niche: str,
+                      niche_keywords: List[str]) -> None:
 
-        base = ' '.join((base or '').split()).strip()
-        if not base:
-            return f"{niche} clip #{clip_index} #Shorts"
-        return f"{base} #{niche} #Shorts"
 
     def _upload_clips(self, created: List[Dict], video_id: str, niche: str,
                       niche_keywords: List[str]) -> None:
@@ -1878,7 +1851,7 @@ def _get_queue_health(pipeline: 'ShortsPipeline', niche: str,
                       channels: List[str]) -> Dict:
     """Compute queue health metrics for a niche."""
     health = pipeline.db.get_queue_health(niche)
-    
+
     # Add per-source cap awareness
     per_source_cap = getattr(pipeline.config, 'upload_max_per_source', 3)
     capped = []
@@ -1891,7 +1864,7 @@ def _get_queue_health(pipeline: 'ShortsPipeline', niche: str,
             eligible += min(count, per_source_cap - used)
     health['eligible_clips'] = eligible
     health['capped_sources'] = capped
-    
+
     # Add channel capacity
     per_channel_cap = getattr(pipeline.config, 'upload_max_per_channel', 6)
     channel_remaining = 0
@@ -1899,7 +1872,7 @@ def _get_queue_health(pipeline: 'ShortsPipeline', niche: str,
         used = pipeline.db.uploaded_count_for_channel_since(ch)
         channel_remaining += max(0, per_channel_cap - used)
     health['channel_remaining'] = channel_remaining
-    
+
     # Oldest clip age
     try:
         with pipeline.db._connect() as conn:
@@ -1916,50 +1889,50 @@ def _get_queue_health(pipeline: 'ShortsPipeline', niche: str,
                 health['oldest_clip_age_days'] = (datetime.now() - oldest).days
     except Exception:
         health['oldest_clip_age_days'] = 0
-    
+
     return health
 
 
 def _should_discover_more(pipeline: 'ShortsPipeline', niche: str,
                           health: Dict, channels: List[str]) -> tuple:
     """Decide whether to run fresh discovery for a niche.
-    
+
     Returns (should_discover: bool, reason: str)
     """
     cfg = pipeline.config
-    
+
     # Check if niche is active
     niche_cfg = config.get_niche_config(niche)
     max_videos = niche_cfg.get('max_videos', 0) or getattr(cfg, 'schedule_max_videos', 3)
     if max_videos <= 0:
         return False, 'niche_inactive'
-    
+
     # Total queued clips below target
     target = getattr(cfg, 'queue_target_total', 12)
     if health['total_queued'] < target:
         return True, f'total_queued_below_target ({health["total_queued"]}/{target})'
-    
+
     # Not enough distinct sources
     min_distinct = getattr(cfg, 'queue_min_distinct_sources', 4)
     if health['distinct_sources'] < min_distinct:
         return True, f'distinct_sources_low ({health["distinct_sources"]}/{min_distinct})'
-    
+
     # Top source dominance too high
     max_share = getattr(cfg, 'queue_max_top_source_share', 0.5)
     if health['top_source_share'] > max_share:
         return True, f'top_source_dominance_high ({health["top_source_share"]:.2f}/{max_share})'
-    
+
     # Channel has capacity but not enough eligible clips
     if health['channel_remaining'] > 0 and health['eligible_clips'] < health['channel_remaining']:
         return True, 'channel_capacity_unused'
-    
+
     # All/most queued clips are source-capped
     if health['total_queued'] > 0 and health['eligible_clips'] == 0:
         return True, 'all_clips_source_capped'
-    
+
     # Check last discovery time (simplified: if no new source added recently)
     # This would need a last_discovery timestamp in DB; skip for now
-    
+
     return False, 'queue_healthy'
 
 
@@ -1999,7 +1972,7 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
     # Round-robin across sources, then assign to channels round-robin
     selected = []  # (clip, channel)
     cursor = 0
-    
+
     # Group by source
     by_source = {}
     for clip in supply:
@@ -2007,17 +1980,17 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
         if src not in by_source:
             by_source[src] = []
         by_source[src].append(clip)
-    
+
     sources = sorted(by_source.keys(), key=lambda s: len(by_source[s]))
     source_pointers = {s: 0 for s in sources}
-    
+
     for clip in supply:
         if len(selected) >= cap:
             break
         src = clip['source_video_id']
         if src_left.get(src, 0) <= 0:
             continue
-        
+
         # Find next channel with budget
         chosen = None
         for _ in range(len(channels)):
@@ -2028,11 +2001,11 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
                 break
         if chosen is None:
             break
-        
+
         channel_left[chosen] -= 1
         src_left[src] -= 1
         selected.append((clip, chosen))
-    
+
     if not selected:
         logger.info(
             "Niche '%s': backlog clips present but per-source/per-channel daily caps reached",
@@ -2194,7 +2167,7 @@ def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
 
         # Filter to authed channels only
         channels = [c for c in channels if c in authed]
-        
+
         # 1. Expire stale backlog
         expired = _expire_stale_backlog(pipeline, niche)
         if expired:
@@ -2204,14 +2177,14 @@ def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
         # 2. Upload eligible backlog clips
         backlog_cap = config.upload_max_per_run
         uploaded_backlog = _upload_backlog_supply(pipeline, niche, backlog_cap, channels)
-        
+
         # 3. Compute queue health after backlog drain
         health = _get_queue_health(pipeline, niche, channels)
-        
+
         # 4. Decide whether to discover fresh sources
         should_discover, reason = _should_discover_more(pipeline, niche, health, 
                                                          [c for c in channels if c in authed])
-        
+
         logger.info(
             "QUEUE_HEALTH niche=%s total=%d eligible=%d distinct_sources=%d "
             "top_source_share=%.2f channel_remaining=%d reason=%s",
@@ -2219,7 +2192,7 @@ def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
             health['distinct_sources'], health['top_source_share'],
             health['channel_remaining'], reason if should_discover else 'none',
         )
-        
+
         # 5. If queue unhealthy, run discovery (if we have budget)
         if should_discover:
             remaining_cap = cap
@@ -2230,7 +2203,7 @@ def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
                 started_total += discovered
                 # Re-evaluate health after discovery
                 health = _get_queue_health(pipeline, niche, channels)
-        
+
         # 5b. If channel capacity remains, try one more backlog pass
         if health['channel_remaining'] > 0 and health['eligible_clips'] > 0:
             uploaded_more = _upload_backlog_supply(pipeline, niche, 
