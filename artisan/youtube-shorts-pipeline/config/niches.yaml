@@ -92,7 +92,7 @@ capital_mindset:
   # upload_channels is set.
   channel: capital_mindset
   # Per-run video cap for this niche (overrides SCHEDULE_MAX_VIDEOS).
-  max_videos: 2
+  max_videos: 3
   channels:
 #    - "UC3L18k-_-KBy4N7B19GgUHg" # Alex Hormozi - existing
 #    - "UC_f1oP2XwG8kP9a-pL-qWQA" # My First Million - existing
@@ -179,7 +179,7 @@ wealth_mindset:
   upload_channels:
     - wealth_mindset
   channel: wealth_mindset
-  max_videos: 2
+  max_videos: 3
   channels:
     - "@AlexHormozi"
     - "@MyFirstMillionPod"
