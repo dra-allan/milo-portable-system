@@ -277,19 +277,20 @@ class TestScheduledSweepBudget(unittest.TestCase):
             config.queue_max_top_source_share = 0.50
             config.backlog_ttl_days = 7
             calls = []
+class FakePipeline:
 
-            class FakePipeline:
-                upload_enabled = False
+            upload_enabled = False
+            db = FakeDB()
 
-                def run_niche(self, niche, max_videos=1, lookback=None):
-                    calls.append(niche)
-                    return 1
+            def run_niche(self, niche, max_videos=1, lookback=None):
+                calls.append(niche)
+                return 1
 
-            class Args:
-                niche = None
-                videos = 5
+        class Args:
+            niche = None
+            videos = 5
 
-            _run_scheduled_sweep(FakePipeline(), Args())
+        _run_scheduled_sweep(FakePipeline(), Args())
 
             # Only one niche processed due to total budget
             self.assertEqual(len(calls), 1)
@@ -376,7 +377,7 @@ class TestPullOnceBacklog(unittest.TestCase):
             # Queue unhealthy (only 1 source, below min_distinct_sources=4) -> discovery runs
             self.assertEqual(pulled, ['flick_shorts'])
 
-def test_rich_backlog_means_no_pull_if_queue_healthy(self):
+    def test_rich_backlog_means_no_pull_if_queue_healthy(self):
         """If queue is healthy (enough distinct sources AND total >= target), no discovery runs."""
         with _workspace() as td:
             _isolate_config(Path(td))
