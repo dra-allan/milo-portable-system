@@ -625,6 +625,7 @@ def build_smart_filters(video_path: str, start_time: float, end_time: float,
     Returns ``(filters, output_label, people_count)``, or None when detection
     found nobody -- in which case the caller should use a normal backdrop mode.
     """
+    logger.debug(f"Using config from {config.__file__}")
     people, src_w, src_h = analyse_people(
         video_path, start_time, end_time, samples=config.smart_samples,
         min_presence=config.smart_min_presence, max_people=config.smart_max_people,
