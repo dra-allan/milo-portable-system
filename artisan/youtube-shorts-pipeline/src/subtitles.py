@@ -39,6 +39,54 @@ _CUE_RE = re.compile(rf'^\s*{_TS}\s*-->\s*{_TS}')
 # WebVTT inline karaoke tags: <00:00:01.234><c>word</c>
 _TAG_RE = re.compile(r'<[^>]*>')
 
+# Broadcast captions mark a change of speaker with ">>" (and a new *program*
+# with ">>>"). Professionally captioned uploads -- talk shows, news, podcasts
+# with a real captioner -- are full of them. They survive entity-decoding
+# (yt-dlp ships them as "&gt;&gt;") and used to flow all the way into clip
+# titles, producing garbage like ">> In my mind of mine..." and
+# "NBS? >> In my mind..." on published Shorts.
+#
+# They are stripped here, at the parse boundary, rather than in the title
+# layer, because they corrupt three separate consumers: keyword scoring
+# (">>" became a token), the burned captions, and the titles. Fixing it once
+# at the source covers all three.
+_SPEAKER_MARKER_RE = re.compile(r'>{2,}')
+
+# A leading "NAME:" attribution, the other common captioner convention
+# ("INTERVIEWER: so tell me"). Only uppercase/title-case single-or-two-word
+# labels are removed, so ordinary mid-sentence colons ("the truth is: it
+# works") and times ("at 3:30") are left alone.
+_SPEAKER_LABEL_RE = re.compile(
+    r'^\s*(?:[A-Z][A-Za-z.\'-]*(?:\s+[A-Z][A-Za-z.\'-]*)?)\s*:\s(?=[A-Za-z])'
+)
+
+# Non-speech annotations: "[APPLAUSE]", "(laughs)", "♪♪". These are not words
+# anybody said, so they must not be scored as content or burned as captions.
+_ANNOTATION_RE = re.compile(r'\[[^\]]*\]|\([^)]*\)|[\u266a\u266b\u2669]+')
+
+
+def _strip_speaker_markers(text: str) -> str:
+    """Remove captioner bookkeeping, leaving only spoken words.
+
+    Handles ">>" speaker changes, leading "NAME:" attributions and bracketed
+    non-speech annotations, then re-collapses the whitespace those removals
+    leave behind.
+    """
+    if not text:
+        return ''
+
+    text = _ANNOTATION_RE.sub(' ', text)
+    text = _SPEAKER_MARKER_RE.sub(' ', text)
+    # Collapse before the label test so "  JOHN: hi" is recognised.
+    text = re.sub(r'\s+', ' ', text).strip()
+    text = _SPEAKER_LABEL_RE.sub('', text, count=1)
+    text = re.sub(r'\s+', ' ', text).strip()
+    # A cue that was *only* an annotation collapses to punctuation; treat that
+    # as empty so the caller drops it instead of emitting a "-" segment.
+    if not re.search(r'\w', text):
+        return ''
+    return text.lstrip('-,;:. ').strip()
+
 
 def _seconds(hours, minutes, seconds, millis) -> float:
     return (int(hours or 0) * 3600 + int(minutes) * 60 + int(seconds)
@@ -92,7 +140,7 @@ def parse_subtitle_file(path: str) -> Optional[List[Dict]]:
         for entity, char in (('&amp;', '&'), ('&#39;', "'"), ('&quot;', '"'),
                              ('&gt;', '>'), ('&lt;', '<')):
             text = text.replace(entity, char)
-        text = text.strip()
+        text = _strip_speaker_markers(text)
 
         if not text or end <= start:
             continue
