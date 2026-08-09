@@ -188,6 +188,11 @@ class Config:
         # Run raw clip hooks through the rule-based title optimizer when
         # generating Short titles. Off => the raw hook is used verbatim.
         self.title_optimizer = self._bool('TITLE_OPTIMIZER', True)
+        # Multichannel upload mode: how to distribute Shorts among the channels bound to a niche.
+        # Options: 'round_robin' (default), 'all', 'first'.
+        self.multichannel_upload_mode = os.getenv('MULTICHANNEL_UPLOAD_MODE', 'round_robin').lower()
+        if self.multichannel_upload_mode not in ('round_robin', 'all', 'first'):
+            self.multichannel_upload_mode = 'round_robin'
 
         # --- Scheduled discovery -----------------------------------------
         # Candidates pulled per channel before dedup/filtering. Must be >=
@@ -392,13 +397,35 @@ class Config:
         raw = (self.niches or {}).get(niche_name)
         if isinstance(raw, dict):
             merged.update({k: v for k, v in raw.items() if v is not None})
-        # Guarantee list types even if the YAML had a bare string.
-        for key in ('channels', 'keywords'):
-            val = merged.get(key)
-            if isinstance(val, str):
-                merged[key] = [val]
-            elif not isinstance(val, list):
-                merged[key] = []
+
+        # Handle channels: if the YAML provided a non-empty list for 'channels', use it.
+        # Otherwise, if the YAML provided a non-empty string for 'channel', use that as a single-item list.
+        # Otherwise, channels remains empty.
+        channels = merged.get('channels')
+        if isinstance(channels, list):
+            if len(channels) == 0:
+                # Check the legacy channel string
+                legacy_channel = merged.get('channel')
+                if isinstance(legacy_channel, str) and legacy_channel.strip():
+                    merged['channels'] = [legacy_channel.strip()]
+                else:
+                    merged['channels'] = []
+            # else: non-empty list, we keep it
+        else:
+            # If channels is not a list (e.g., None or a string), then we treat it as absent and look at legacy channel.
+            legacy_channel = merged.get('channel')
+            if isinstance(legacy_channel, str) and legacy_channel.strip():
+                merged['channels'] = [legacy_channel.strip()]
+            else:
+                merged['channels'] = []
+
+        # For keywords, we keep the existing conversion (string to list, non-list to empty list)
+        key_val = merged.get('keywords')
+        if isinstance(key_val, str):
+            merged['keywords'] = [key_val]
+        elif not isinstance(key_val, list):
+            merged['keywords'] = []
+
         return merged
 
     def niche_names(self):
@@ -408,19 +435,27 @@ class Config:
         """Return the upload channel key bound to a niche.
 
         Resolution order:
-          1. the niche's explicit ``channel:`` value in niches.yaml,
+          1. the niche's explicit ``channel:`` value in niches.yaml (first item in the list),
           2. ``UPLOAD_DEFAULT_CHANNEL`` from .env,
           3. the niche name itself (a niche whose key matches a token, e.g.
              ``flick_shorts`` -> ``youtube_token_flick_shorts.json``),
           4. '' (no binding) -- uploads are skipped with a warning.
         """
         cfg = self.get_niche_config(niche_name)
-        bound = str(cfg.get('channel') or '').strip()
-        if bound:
-            return bound
+        channels = cfg.get('channels', [])
+        if channels:
+            return channels[0]
         if self.upload_default_channel:
             return self.upload_default_channel
         return (niche_name or '').strip()
+
+    def get_niche_channels(self, niche_name: str) -> List[str]:
+        """Return the list of upload channel keys bound to a niche.
+
+        Returns an empty list if no channels are bound.
+        """
+        cfg = self.get_niche_config(niche_name)
+        return cfg.get('channels', [])
 
     def authenticated_channels(self) -> List[str]:
         """Channel keys that have a token file on disk."""
