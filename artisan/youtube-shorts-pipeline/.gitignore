@@ -1,3 +1,6 @@
 test_*.mp4
 test_*.mp4.part
 test_*.part
+# Runtime state -- regenerated, never committed.
+data/dead_channels.json
+data/clip_plans/
