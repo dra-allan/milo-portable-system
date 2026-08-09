@@ -796,9 +796,9 @@ class ShortsPipeline:
                         break
             if not target_channels:
                 logger.info(
-                    "Skipping clip %d (item %d): no bound channel has daily "
-                    "budget left (cap %d/channel)",
-                    item['index'], item.get('index', item['index']), per_channel_cap,
+                    "Skipping clip %d: no bound channel has daily budget left "
+                    "(cap %d/channel)",
+                    item['index'], per_channel_cap,
                 )
                 continue
 
@@ -1526,7 +1526,8 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
 
 # Mark as uploaded in database
         try:
-            pipeline.db.mark_short_uploaded(source_video_id, segment_index, short_id)
+            pipeline.db.mark_short_uploaded(source_video_id, segment_index, short_id,
+                                            channel=channel)
             uploaded_count += 1
             logger.info(
                 "Uploaded %s#%s -> %s (via channel %s)",
@@ -1854,7 +1855,8 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int) -> 
     # Per-source daily cap (Allan's cadence rule): never post more than
     # UPLOAD_MAX_PER_SOURCE clips from the same source video in 24h. Seed the
     # budget from what's already on YouTube, then keep a running tally so a
-    # single sweep can't blow it either.
+    # single sweep can't blow it either. Also honor the per-channel cap: if
+    # this niche's channel already published its daily max, don't drain here.
     per_source_cap = getattr(config, 'upload_max_per_source', 3)
     remaining = {}
     for clip in clips:
@@ -1863,11 +1865,24 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int) -> 
             used = pipeline.db.uploaded_count_for_source_since(src)
             remaining[src] = max(0, per_source_cap - used)
     selected = []
+    per_channel_cap = getattr(config, 'upload_max_per_channel', 5)
+    channel_used = pipeline.db.uploaded_count_for_channel_since(channel)
+    channel_left = max(0, per_channel_cap - channel_used)
+    if channel_left <= 0:
+        logger.info(
+            "Niche '%s': channel '%s' already at per-channel daily cap "
+            "(%d/%d) -- not draining backlog",
+            niche, channel, channel_used, per_channel_cap,
+        )
+        return 0
     for clip in clips:
         src = clip['source_video_id']
         if remaining.get(src, 0) <= 0:
             continue
+        if channel_left <= 0:
+            break
         remaining[src] -= 1
+        channel_left -= 1
         selected.append(clip)
     clips = selected
     if not clips:
@@ -1915,7 +1930,8 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int) -> 
         if short_id:
             pipeline.stats['shorts_uploaded'] += 1
             uploaded += 1
-            pipeline.db.mark_short_uploaded(source_video_id, segment_index, short_id)
+            pipeline.db.mark_short_uploaded(source_video_id, segment_index, short_id,
+                                            channel=channel)
             try:
                 stats = uploader.fetch_statistics(short_id)
                 if stats:
