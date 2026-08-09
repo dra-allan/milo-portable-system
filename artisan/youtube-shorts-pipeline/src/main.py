@@ -640,16 +640,19 @@ def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
         except Exception as exc:
             logger.error("Unexpected error processing %s: %s", video_id, exc, exc_info=True)
             self.stats['errors'] += 1
-            return False
-        finally:
-            # Clean up audio (regenerable). Section files are small and kept
-            # for resume; they're in data/temp/sections/ and auto-managed.
+            # Clean up audio on error
             if audio_path:
                 try:
                     os.remove(audio_path)
                 except OSError:
                     pass
-        pass  # End of process_video_for_shorts method
+            return False
+        # Clean up audio on success
+        if audio_path:
+            try:
+                os.remove(audio_path)
+            except OSError:
+                pass
     def _generate_unique_title(self, hook_text: str, niche: str, clip_index: int) -> str:
         """Generate a unique, attention-optimized title for a Short.
 
