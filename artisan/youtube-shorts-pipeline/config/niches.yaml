@@ -1695,24 +1695,31 @@ ranking_general_commentary:
   max_videos: 3
   # Enables countdown-aware highlight scoring in processor.py.
   ranking_mode: true
+  # Every handle below was verified live with yt-dlp (the same listing call the
+  # pipeline uses) and returns a working /videos tab. Five handles from the
+  # original draft were removed because they are dead and only cost a wasted
+  # network round-trip on every sweep:
+  #   @Factnomenal, @Underknown, @therealinfographicsshow -> HTTP 404
+  #   @TopTenz, @Ranker  -> resolve, but "does not have a videos tab"
+  #   @Alltime10s        -> "This channel is not available"
   channels:
     # --- Core top-10 / countdown format ---
     - "@WatchMojo"
     - "@MsMojo"
-    - "@TopTenz"
-    - "@Alltime10s"
     - "@MostAmazingTop10"
     - "@TheRichest"
     - "@BeAmazed"
-    - "@Ranker"
+    - "@Top10Archive"
     # --- Entertainment / film rankings (dense, well-structured lists) ---
     - "@ScreenRant"
     - "@Looper"
     - "@CBRcomics"
+    - "@TheThings"
     # --- Fact / education rankings ---
-    - "@Factnomenal"
-    - "@Underknown"
-    - "@therealinfographicsshow"
+    - "@TheInfographicsShow"
+    - "@WeirdHistory"
+    - "@FactsVerse"
+    - "@SideProjects"
   keywords:
     # Explicit countdown format
     - "top 10"
