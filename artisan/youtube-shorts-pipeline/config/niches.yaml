@@ -1589,12 +1589,12 @@ geopolitics_power:
   preferred_upload_days: 730
   min_views: 100000
 
-uganda_chop:
+chop_ug:
   # Upload target(s): the channel(s) this niche's Shorts get published to.
-  # Must match an authenticated token (config/youtube_token_uganda_chop.json).
+  # Must match an authenticated token (config/youtube_token_chop_ug.json).
   upload_channels:
-    - uganda_chop
-  channel: uganda_chop
+    - chop_ug
+  channel: chop_ug
   max_videos: 5
   channels:
     # --- New & Requested Channels ---
