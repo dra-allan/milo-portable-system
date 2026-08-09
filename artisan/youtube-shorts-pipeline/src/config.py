@@ -181,6 +181,13 @@ class Config:
         # ~1,600, so only ~6 uploads fit per day; 20+ clips from one video
         # would blow that instantly, so we throttle and let backlog drain it.
         self.upload_max_per_run = self._int('UPLOAD_MAX_PER_RUN', 5, minimum=1)
+        # Hard cap on how many Shorts the same source video may publish per day.
+        # Allan's cadence rule: never post more than 3 clips from one source
+        # video in 24h (the algo test-fights identical-source bursts). The
+        # backlog drain would otherwise dump every clip of a rich source in one
+        # sweep -- exactly the "5 identical-title shorts in 9 minutes" burst we
+        # saw 2026-08-09.
+        self.upload_max_per_source = self._int('UPLOAD_MAX_PER_SOURCE', 3, minimum=1)
         # When a run has room left in its cap, fill it with older clips that
         # were rendered but never uploaded (the "new mixed with old" queue).
         self.upload_backlog = self._bool('UPLOAD_BACKLOG', True)

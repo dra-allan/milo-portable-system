@@ -245,6 +245,30 @@ class PipelineDatabase:
             logger.warning("Could not read recent shorts: %s", exc)
             return []
 
+    def uploaded_count_for_source_since(self, source_video_id: str,
+                                        hours: int = 24) -> int:
+        """How many Shorts from a source video were uploaded in the last N hours.
+
+        Drives the per-source daily cap (Allan's cadence rule: max 3 clips per
+        source video per day). Counts rows where uploaded_at is within the
+        window, so the cap holds across runs, not just within one sweep.
+        """
+        try:
+            with self._connect() as conn:
+                row = conn.execute(
+                    """SELECT COUNT(*) FROM generated_shorts
+                       WHERE source_video_id = ?
+                         AND youtube_short_id IS NOT NULL
+                         AND uploaded_at IS NOT NULL
+                         AND uploaded_at >= datetime('now', ?)""",
+                    (source_video_id, f'-{int(hours)} hours'),
+                ).fetchone()
+            return int(row[0]) if row else 0
+        except Exception as exc:
+            logger.warning("Could not count uploaded shorts for %s: %s",
+                           source_video_id, exc)
+            return 0
+
     def unuploaded_shorts(self, limit: int = 50) -> List[Dict]:
         """Shorts that were rendered but never uploaded, oldest first.
 

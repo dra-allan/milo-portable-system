@@ -726,6 +726,28 @@ class ShortsPipeline:
         else:
             logger.info("Upload cap: %d new clip(s), backlog mixing disabled", len(queue))
 
+        # Per-source daily cap (Allan's cadence rule): drop clips from sources
+        # that already hit UPLOAD_MAX_PER_SOURCE uploads in the last 24h --
+        # including the run's own fresh video, so a rich source can't be
+        # over-posted even when the backlog mixing is off.
+        per_source_cap = getattr(self.config, 'upload_max_per_source', 3)
+        per_source_left = {}
+        filtered = []
+        for item in queue:
+            src = item.get('source_video_id', video_id)
+            if src not in per_source_left:
+                used = self.db.uploaded_count_for_source_since(src)
+                per_source_left[src] = max(0, per_source_cap - used)
+            if per_source_left[src] <= 0:
+                logger.info(
+                    "Skipping clip from %s: per-source daily cap (%d) reached",
+                    src, per_source_cap,
+                )
+                continue
+            per_source_left[src] -= 1
+            filtered.append(item)
+        queue = filtered
+
         for item in queue[:cap]:
             item_niche = item.get('niche', niche)
             item_source = item.get('source_video_id', video_id)
@@ -1783,6 +1805,31 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int) -> 
     clips = _niche_backlog_supply(pipeline, niche)[:cap]
     if not clips:
         return 0
+
+    # Per-source daily cap (Allan's cadence rule): never post more than
+    # UPLOAD_MAX_PER_SOURCE clips from the same source video in 24h. Seed the
+    # budget from what's already on YouTube, then keep a running tally so a
+    # single sweep can't blow it either.
+    per_source_cap = getattr(config, 'upload_max_per_source', 3)
+    remaining = {}
+    for clip in clips:
+        src = clip['source_video_id']
+        if src not in remaining:
+            used = pipeline.db.uploaded_count_for_source_since(src)
+            remaining[src] = max(0, per_source_cap - used)
+    selected = []
+    for clip in clips:
+        src = clip['source_video_id']
+        if remaining.get(src, 0) <= 0:
+            continue
+        remaining[src] -= 1
+        selected.append(clip)
+    clips = selected
+    if not clips:
+        logger.info("Niche '%s': backlog clips present but per-source daily cap reached",
+                    niche)
+        return 0
+
     uploaded = 0
     for clip in clips:
         source_video_id = clip['source_video_id']
