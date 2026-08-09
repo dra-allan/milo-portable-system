@@ -12,7 +12,7 @@ flick_shorts:
   # upload_channels is set.
   channel: flick_shorts
   # Per-run video cap for this niche (overrides SCHEDULE_MAX_VIDEOS).
-  max_videos: 1
+  max_videos: 3
   channels:
     - "@TheDiaryOfACEO"
     - "@joerogan"
