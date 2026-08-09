@@ -632,33 +632,21 @@ def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
                 "Finished %s -- %d clips in %s",
                 video_id, len(created), shorts_dir,
             )
-            # Clean up audio on success
-            if audio_path:
-                try:
-                    os.remove(audio_path)
-                except OSError:
-                    pass
             return True
         except KeyboardInterrupt:
             logger.warning("Interrupted while processing %s", video_id)
-            # Clean up audio on interrupt
-            if audio_path:
-                try:
-                    os.remove(audio_path)
-                except OSError:
-                    pass
             raise
         except Exception as exc:
             logger.error("Unexpected error processing %s: %s", video_id, exc, exc_info=True)
             self.stats['errors'] += 1
-            # Clean up audio on error
+            return False
+        finally:
+            # Clean up audio regardless of success or exception
             if audio_path:
                 try:
                     os.remove(audio_path)
                 except OSError:
                     pass
-            return False
-        pass  # Method cleanup
 
     def _upload_clips(self, created: List[Dict], video_id: str, niche: str,
                       niche_keywords: List[str]) -> None:
