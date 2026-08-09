@@ -291,7 +291,9 @@ class TestScheduledSweepBudget(unittest.TestCase):
             niche = None
             videos = 5
 
-        _run_scheduled_sweep(FakePipeline(), Args())
+        pipeline = FakePipeline()
+        pipeline.config = config
+        _run_scheduled_sweep(pipeline, Args())
 
         # Only one niche processed due to total budget
         self.assertEqual(len(calls), 1)
@@ -385,9 +387,6 @@ class TestPullOnceBacklog(unittest.TestCase):
             _isolate_config(Path(td))
             from src.main import _run_scheduled_sweep
             from src.config import config
-            config.queue_min_distinct_sources = 1
-            config.queue_target_total = 3
-            config.upload_max_per_run = 3  # cap lower than total clips
             clips = []
             Path(td).joinpath('clips').mkdir(exist_ok=True)
             for i in range(6):  # 6 clips, cap 3 -> 3 remain after drain
@@ -401,6 +400,10 @@ class TestPullOnceBacklog(unittest.TestCase):
 
             pulled = []
             pipeline = self._make_pipeline_with_backlog(td, clips)
+            # Override config set by _make_pipeline_with_backlog
+            config.queue_min_distinct_sources = 1
+            config.queue_target_total = 3
+            config.upload_max_per_run = 3
             pipeline.run_niche = lambda niche, max_videos=1, lookback=None: (pulled.append(niche) or 0)
 
             _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
