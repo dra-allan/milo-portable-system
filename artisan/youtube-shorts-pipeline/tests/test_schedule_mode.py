@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Dict, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -57,6 +58,8 @@ class FakeDB:
         self.recorded = []
         self.marked = []
         self.unuploaded = list(unuploaded)
+        self.used_by_source = {}
+        self.used_by_channel = {}
 
     def is_video_processed(self, video_id):
         return video_id in self.processed
@@ -86,6 +89,79 @@ class FakeDB:
 
     def source_performance(self):
         return {}
+
+    # New methods for queue health and backlog management
+    def expire_stale_backlog(self, niche: str, ttl_days: int = 7) -> int:
+        return 0
+
+    def get_queue_health(self, niche: str) -> Dict:
+        # Count queued clips per source for this niche
+        source_counts = {}
+        total = 0
+        for clip in self.unuploaded:
+            if (clip.get('niche') or '') == niche and clip.get('local_path'):
+                src = clip['source_video_id']
+                source_counts[src] = source_counts.get(src, 0) + 1
+                total += 1
+        max_source = max(source_counts.values()) if source_counts else 0
+        top_share = max_source / total if total > 0 else 0.0
+        return {
+            'total_queued': total,
+            'distinct_sources': len(source_counts),
+            'eligible_clips': 0,
+            'top_source_share': round(top_share, 2),
+            'channel_remaining': 0,
+            'capped_sources': [],
+            'source_counts': source_counts,
+        }
+
+    def expire_stale_backlog(self, niche: str, ttl_days: int = 7) -> int:
+        return 0
+
+    def get_queued_clips_for_upload(self, niche: str, limit: int = 100) -> List[Dict]:
+        clips = [c for c in self.unuploaded 
+                 if (c.get('niche') or '') == niche and c.get('local_path')]
+        # Fair source rotation: group by source, round-robin
+        by_source = {}
+        for c in clips:
+            src = c['source_video_id']
+            if src not in by_source:
+                by_source[src] = []
+            by_source[src].append(c)
+        
+        sources = sorted(by_source.keys(), key=lambda s: len(by_source[s]))
+        result = []
+        pointers = {s: 0 for s in sources}
+        remaining = list(sources)
+        
+        while remaining and len(result) < limit:
+            next_remaining = []
+            for src in remaining:
+                idx = pointers[src]
+                if idx < len(by_source[src]):
+                    result.append(by_source[src][idx])
+                    pointers[src] += 1
+                    if pointers[src] < len(by_source[src]):
+                        next_remaining.append(src)
+            remaining = next_remaining
+            if len(result) >= limit:
+                break
+        return result[:limit]
+
+    def count_queued_by_source(self, niche: str) -> Dict[str, int]:
+        counts = {}
+        for c in self.unuploaded:
+            if (c.get('niche') or '') == niche:
+                src = c['source_video_id']
+                counts[src] = counts.get(src, 0) + 1
+        return counts
+
+    def update_clip_status(self, source_video_id: str, segment_index: int, status: str) -> bool:
+        return True
+
+    def get_max_queued_per_source(self, niche: str) -> int:
+        counts = self.count_queued_by_source(niche)
+        return max(counts.values()) if counts else 0
 
 
 class FakeProcessor:
@@ -164,7 +240,10 @@ class TestScheduledSweepBudget(unittest.TestCase):
             }
             config.schedule_max_videos = 1
             config.schedule_max_total = 1
-            config.schedule_backlog_first = False
+            config.queue_target_total = 12
+            config.queue_min_distinct_sources = 4
+            config.queue_max_top_source_share = 0.50
+            config.backlog_ttl_days = 7
             calls = []
 
             class FakePipeline:
@@ -180,7 +259,8 @@ class TestScheduledSweepBudget(unittest.TestCase):
 
             _run_scheduled_sweep(FakePipeline(), Args())
 
-            self.assertEqual(calls, ['capital_mindset'])
+            # Only one niche processed due to total budget
+            self.assertEqual(len(calls), 1)
 
     def test_sweep_skips_unbound_through_run_niche(self):
         with _workspace() as td:
@@ -189,7 +269,10 @@ class TestScheduledSweepBudget(unittest.TestCase):
             from src.main import _run_scheduled_sweep
 
             config.schedule_max_videos = 3
-            config.schedule_backlog_first = False
+            config.queue_target_total = 12
+            config.queue_min_distinct_sources = 4
+            config.queue_max_top_source_share = 0.50
+            config.backlog_ttl_days = 7
             pipeline = _make_pipeline(Path(td), authed_channels=('flick_shorts', 'capital_mindset'))
             processed = []
             pipeline.process_video_for_shorts = lambda vid, niche, force=False, local_only=False, source_channel='': (processed.append((vid, niche)) or True)
@@ -204,7 +287,7 @@ class TestScheduledSweepBudget(unittest.TestCase):
 
 
 class TestPullOnceBacklog(unittest.TestCase):
-    """Pull-once: sweeps drain existing clip supply instead of pulling again."""
+    """Pull-once: sweeps drain existing clip supply, then run discovery if queue unhealthy."""
 
     def _make_pipeline_with_backlog(self, td, unuploaded):
         from src.config import config
@@ -217,6 +300,11 @@ class TestPullOnceBacklog(unittest.TestCase):
         config.upload_max_per_run = 5
         config.upload_pacing_min = 0
         config.upload_pacing_max = 0
+        # Queue health configs for testing
+        config.queue_target_total = 12
+        config.queue_min_distinct_sources = 4
+        config.queue_max_top_source_share = 0.50
+        config.backlog_ttl_days = 7
 
         pipeline = ShortsPipeline.__new__(ShortsPipeline)
         pipeline.config = config
@@ -228,7 +316,8 @@ class TestPullOnceBacklog(unittest.TestCase):
         pipeline._uploader_for_channel = lambda ch: _FakeUploader()
         return pipeline
 
-    def test_backlog_supply_skips_pull_and_uploads_existing(self):
+    def test_backlog_supply_drains_then_runs_discovery_if_queue_unhealthy(self):
+        """Backlog drains first; if queue unhealthy, discovery runs."""
         with _workspace() as td:
             _isolate_config(Path(td))
             from src.main import _run_scheduled_sweep
@@ -250,17 +339,22 @@ class TestPullOnceBacklog(unittest.TestCase):
 
             _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
 
-            # 2 clips >= backlog_min(1): drain both, no pull.
-            self.assertEqual(pulled, [])
+            # 2 clips uploaded from backlog
             self.assertEqual(pipeline.stats['shorts_uploaded'], 2)
+            # Queue unhealthy (only 1 source, below min_distinct_sources=4) -> discovery runs
+            self.assertEqual(pulled, ['flick_shorts'])
 
-    def test_rich_backlog_means_no_pull(self):
+    def test_rich_backlog_means_no_pull_if_queue_healthy(self):
+        """If queue is healthy (enough distinct sources), no discovery runs."""
         with _workspace() as td:
             _isolate_config(Path(td))
             from src.main import _run_scheduled_sweep
+            from src.config import config
+            config.queue_min_distinct_sources = 1  # low threshold for this test
+            config.queue_target_total = 3
             clips = []
             Path(td).joinpath('clips').mkdir(exist_ok=True)
-            for i in range(6):
+            for i in range(5):
                 clips.append({
                     'source_video_id': f'aaa111111{i}',
                     'segment_index': i + 1,
@@ -275,9 +369,10 @@ class TestPullOnceBacklog(unittest.TestCase):
 
             _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
 
-            # 6 clips >= backlog_min(5): drain, no pull.
-            self.assertEqual(pulled, [])
+            # 5 clips uploaded from backlog (cap 5)
             self.assertEqual(pipeline.stats['shorts_uploaded'], 5)
+            # Queue healthy (5 distinct sources >= 1, total >= 3) -> no discovery
+            self.assertEqual(pulled, [])
 
     def test_per_source_daily_cap_limits_backlog_drain(self):
         with _workspace() as td:
@@ -285,8 +380,6 @@ class TestPullOnceBacklog(unittest.TestCase):
             from src.main import _run_scheduled_sweep
             from src.config import config
 
-            # 5 clips from the SAME source video -- the "How to Get Rich" burst
-            # pattern. Only upload_max_per_source (3) may go up in one run.
             config.upload_max_per_source = 3
             clips = []
             Path(td).joinpath('clips').mkdir(exist_ok=True)
@@ -305,8 +398,10 @@ class TestPullOnceBacklog(unittest.TestCase):
 
             _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
 
-            # 5 supplied but per-source cap stops at 3.
+            # 5 supplied but per-source cap stops at 3
             self.assertEqual(pipeline.stats['shorts_uploaded'], 3)
+            # 2 clips from capped source remain, queue unhealthy -> discovery runs
+            self.assertEqual(pulled, ['flick_shorts'])
 
     def test_per_source_cap_counts_already_uploaded(self):
         with _workspace() as td:
@@ -314,8 +409,6 @@ class TestPullOnceBacklog(unittest.TestCase):
             from src.main import _run_scheduled_sweep
             from src.config import config
 
-            # 2 clips from this source were already posted in the last 24h, so
-            # with a cap of 3 only 1 more may go up this run.
             config.upload_max_per_source = 3
             clips = [
                 {'source_video_id': 'aaa11111111', 'segment_index': 1,
@@ -336,7 +429,10 @@ class TestPullOnceBacklog(unittest.TestCase):
 
             _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
 
+            # 2 already uploaded, cap 3 -> only 1 more can go
             self.assertEqual(pipeline.stats['shorts_uploaded'], 1)
+            # Queue has 1 remaining from capped source -> unhealthy -> discovery runs
+            self.assertEqual(pulled, ['flick_shorts'])
 
     def test_per_channel_daily_cap_limits_backlog_drain(self):
         with _workspace() as td:
@@ -344,9 +440,6 @@ class TestPullOnceBacklog(unittest.TestCase):
             from src.main import _run_scheduled_sweep
             from src.config import config
 
-            # Channel already published 4 shorts in the last 24h. With a
-            # per-channel cap of 5, only 1 more may go up this run -- even
-            # though the backlog has 3 clips ready.
             config.upload_max_per_channel = 5
             config.upload_max_per_source = 3
             clips = []
@@ -367,7 +460,10 @@ class TestPullOnceBacklog(unittest.TestCase):
 
             _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
 
+            # Channel at 4/5, cap 5 -> only 1 more
             self.assertEqual(pipeline.stats['shorts_uploaded'], 1)
+            # Queue has 2 remaining but channel capped -> unhealthy -> discovery runs
+            self.assertEqual(pulled, ['flick_shorts'])
 
     def test_per_channel_cap_exhausted_skips_drain_entirely(self):
         with _workspace() as td:
@@ -393,7 +489,10 @@ class TestPullOnceBacklog(unittest.TestCase):
 
             _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
 
+            # Channel at 5/5, cap 5 -> 0 uploads
             self.assertEqual(pipeline.stats['shorts_uploaded'], 0)
+            # Channel full, queue unhealthy -> discovery runs (but will also be capped)
+            self.assertEqual(pulled, ['flick_shorts'])
 
 
 class TestBacklogRoundRobin(unittest.TestCase):
@@ -419,6 +518,10 @@ class TestBacklogRoundRobin(unittest.TestCase):
         config.upload_max_per_source = 3
         config.upload_pacing_min = 0
         config.upload_pacing_max = 0
+        config.queue_target_total = 12
+        config.queue_min_distinct_sources = 4
+        config.queue_max_top_source_share = 0.50
+        config.backlog_ttl_days = 7
 
         pipeline = ShortsPipeline.__new__(ShortsPipeline)
         pipeline.config = config

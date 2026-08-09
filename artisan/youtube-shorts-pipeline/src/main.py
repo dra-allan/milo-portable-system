@@ -1835,40 +1835,130 @@ def _niche_backlog_supply(pipeline: 'ShortsPipeline', niche: str) -> List[Dict]:
             and Path(r['local_path']).exists()]
 
 
-def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int) -> int:
-    """Post up to ``cap`` un-uploaded clips for a niche, oldest first.
+# ----------------------------------------------------------------------
+# Queue health and scheduling helpers
+# ----------------------------------------------------------------------
+def _expire_stale_backlog(pipeline: 'ShortsPipeline', niche: str) -> int:
+    """Mark stale backlog clips as expired based on TTL config."""
+    try:
+        ttl = getattr(pipeline.config, 'backlog_ttl_days', 7)
+        return pipeline.db.expire_stale_backlog(niche, ttl)
+    except Exception as exc:
+        logger.warning("Backlog expiry failed for %s: %s", niche, exc)
+        return 0
 
-    Mirrors ``_upload_existing_shorts`` but scoped to one niche and called by
-    the scheduler instead of the CLI. Returns how many clips uploaded. Quota
-    errors abort the run (the clips stay on disk and are retried later).
 
-    Multi-channel: when a niche binds several channels via ``upload_channels``,
-    clips are round-robin'd across them (Allan's rule) -- every bound channel
-    posts each run, and the same clip never lands on two channels. Round-robin
-    is a splitter, not a duplicator. The legacy single ``channel:`` binding
-    still works as a one-item list.
+def _get_queue_health(pipeline: 'ShortsPipeline', niche: str,
+                      channels: List[str]) -> Dict:
+    """Compute queue health metrics for a niche."""
+    health = pipeline.db.get_queue_health(niche)
+    
+    # Add per-source cap awareness
+    per_source_cap = getattr(pipeline.config, 'upload_max_per_source', 3)
+    capped = []
+    eligible = 0
+    for src, count in health['source_counts'].items():
+        used = pipeline.db.uploaded_count_for_source_since(src)
+        if used >= per_source_cap:
+            capped.append(src)
+        else:
+            eligible += min(count, per_source_cap - used)
+    health['eligible_clips'] = eligible
+    health['capped_sources'] = capped
+    
+    # Add channel capacity
+    per_channel_cap = getattr(pipeline.config, 'upload_max_per_channel', 6)
+    channel_remaining = 0
+    for ch in channels:
+        used = pipeline.db.uploaded_count_for_channel_since(ch)
+        channel_remaining += max(0, per_channel_cap - used)
+    health['channel_remaining'] = channel_remaining
+    
+    # Oldest clip age
+    try:
+        with pipeline.db._connect() as conn:
+            row = conn.execute(
+                """SELECT MIN(created_at) FROM generated_shorts g
+                   LEFT JOIN processed_videos p ON p.youtube_video_id = g.source_video_id
+                   WHERE g.youtube_short_id IS NULL AND g.status = 'queued'
+                   AND (p.niche = ? OR ? = '')""",
+                (pipeline.db.get_niche_channel(niche) if hasattr(pipeline.db, 'get_niche_channel') else niche, niche),
+            ).fetchone()
+            if row and row[0]:
+                from datetime import datetime
+                oldest = datetime.fromisoformat(row[0].replace(' ', 'T'))
+                health['oldest_clip_age_days'] = (datetime.now() - oldest).days
+    except Exception:
+        health['oldest_clip_age_days'] = 0
+    
+    return health
+
+
+def _should_discover_more(pipeline: 'ShortsPipeline', niche: str,
+                          health: Dict, channels: List[str]) -> tuple:
+    """Decide whether to run fresh discovery for a niche.
+    
+    Returns (should_discover: bool, reason: str)
+    """
+    cfg = pipeline.config
+    
+    # Check if niche is active
+    niche_cfg = config.get_niche_config(niche)
+    max_videos = niche_cfg.get('max_videos', 0) or getattr(cfg, 'schedule_max_videos', 3)
+    if max_videos <= 0:
+        return False, 'niche_inactive'
+    
+    # Total queued clips below target
+    target = getattr(cfg, 'queue_target_total', 12)
+    if health['total_queued'] < target:
+        return True, f'total_queued_below_target ({health["total_queued"]}/{target})'
+    
+    # Not enough distinct sources
+    min_distinct = getattr(cfg, 'queue_min_distinct_sources', 4)
+    if health['distinct_sources'] < min_distinct:
+        return True, f'distinct_sources_low ({health["distinct_sources"]}/{min_distinct})'
+    
+    # Top source dominance too high
+    max_share = getattr(cfg, 'queue_max_top_source_share', 0.5)
+    if health['top_source_share'] > max_share:
+        return True, f'top_source_dominance_high ({health["top_source_share"]:.2f}/{max_share})'
+    
+    # Channel has capacity but not enough eligible clips
+    if health['channel_remaining'] > 0 and health['eligible_clips'] < health['channel_remaining']:
+        return True, 'channel_capacity_unused'
+    
+    # All/most queued clips are source-capped
+    if health['total_queued'] > 0 and health['eligible_clips'] == 0:
+        return True, 'all_clips_source_capped'
+    
+    # Check last discovery time (simplified: if no new source added recently)
+    # This would need a last_discovery timestamp in DB; skip for now
+    
+    return False, 'queue_healthy'
+
+
+def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
+                           channels: List[str]) -> int:
+    """Post up to ``cap`` un-uploaded clips for a niche, using fair source rotation.
+
+    Skips source-capped clips instead of stopping. Returns how many clips uploaded.
+    Quota errors abort the run.
     """
     authed = config.authenticated_channels()
-    channels = config.get_niche_channels(niche)
     if not channels:
-        primary = config.get_niche_channel(niche)
-        channels = [primary] if primary else []
-    # Keep only channels we can actually publish to.
+        return 0
     channels = [c for c in channels if not authed or c in authed]
     if not channels:
         return 0
 
-    supply = _niche_backlog_supply(pipeline, niche)
+    # Get clips with fair source rotation
+    supply = pipeline.db.get_queued_clips_for_upload(niche, limit=cap * 2)
     if not supply:
         return 0
 
-    # Per-source daily cap (Allan's cadence rule): never post more than
-    # UPLOAD_MAX_PER_SOURCE clips from the same source video in 24h -- that
-    # budget is shared across all of this niche's channels, so one source can't
-    # burst across the whole network. Each channel also has its own
-    # UPLOAD_MAX_PER_CHANNEL daily budget.
-    per_source_cap = config.upload_max_per_source
-    per_channel_cap = config.upload_max_per_channel
+    # Per-source and per-channel caps
+    per_source_cap = getattr(config, 'upload_max_per_source', 3)
+    per_channel_cap = getattr(config, 'upload_max_per_channel', 6)
     src_left = {}
     for clip in supply:
         src = clip['source_video_id']
@@ -1880,17 +1970,29 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int) -> 
         used = pipeline.db.uploaded_count_for_channel_since(ch)
         channel_left[ch] = max(0, per_channel_cap - used)
 
-    # Round-robin assign clips to channels: the next channel with budget left
-    # wins the next clip, so every bound channel posts before any channel
-    # repeats. One channel hitting its daily cap doesn't starve the others.
+    # Round-robin across sources, then assign to channels round-robin
     selected = []  # (clip, channel)
     cursor = 0
+    
+    # Group by source
+    by_source = {}
+    for clip in supply:
+        src = clip['source_video_id']
+        if src not in by_source:
+            by_source[src] = []
+        by_source[src].append(clip)
+    
+    sources = sorted(by_source.keys(), key=lambda s: len(by_source[s]))
+    source_pointers = {s: 0 for s in sources}
+    
     for clip in supply:
         if len(selected) >= cap:
             break
         src = clip['source_video_id']
         if src_left.get(src, 0) <= 0:
             continue
+        
+        # Find next channel with budget
         chosen = None
         for _ in range(len(channels)):
             cand = channels[cursor % len(channels)]
@@ -1899,17 +2001,27 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int) -> 
                 chosen = cand
                 break
         if chosen is None:
-            break  # every bound channel hit its daily budget
+            break
+        
         channel_left[chosen] -= 1
         src_left[src] -= 1
         selected.append((clip, chosen))
-
+    
     if not selected:
         logger.info(
             "Niche '%s': backlog clips present but per-source/per-channel daily caps reached",
             niche,
         )
         return 0
+
+    # Log queue health
+    health = pipeline.db.get_queue_health(niche)
+    logger.info(
+        "QUEUE_HEALTH niche=%s total=%d eligible=%d distinct_sources=%d top_source_share=%.2f channel_remaining=%d",
+        niche, health.get('total_queued', 0), health.get('eligible_clips', 0),
+        health.get('distinct_sources', 0), health.get('top_source_share', 0.0),
+        health.get('channel_remaining', 0),
+    )
 
     uploaders = {}
 
@@ -1988,20 +2100,44 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int) -> 
     return uploaded
 
 
-def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
-    """Run every channel-bound niche up to per-niche and per-sweep budgets.
+def _discover_and_render(pipeline: 'ShortsPipeline', niche: str, cap: int,
+                         channels: List[str]) -> int:
+    """Run fresh discovery and rendering for a niche."""
+    if not pipeline.upload_enabled:
+        return 0
+    max_videos = int(config.get_niche_config(niche).get('max_videos') or 0)
+    if max_videos <= 0:
+        max_videos = getattr(config, 'schedule_max_videos', 3)
+    max_videos = min(max_videos, cap)
+    return pipeline.run_niche(niche, max_videos=max_videos)
 
-    Pull-once model: each niche first checks its un-uploaded clip supply. If
-    there are clips waiting (SCHEDULE_BACKLOG_FIRST, default on), the sweep
-    posts those instead of downloading a fresh source video -- so the morning
-    pull's clips drip out across the afternoon and evening sweeps, and a new
-    video is only pulled once the supply runs out. Niches with no authenticated
-    upload channel are skipped inside run_niche (they can't publish).
+
+def _discover_and_render(pipeline: 'ShortsPipeline', niche: str, cap: int,
+                         channels: List[str]) -> int:
+    """Run fresh discovery and rendering for a niche."""
+    if not pipeline.upload_enabled:
+        return 0
+    max_videos = int(config.get_niche_config(niche).get('max_videos') or 0)
+    if max_videos <= 0:
+        max_videos = getattr(config, 'schedule_max_videos', 3)
+    max_videos = min(max_videos, cap)
+    return pipeline.run_niche(niche, max_videos=max_videos)
+
+
+def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
+    """Run every channel-bound niche with the new queue-based scheduling.
+
+    Flow per niche:
+    1. Expire stale backlog clips (TTL)
+    2. Upload eligible backlog clips (respecting caps, fair source rotation)
+    3. Compute queue health
+    4. If queue unhealthy -> run fresh discovery/rendering
+    5. If channel capacity remains -> try uploading more backlog
+
+    This replaces the old pull-once model where backlog blocked discovery.
     """
     per_niche_default = getattr(config, 'schedule_max_videos', 3)
     total_budget = getattr(config, 'schedule_max_total', 0)
-    backlog_first = getattr(config, 'schedule_backlog_first', True)
-    backlog_min = max(1, getattr(config, 'schedule_backlog_min', 1) or 1)
     niches = [args.niche] if args.niche else config.niche_names()
     if not niches:
         logger.error("No niches configured and no video specified. Nothing to do.")
@@ -2019,23 +2155,66 @@ def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
                         total_budget)
             break
 
-        # Pull-once: if a niche still has clips to post, drain them instead of
-        # pulling another video. The cap here is the per-run video cap, but the
-        # backlog drain posts clips -- so cap it by upload_max_per_run too.
-        if backlog_first and pipeline.upload_enabled:
-            supply = _niche_backlog_supply(pipeline, niche)
-            if len(supply) >= backlog_min:
-                logger.info(
-                    "Niche '%s': %d clip(s) already waiting to post -- "
-                    "skipping pull, draining backlog (pull-once)",
-                    niche, len(supply),
-                )
-                _upload_backlog_supply(pipeline, niche, config.upload_max_per_run)
-                continue
+        # Skip niches without authenticated upload channels
+        channels = config.get_niche_channels(niche)
+        authed = config.authenticated_channels()
+        if not channels or not any(c in authed for c in channels):
+            logger.info(
+                "Niche '%s': no authenticated upload channel bound "
+                "(resolved channels=%r, authed=%s) -- skipping",
+                niche, channels, authed or ['(default token)'],
+            )
+            continue
 
-        logger.info("Niche '%s': per-run cap %d video(s)", niche, cap)
-        started = pipeline.run_niche(niche, max_videos=cap)
-        started_total += started
+        # Filter to authed channels only
+        channels = [c for c in channels if c in authed]
+        
+        # 1. Expire stale backlog
+        expired = _expire_stale_backlog(pipeline, niche)
+        if expired:
+            logger.info("Niche '%s': expired %d stale backlog clip(s) (TTL %d days)",
+                        niche, expired, getattr(config, 'backlog_ttl_days', 7))
+
+        # 2. Upload eligible backlog clips
+        backlog_cap = config.upload_max_per_run
+        uploaded_backlog = _upload_backlog_supply(pipeline, niche, backlog_cap, channels)
+        
+        # 3. Compute queue health after backlog drain
+        health = _get_queue_health(pipeline, niche, channels)
+        
+        # 4. Decide whether to discover fresh sources
+        should_discover, reason = _should_discover_more(pipeline, niche, health, 
+                                                         [c for c in channels if c in authed])
+        
+        logger.info(
+            "QUEUE_HEALTH niche=%s total=%d eligible=%d distinct_sources=%d "
+            "top_source_share=%.2f channel_remaining=%d reason=%s",
+            niche, health['total_queued'], health['eligible_clips'],
+            health['distinct_sources'], health['top_source_share'],
+            health['channel_remaining'], reason if should_discover else 'none',
+        )
+        
+        # 5. If queue unhealthy, run discovery (if we have budget)
+        if should_discover:
+            remaining_cap = cap
+            if remaining_cap > 0:
+                logger.info("DISCOVERY_TRIGGER niche=%s reason=%s", niche, reason)
+                discovered = _discover_and_render(pipeline, niche, cap, 
+                                                   [c for c in channels if c in authed])
+                started_total += discovered
+                # Re-evaluate health after discovery
+                health = _get_queue_health(pipeline, niche, channels)
+        
+        # 5b. If channel capacity remains, try one more backlog pass
+        if health['channel_remaining'] > 0 and health['eligible_clips'] > 0:
+            uploaded_more = _upload_backlog_supply(pipeline, niche, 
+                                                    health['channel_remaining'], channels)
+            if uploaded_more:
+                logger.info("Niche '%s': uploaded %d additional backlog clip(s)",
+                            niche, uploaded_more)
+
+        logger.info("Niche '%s': sweep complete", niche)
+
     logger.info("Scheduled sweep started %d video(s)", started_total)
     return started_total
 
