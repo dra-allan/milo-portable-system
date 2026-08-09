@@ -280,7 +280,7 @@ class TestScheduledSweepBudget(unittest.TestCase):
 
         class FakePipeline:
 
-            upload_enabled = False
+            upload_enabled = True
             db = FakeDB()
 
             def run_niche(self, niche, max_videos=1, lookback=None):
@@ -305,6 +305,7 @@ class TestScheduledSweepBudget(unittest.TestCase):
             from src.main import _run_scheduled_sweep
 
             config.schedule_max_videos = 3
+            config.schedule_max_total = 0  # Ensure no global budget limit
             config.queue_target_total = 12
             config.queue_min_distinct_sources = 4
             config.queue_max_top_source_share = 0.50
