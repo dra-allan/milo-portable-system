@@ -341,6 +341,11 @@ class Config:
         self.shorts_dir = _resolve(os.getenv('SHORTS_DIR', 'data/shorts'))
         self.db_path = _resolve(os.getenv('DB_PATH', 'data/processed_videos.db'))
         self.log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+        # How long a channel that fails to list (dead ID / no videos tab / 404
+        # handle) stays quiet before it is re-probed by the downloader. The
+        # cache lives in data/dead_channels.json.
+        self.dead_channel_cooldown_days = self._int(
+            'DEAD_CHANNEL_COOLDOWN_DAYS', 14, minimum=1)
 
         for d in (self.temp_dir, self.data_dir, self.logs_dir, self.shorts_dir):
             d.mkdir(parents=True, exist_ok=True)

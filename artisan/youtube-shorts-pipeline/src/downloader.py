@@ -143,6 +143,14 @@ class YouTubeDownloader:
         self.audio_dir.mkdir(parents=True, exist_ok=True)
         self.sections_dir.mkdir(parents=True, exist_ok=True)
         self.library_path = Path(config.data_dir) / 'library.json'
+        # Dead-channel cache: channels that failed to list (wrong ID, no videos
+        # tab, 404 handle) get remembered here so every sweep doesn't hammer
+        # YouTube and re-log the same ERROR. Re-probed after a cooldown.
+        self.dead_channels_path = Path(config.data_dir) / 'dead_channels.json'
+        self._dead_channels = self._load_dead_channels()
+        self.dead_channel_cooldown = int(
+            getattr(config, 'dead_channel_cooldown_days', 14) or 14
+        )
         self.ffprobe = os.getenv('MILO_FFPROBE') or shutil.which('ffprobe') or 'ffprobe'
 
         height = int(getattr(config, 'download_height', 1080) or 1080)
@@ -893,6 +901,49 @@ class YouTubeDownloader:
         return sorted(seen.values(), key=lambda e: e['title'].lower())
 
     # ------------------------------------------------------------------
+    def _load_dead_channels(self) -> Dict[str, float]:
+        """Load the dead-channel cache {channel_key: first_failed_epoch}."""
+        try:
+            if self.dead_channels_path.exists():
+                raw = json.loads(self.dead_channels_path.read_text(encoding='utf-8'))
+                if isinstance(raw, dict):
+                    return {k: float(v) for k, v in raw.items()}
+        except Exception as exc:
+            logger.warning("Could not load dead-channel cache %s: %s",
+                           self.dead_channels_path, exc)
+        return {}
+
+    def _save_dead_channels(self) -> None:
+        try:
+            self.dead_channels_path.parent.mkdir(parents=True, exist_ok=True)
+            self.dead_channels_path.write_text(
+                json.dumps(self._dead_channels), encoding='utf-8')
+        except Exception as exc:
+            logger.warning("Could not save dead-channel cache: %s", exc)
+
+    def _channel_is_dead(self, channel_key: str) -> bool:
+        """True if this channel failed listing within the cooldown window.
+
+        A channel past the cooldown is re-probed once; if it fails again it
+        gets a fresh timestamp (and one log line), but every mid-cooldown sweep
+        stays silent instead of spamming the same ERROR over and over.
+        """
+        failed_at = self._dead_channels.get(channel_key)
+        if not failed_at:
+            return False
+        age_days = (time.time() - failed_at) / 86400.0
+        if age_days >= self.dead_channel_cooldown:
+            self._dead_channels.pop(channel_key, None)
+            self._save_dead_channels()
+            return False
+        return True
+
+    def _mark_channel_dead(self, channel_key: str) -> None:
+        if channel_key not in self._dead_channels:
+            self._dead_channels[channel_key] = time.time()
+            self._save_dead_channels()
+
+    # ------------------------------------------------------------------
     def search_videos_by_channel(self, channel_id: str, published_after: str = '',
                                  max_results: int = 10) -> List[Dict]:
         """Recent uploads for a channel, via yt-dlp's flat playlist extractor.
@@ -911,6 +962,14 @@ class YouTubeDownloader:
         channel_id = (channel_id or '').strip()
         if not channel_id or channel_id.startswith('UCXXXXX'):
             logger.warning("Skipping placeholder channel id %r", channel_id)
+            return []
+
+        # Skip a channel that recently failed to list (dead ID / no videos tab
+        # / 404 handle). One INFO line per sweep at most, not an ERROR every time.
+        if self._channel_is_dead(channel_id):
+            logger.info("Channel %s is in the dead-channel cache -- skipping "
+                        "listing (auto re-probes after %d days)",
+                        channel_id, self.dead_channel_cooldown)
             return []
 
         if channel_id.startswith('http'):
@@ -935,7 +994,14 @@ class YouTubeDownloader:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
         except Exception as exc:
-            logger.warning("Channel listing failed for %s: %s", url, exc)
+            # A channel that can't list is either dead or temporarily broken.
+            # Remember it so the next sweep is quiet; it's re-probed after the
+            # cooldown and self-heals if the channel comes back.
+            self._mark_channel_dead(channel_id)
+            logger.warning(
+                "Channel listing failed for %s: %s (cached as dead for %d days)",
+                url, exc, self.dead_channel_cooldown,
+            )
             return []
 
         results: List[Dict] = []
@@ -955,6 +1021,12 @@ class YouTubeDownloader:
             })
             if len(results) >= max_results:
                 break
+
+        # Listing worked -- the channel is alive again. Drop any cached failure
+        # so it's not skipped on the next sweep.
+        if channel_id in self._dead_channels:
+            self._dead_channels.pop(channel_id, None)
+            self._save_dead_channels()
 
         logger.info("Found %d recent video(s) for channel %s", len(results), channel_id)
         return results
