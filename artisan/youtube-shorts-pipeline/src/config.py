@@ -353,16 +353,22 @@ class Config:
                                                  minimum=0)
 
         # --- Encoding ----------------------------------------------------
-        # WAS 'slow'. That choice was justified with "rendering is not the
-        # bottleneck", which stopped being true once the channel count grew:
-        # 'slow' is ~6-8x the encode time of 'veryfast' for a difference that
-        # does not survive YouTube's own re-encode of a 1080x1920 Short.
-        # 'veryfast' + CRF 20 is the standard speed/quality knee for delivery
-        # masters that will be transcoded again anyway.
-        self.video_preset = os.getenv('VIDEO_PRESET', 'veryfast')
-        # 20 instead of 18: ~25% fewer bits to search for and write, and it is
-        # still visually transparent at this resolution after YouTube's pass.
-        self.video_crf = self._int('VIDEO_CRF', 20, minimum=0)
+        # 'medium', deliberately between the two extremes this setting has had.
+        # It was 'slow' (justified with "rendering is not the bottleneck"), then
+        # 'veryfast' when that stopped being true as the channel count grew.
+        # 'veryfast' went too far: it was paired with CRF 20 and reintroduced
+        # exactly the blocking artefacts around composited caption glyphs that
+        # test_render_quality.py was written to catch -- flat graphic regions
+        # next to hard text edges are the worst case for a fast preset's coarse
+        # mode decisions, and YouTube's re-encode preserves those blocks rather
+        # than hiding them. 'medium' is ~4x faster than 'slow' and keeps the
+        # frame clean; the real render speedup now comes from parallel encodes
+        # and the hardware encoder, not from degrading the picture.
+        self.video_preset = os.getenv('VIDEO_PRESET', 'medium')
+        # 18, not 20. Measured, not guessed: at 20 the caption backdrops and
+        # flat areas visibly blocked once glyphs were burned in. The extra bits
+        # are cheap next to re-rendering a Short that looks cheap.
+        self.video_crf = self._int('VIDEO_CRF', 18, minimum=0)
         # Optional hardware encoder ('h264_nvenc', 'h264_qsv', 'h264_amf').
         # 'auto' probes ffmpeg once and uses one if present -- typically 5-10x
         # faster than libx264 and it frees the CPU for transcription, which is

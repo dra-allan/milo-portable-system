@@ -255,7 +255,8 @@ class ShortsPipeline:
         return segments
 
     def _clip_word_transcript(self, video_path: str, start: float, end: float,
-                              padding: float = 0.35):
+                              padding: float = 0.35,
+                              language: Optional[str] = None):
         """Word-level transcript for one clip, in the CLIP's own timeline.
 
         Returns None on any failure, so the caller can fall back to the
@@ -272,6 +273,11 @@ class ShortsPipeline:
         ``padding`` extends the extracted audio slightly so a word straddling
         the clip boundary is still decoded whole; the caption engine clamps
         anything outside the clip afterwards.
+
+        ``language`` is the niche's Whisper hint. Passing it matters twice over:
+        it skips the language-detection pass, and it stops a non-English clip
+        being decoded as English -- which does not fail loudly, it produces
+        confident nonsense that would then be burned into the video.
         """
         try:
             duration = float(end) - float(start)
@@ -286,13 +292,16 @@ class ShortsPipeline:
             wav = tmp_dir / f"capt_{int(start * 1000)}_{int(end * 1000)}.wav"
 
             tr = self.caption_transcriber
+            if language:
+                tr.language = language
             if not tr._extract_audio_chunk(video_path, str(wav),
                                            slice_start, slice_duration):
                 return None
             try:
                 # -lead_in shifts the slice's timeline back onto the clip's, so
                 # t=0 is the first frame the renderer will emit.
-                segments = tr.transcribe_file(str(wav), time_offset=-lead_in)
+                segments = tr.transcribe_file(str(wav), time_offset=-lead_in,
+                                              language=language)
             finally:
                 try:
                     wav.unlink()
@@ -684,6 +693,7 @@ class ShortsPipeline:
                         words = self._clip_word_transcript(
                             section_path, clip_start_in_file,
                             clip_start_in_file + clip_duration,
+                            language=whisper_language,
                         )
                         if words:
                             clip_transcript = words
