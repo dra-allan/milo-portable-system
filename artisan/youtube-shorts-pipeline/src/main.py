@@ -655,30 +655,47 @@ class ShortsPipeline:
 
     def _upload_clips(self, created: List[Dict], video_id: str, niche: str,
                       niche_keywords: List[str]) -> None:
-        # Route this niche to its bound channel. If a niche has no token on
+        # Route this niche to its bound channels. If a niche has no token on
         # disk, YouTubeUploader(channel=...) logs a warning and falls back to
         # the default token -- so verify a token exists before we build it.
-        channel = self.config.get_niche_channel(niche)
-        authed = self.config.authenticated_channels()
-        if not channel or (channel not in authed and authed):
-            logger.error(
-                "No authenticated YouTube channel bound to niche '%s' "
-                "(resolved channel=%r, authed=%s). Clips kept local. "
-                "Bind it in config/niches.yaml with `channel: <name>` and run "
-                "`python -m src.uploader auth --channel <name>` once.",
-                niche, channel, authed or ['(default token)'],
-            )
-            self.stats['errors'] += 1
-            return
+        channels = self.config.get_niche_channels(niche)
+        if not channels:
+            # Fall back to the single channel logic for backward compatibility.
+            channel = self.config.get_niche_channel(niche)
+            if not channel:
+                logger.error(
+                    "No YouTube channel bound to niche '%s' "
+                    "(resolved channel=%r). Clips kept local. "
+                    "Bind it in config/niches.yaml with `channel: <name>` or `channels: [...]` and run "
+                    "`python -m src.uploader auth --channel <name>` once.",
+                    niche, channel,
+                )
+                self.stats['errors'] += 1
+                return
+            channels = [channel]
+        authed = set(self.config.authenticated_channels())
+
+        # Prepare round-robin state if needed.
+        if self.config.multichannel_upload_mode == 'round_robin':
+            self._channel_index = 0
 
         try:
-            uploader = self._uploader_for_channel(channel)
-        except Exception as exc:
-            logger.error(
-                "Upload requested but the YouTube client for channel '%s' "
-                "could not start: %s. Clips are still on disk.", channel, exc
-            )
-            return
+            # We'll create uploaders on demand and cache them in a dict.
+            self._uploaders = {}
+        except Exception:
+            self._uploaders = {}
+
+        def get_uploader_for_channel(channel_key: str):
+            if channel_key not in self._uploaders:
+                try:
+                    self._uploaders[channel_key] = YouTubeUploader(channel=channel_key)
+                except Exception as exc:
+                    logger.error(
+                        "Failed to initialize YouTube client for channel '%s': %s",
+                        channel_key, exc,
+                    )
+                    return None
+            return self._uploaders[channel_key]
 
         cap = self.config.upload_max_per_run
         # Build the upload queue: fresh clips first (they came from this run),
@@ -725,6 +742,16 @@ class ShortsPipeline:
             )
             tags = [item_niche, 'Shorts'] + [kw for kw in item_keywords[:10] if kw]
 
+            # Select channel based on multichannel mode.
+            if self.config.multichannel_upload_mode == 'all':
+                target_channels = channels
+            elif self.config.multichannel_upload_mode == 'first':
+                target_channels = [channels[0]]
+            else:  # round_robin
+                # Pick the next channel in round-robin fashion.
+                target_channels = [channels[self._channel_index % len(channels)]]
+                self._channel_index += 1
+
             # Anti-burst pacing: space uploads by a random delay so a batch
             # doesn't hit the feed together. Skipped for the first clip.
             if self.stats['shorts_uploaded'] and self.config.upload_pacing_max:
@@ -735,38 +762,66 @@ class ShortsPipeline:
                             self.config.upload_pacing_min, delay)
                 time.sleep(delay)
 
-            try:
-                short_id = uploader.upload_short(
-                    video_path=item['path'],
-                    title=short_title,
-                    description=description,
-                    tags=tags,
-                )
-            except Exception as exc:
-                logger.error("Upload raised for clip %d: %s", item['index'], exc)
-                short_id = None
-
-            if short_id:
-                logger.info("Uploaded clip %d as %s", item['index'], short_id)
-                self.stats['shorts_uploaded'] += 1
-                self.db.mark_short_uploaded(item_source, item['index'], short_id)
-                # Snapshot stats immediately: YouTube returns view counts that
-                # start near zero, but having the row exist means later
-                # --mode stats runs can compare growth over time.
+            uploaded_any = False
+            for channel_key in target_channels:
+                # Skip if the channel is not authenticated (unless there are no auth tokens at all).
+                if authed and channel_key not in authed:
+                    logger.warning(
+                        "Skipping upload for clip %d to channel '%s': no authentication token found.",
+                        item['index'], channel_key,
+                    )
+                    continue
+                uploader = get_uploader_for_channel(channel_key)
+                if uploader is None:
+                    logger.error(
+                        "Could not initialize uploader for channel '%s'. Skipping upload for clip %d.",
+                        channel_key, item['index'],
+                    )
+                    self.stats['errors'] += 1
+                    continue
                 try:
-                    stats = uploader.fetch_statistics(short_id)
-                    if stats:
-                        self.db.record_performance(
-                            short_id, item_source, item['index'],
-                            views=stats['views'], likes=stats['likes'],
-                            comments=stats['comments'], favorites=stats['favorites'],
-                        )
-                        logger.info("Recorded initial stats for %s", short_id)
+                    short_id = uploader.upload_short(
+                        video_path=item['path'],
+                        title=short_title,
+                        description=description,
+                        tags=tags,
+                    )
                 except Exception as exc:
-                    logger.warning("Could not snapshot stats for %s: %s", short_id, exc)
-            else:
-                logger.error("Upload failed for clip %d (kept locally)", item['index'])
-                self.stats['errors'] += 1
+                    logger.error("Upload raised for clip %d to channel '%s': %s",
+                                 item['index'], channel_key, exc)
+                    short_id = None
+
+                if short_id:
+                    logger.info("Uploaded clip %d to channel '%s' as %s",
+                                item['index'], channel_key, short_id)
+                    self.stats['shorts_uploaded'] += 1
+                    self.db.mark_short_uploaded(item_source, item['index'], short_id)
+                    # Snapshot stats immediately: YouTube returns view counts that
+                    # start near zero, but having the row exist means later
+                    # --mode stats runs can compare growth over time.
+                    try:
+                        stats = uploader.fetch_statistics(short_id)
+                        if stats:
+                            self.db.record_performance(
+                                short_id, item_source, item['index'],
+                                views=stats['views'], likes=stats['likes'],
+                                comments=stats['comments'], favorites=stats['favorites'],
+                            )
+                            logger.info("Recorded initial stats for %s", short_id)
+                    except Exception as exc:
+                        logger.warning("Could not snapshot stats for %s: %s", short_id, exc)
+                    uploaded_any = True
+                else:
+                    logger.error("Upload failed for clip %d to channel '%s' (kept locally)",
+                                 item['index'], channel_key)
+                    self.stats['errors'] += 1
+
+            # If none of the target channels succeeded, we still count the item as processed
+            # (errors have been incremented above). If at least one succeeded, we consider
+            # the clip uploaded (no additional error count).
+            if not uploaded_any and self.stats['errors'] == 0:
+                # This should not happen because we increment errors on each failure.
+                pass
 
     # ------------------------------------------------------------------
     def run_niche(self, niche: str, max_videos: int = 1,
