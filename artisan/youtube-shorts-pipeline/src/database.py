@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS generated_shorts (
     youtube_short_id TEXT UNIQUE,
     uploaded_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    title TEXT NOT NULL DEFAULT ''
+    title TEXT NOT NULL DEFAULT '',
+    upload_channel TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_processed_videos_id
@@ -112,6 +113,7 @@ class PipelineDatabase:
             ('score', 'REAL'),
             ('local_path', 'TEXT'),
             ('created_at', 'TIMESTAMP'),
+            ('upload_channel', "TEXT NOT NULL DEFAULT ''"),
         ):
             if column not in existing:
                 try:
@@ -184,14 +186,15 @@ class PipelineDatabase:
             )
 
     def mark_short_uploaded(self, source_video_id: str, segment_index: int,
-                            youtube_short_id: str) -> None:
+                            youtube_short_id: str, channel: str = '') -> None:
         try:
             with self._connect() as conn:
                 conn.execute(
                     """UPDATE generated_shorts
-                       SET youtube_short_id = ?, uploaded_at = CURRENT_TIMESTAMP
+                       SET youtube_short_id = ?, uploaded_at = CURRENT_TIMESTAMP,
+                           upload_channel = ?
                        WHERE source_video_id = ? AND segment_index = ?""",
-                    (youtube_short_id, source_video_id, int(segment_index)),
+                    (youtube_short_id, channel or '', source_video_id, int(segment_index)),
                 )
         except Exception as exc:
             logger.warning("Could not mark short uploaded: %s", exc)
@@ -267,6 +270,33 @@ class PipelineDatabase:
         except Exception as exc:
             logger.warning("Could not count uploaded shorts for %s: %s",
                            source_video_id, exc)
+            return 0
+
+    def uploaded_count_for_channel_since(self, channel: str,
+                                         hours: int = 24) -> int:
+        """How many Shorts a channel has published in the last N hours.
+
+        Drives the per-channel daily cap (Allan's rule: max 5 shorts per
+        channel per day). Counts rows where youtube_short_id is set AND
+        upload_channel matches, so the cap is enforced across runs -- not just
+        within one sweep -- and per channel, not per source video.
+        """
+        if not channel:
+            return 0
+        try:
+            with self._connect() as conn:
+                row = conn.execute(
+                    """SELECT COUNT(*) FROM generated_shorts
+                       WHERE upload_channel = ?
+                         AND youtube_short_id IS NOT NULL
+                         AND uploaded_at IS NOT NULL
+                         AND uploaded_at >= datetime('now', ?)""",
+                    (channel, f'-{int(hours)} hours'),
+                ).fetchone()
+            return int(row[0]) if row else 0
+        except Exception as exc:
+            logger.warning("Could not count uploaded shorts for channel %s: %s",
+                           channel, exc)
             return 0
 
     def unuploaded_shorts(self, limit: int = 50) -> List[Dict]:
