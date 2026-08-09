@@ -376,19 +376,22 @@ class ShortsPipeline:
             logger.warning("Could not cache clip plan for %s: %s", video_id, exc)
 
     # ------------------------------------------------------------------
-    def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
-                                 force: bool = False,
-                                 local_only: bool = False,
-                                 source_channel: str = '') -> bool:
-        """Download -> transcribe -> find highlights -> render -> (upload).
+def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
+                                  force: bool = False,
+                                  local_only: bool = False,
+                                  source_channel: str = '') -> bool:
+        """Audio-only discovery -> transcribe -> find highlights -> section fetch -> render -> (upload).
 
-        Every stage is resumable: an existing download, transcript or rendered
-        clip is reused instead of being redone. Returns True if at least one
-        Short is on disk when we finish.
+        Every stage is resumable: an existing audio download, transcript, section
+        files, or rendered clips are reused instead of being redone. Returns True
+        if at least one Short is on disk when we finish.
+
+        This avoids ever downloading the full source video (1-2 GB). Instead:
+          1. Audio-only fetch (~40 MB for an hour) for discovery transcription
+          2. Section fetch (clip ranges only, ~few MB each) for rendering
 
         Args:
-            local_only: never download; fail if the video is not already in
-                the local library. Used by --from-library.
+            local_only: never download; fail if audio/sections not already cached.
             source_channel: the configured source handle the video came from
                 (e.g. ``@AlexHormozi``). Stored on the processed-video row so
                 the performance feedback loop can rank sources.
@@ -403,40 +406,40 @@ class ShortsPipeline:
             return False
 
         audio_path = None
+        section_files = []
         try:
-            # -- 1. download (or reuse) -------------------------------------
-            logger.info("Step 1/6: Fetching video (reusing an existing download if present)")
+            # -- 1. audio-only download (or reuse) --------------------------
+            logger.info("Step 1/6: Fetching audio for discovery (reusing existing if present)")
             if local_only:
-                existing = self.downloader.find_local_video(video_id)
-                if not existing:
+                existing_audio = self.downloader.find_local_audio(video_id)
+                if not existing_audio:
                     logger.error(
-                        "No local copy of %s in %s. Drop the file there or run "
-                        "without --from-library to download it.",
-                        video_id, self.config.temp_dir,
+                        "No local audio for %s in %s. Run without --from-library to download.",
+                        video_id, self.downloader.audio_dir,
                     )
                     self.stats['errors'] += 1
                     return False
-                metadata = self.downloader._metadata_from_cache(video_id, existing)
+                metadata = self.downloader._audio_metadata(video_id, existing_audio)
             else:
-                metadata = self.downloader.download_video(video_id)
+                metadata = self.downloader.download_audio(video_id)
 
-            if not metadata or not metadata.get('video_path'):
-                logger.error("Could not obtain video %s", video_id)
+            if not metadata or not metadata.get('audio_path'):
+                logger.error("Could not obtain audio for %s", video_id)
                 self.stats['errors'] += 1
                 return False
 
-            video_path = metadata['video_path']
-            if not Path(video_path).exists():
-                logger.error("Video file vanished: %s", video_path)
+            audio_path = metadata['audio_path']
+            if not Path(audio_path).exists():
+                logger.error("Audio file vanished: %s", audio_path)
                 self.stats['errors'] += 1
                 return False
 
             title = metadata.get('title') or video_id
             duration = metadata.get('duration') or 0
             logger.info(
-                "%s: '%s' (%ss)",
-                "Reused existing download" if metadata.get('from_cache') else "Downloaded",
-                title, duration,
+                "%s: '%s' (%ss, %.1f MB)",
+                "Reused existing audio" if metadata.get('from_cache') else "Downloaded audio",
+                title, duration, Path(audio_path).stat().st_size / (1024 * 1024),
             )
 
             if niche is None:
@@ -449,33 +452,21 @@ class ShortsPipeline:
             )
 
             # -- 2. transcribe (or reuse the cache) -------------------------
-            logger.info("Step 2/6: Transcribing (cached transcripts are reused)")
+            logger.info("Step 2/6: Transcribing audio (cached transcripts are reused)")
             transcript = None if force else self.load_cached_transcript(video_id)
 
             if transcript is None:
                 max_seconds = getattr(self.transcriber, 'max_seconds', None)
-                audio_path = self.transcriber.extract_audio_from_video(video_path, max_seconds=max_seconds)
-                if not audio_path:
-                    logger.error("Failed to extract audio from %s", video_path)
-                    self.stats['errors'] += 1
-                    return False
-
-                transcript = self.transcriber.transcribe_audio(audio_path)
+                transcript = self.transcriber.transcribe_audio(audio_path, max_seconds=max_seconds)
                 if not transcript:
                     logger.error("Transcription produced nothing for %s", audio_path)
                     self.stats['errors'] += 1
                     return False
                 logger.info("Transcribed audio into %d segments", len(transcript))
-                # Save before anything downstream can fail, so a later crash
-                # never costs the transcription again.
                 self.save_transcript(video_id, transcript, title)
 
             # -- 3. find highlights ----------------------------------------
             logger.info("Step 3/6: Finding highlight segments")
-            # Winners (proven by the feedback loop) get a deeper render cap than
-            # first-timers: the download/transcribe is already paid for, so more
-            # clips from the same source is pure margin. The deep plan is still
-            # capped by MAX_CANDIDATES regardless of which cap applies.
             clip_cap = self.config.max_clips_per_video
             if source_channel:
                 perf = (self.db.source_performance() or {}).get(source_channel) or {}
@@ -511,17 +502,47 @@ class ShortsPipeline:
                     'niche': niche,
                     'niche_keywords': niche_keywords,
                     'transcript_span': float(transcript[-1]['end']) - float(transcript[0]['start']),
-                    'candidates': highlights,  # already includes 'rank' field from processor
+                    'candidates': highlights,
                 }
                 self.save_clip_plan(video_id, plan)
 
-            # -- 4. render --------------------------------------------------
+            # -- 4. fetch sections (only the clip ranges) ------------------
+            logger.info("Step 4/6: Fetching clip sections (%.1f MB each vs full video)",
+                        self.config.section_padding * 2)
+            ranges = [(h['start'], h['end']) for h in highlights]
+            sections = self.downloader.download_sections(
+                video_id, ranges,
+                padding=self.config.section_padding,
+                concurrency=self.config.download_concurrency,
+                force_redownload=force,
+            )
+
+            # Filter out failed section downloads
+            valid_highlights = []
+            valid_sections = []
+            for h, s in zip(highlights, sections):
+                if s and s.get('path'):
+                    valid_highlights.append(h)
+                    valid_sections.append(s)
+                else:
+                    logger.warning("Section download failed for clip %.1f-%.1fs, skipping",
+                                   h['start'], h['end'])
+
+            if not valid_highlights:
+                logger.error("No sections could be downloaded for %s", video_id)
+                self.stats['errors'] += 1
+                return False
+
+            highlights = valid_highlights
+            section_files = valid_sections
+            logger.info("Fetched %d/%d sections successfully", len(highlights), len(ranges))
+
+            # -- 5. render from section files -------------------------------
             safe_title = sanitize_filename(title) or video_id
-            # Store clips under data/shorts/<niche>/<video_title>/ for easy identification
             shorts_dir = Path(self.config.shorts_dir) / niche / safe_title
             shorts_dir.mkdir(parents=True, exist_ok=True)
 
-            logger.info("Step 4/6: Creating Shorts from highlights")
+            logger.info("Step 5/6: Creating Shorts from section files")
             self.db.record_video(
                 video_id, title, niche, duration,
                 channel_id=source_channel or (metadata.get('uploader', '') or ''),
@@ -529,18 +550,14 @@ class ShortsPipeline:
             )
 
             created: List[Dict] = []
-            for i, highlight in enumerate(highlights, start=1):
+            for i, (highlight, section) in enumerate(zip(highlights, section_files), start=1):
                 hook_text = (highlight.get('text') or '').strip()
                 safe_hook = sanitize_filename(hook_text) if hook_text else f"clip{i}"
-                # Limit length to 50 characters to avoid excessively long filenames
                 if len(safe_hook) > 50:
                     safe_hook = safe_hook[:50]
                 output_path = str(shorts_dir / f"{i:02d}_{safe_hook}.mp4")
                 existing = Path(output_path)
 
-                # Resume: a clip already rendered on a previous run is kept.
-                # Rendering is minutes of CPU per clip, so redoing clips 1-4
-                # because clip 5 failed is exactly the waste we are removing.
                 if not force and existing.exists() and existing.stat().st_size > 64 * 1024:
                     logger.info(
                         "Resume: clip %d/%d already rendered (%.1f MB) -- skipping",
@@ -561,19 +578,26 @@ class ShortsPipeline:
                     highlight.get('score', 0.0),
                 )
 
+                section_path = section['path']
+                clip_start_in_file = section['clip_start_in_file']
+                clip_duration = section['clip_duration']
+
+                # Build clip-relative transcript from the section's audio
                 clip_transcript = [
                     seg for seg in transcript
                     if not (seg['end'] <= highlight['start']
                             or seg['start'] >= highlight['end'])
                 ]
 
+                # Use the section file as source; timestamps are rebased by clip_start_in_file
                 ok = self.video_editor.create_short_from_segment(
-                    video_path=video_path,
-                    start_time=highlight['start'],
-                    end_time=highlight['end'],
+                    video_path=section_path,
+                    start_time=clip_start_in_file,
+                    end_time=clip_start_in_file + clip_duration,
                     transcript_segments=clip_transcript,
                     output_path=output_path,
                     add_branding=False,
+                    captions_are_clip_relative=False,
                 )
 
                 if not ok or not Path(output_path).exists():
@@ -593,20 +617,19 @@ class ShortsPipeline:
                 logger.error("No clips could be rendered for %s", video_id)
                 return False
 
-            # -- 5. upload --------------------------------------------------
+            # -- 6. upload --------------------------------------------------
             if self.upload_enabled:
-                logger.info("Step 5/6: Uploading %d Shorts", len(created))
+                logger.info("Step 6/6: Uploading %d Shorts", len(created))
                 self._upload_clips(created, video_id, niche, niche_keywords)
             else:
                 logger.info(
-                    "Step 5/6: Upload disabled (set UPLOAD_ENABLED=true to publish). "
+                    "Step 6/6: Upload disabled (set UPLOAD_ENABLED=true to publish). "
                     "%d clips kept locally.", len(created)
                 )
 
-            # -- 6. done ----------------------------------------------------
             self.stats['videos_processed'] += 1
             logger.info(
-                "Step 6/6: Finished %s -- %d clips in %s",
+                "Finished %s -- %d clips in %s",
                 video_id, len(created), shorts_dir,
             )
             return True
@@ -619,8 +642,8 @@ class ShortsPipeline:
             self.stats['errors'] += 1
             return False
         finally:
-            # Audio is large and always regenerable; the source video and
-            # subtitles are kept so a re-run skips the slow download.
+            # Clean up audio (regenerable). Section files are small and kept
+            # for resume; they're in data/temp/sections/ and auto-managed.
             if audio_path:
                 try:
                     os.remove(audio_path)
