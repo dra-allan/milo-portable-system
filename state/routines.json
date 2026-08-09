@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786314343.7166123,
+  "updated_at": 1786317057.406269,
   "routines": [
     {
       "name": "curate-skills",
@@ -77,12 +77,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786314308.1179247,
-      "last_status": "ok",
-      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     91\n  notes        8\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1786314636.08528,
-      "runs": 438,
-      "failures": 20
+      "last_run": 1786316145.3821392,
+      "last_status": "failed (124)",
+      "last_output": "timed out after 900s",
+      "next_run": 1786317347.7591076,
+      "runs": 440,
+      "failures": 22
     },
     {
       "name": "frequent-vault-sync",
@@ -104,11 +104,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786314336.1110744,
+      "last_run": 1786317047.786623,
       "last_status": "ok",
-      "last_output": "[ok] vault clean, nothing to commit",
-      "next_run": 1786314643.7162223,
-      "runs": 433,
+      "last_output": "[ok]    2cac83f..ec60363  master -> master",
+      "next_run": 1786317357.4058077,
+      "runs": 435,
       "failures": 65
     },
     {
