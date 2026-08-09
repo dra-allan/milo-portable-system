@@ -1591,47 +1591,44 @@ geopolitics_power:
 
 uganda_chop:
   # Upload target(s): the channel(s) this niche's Shorts get published to.
-  # Each key must match an authenticated token (config/youtube_token_<name>.json).
-  # The user needs to authenticate this channel first via:
-  #   python -m src.uploader auth --channel uganda_chop
+  # Must match an authenticated token (config/youtube_token_uganda_chop.json).
   upload_channels:
     - uganda_chop
-  # Legacy single-channel binding (backward compatible). Redundant when
-  # upload_channels is set.
   channel: uganda_chop
-  # Per-run video cap for this niche (overrides SCHEDULE_MAX_VIDEOS).
-  max_videos: 3
-  # Ugandan blogger/podcast channels - replace with actual Ugandan content sources
+  max_videos: 5
   channels:
-    - "@DanielOmara"  # Example: Daniel Omara Show
-    - "@EddyKenzoOfficial"  # Example: Eddy Kenzo
-    - "@BebeCoolUganda"  # Example: Bebe Cool
-    - "@NBStelevision"  # Example: NBS Television
-    - "@SanyuTV"  # Example: Sanyu TV
-    - "@NilePostUG"  # Example: Nile Post
-    - "@ChimpReports"  # Example: Chimp Reports
-    - "@TheIndependente"  # Example: The Independent Uganda
-  # Keywords for Ugandan content (adjust as needed)
+    - "@Kasukuliveyoutube"         # Kasuku Live: Top tier for gossip, celebrity beef, and long-form current affairs.
+    - "@SB4MediaTuggusaEnsonga"   # SB4 Media: Street interviews, raw emotional Luganda stories, and social issues.
+    - "@bukeddetv"                # Bukedde TV: Huge Luganda reach, great for Agataliiko Nfuufu and local drama.
+    - "@theugandanboytalkshow"    # The Ugandan Boy Talk Show: Long-form podcasts and real-life stories.
+    - "@babatvuganda"             # Baba TV: Heated political and social talk shows.
+    - "@benonfredtwinamasiko"     # Benon Fred Twinamasiko: High-engagement interviews.
+    - "@NBStelevision"            # NBS TV: Pulls in Uncut, Frontline, and major celebrity interviews.
+    - "@SparkTvUganda"            # Spark TV: The home of Live Wire and daily entertainment scoop.
+    - "@GalaxyFM1002"             # Galaxy FM: Zina, Morning Saga, high-energy studio banter and artist interviews.
   keywords:
-    - "Uganda news"
-    - "Kampala"
-    - "President Museveni"
-    - "Parliament Uganda"
-    - "Uganda economy"
-    - "East Africa"
-    - "UGX"
-    - "Visiting Uganda"
-    - "Ugandan culture"
-    - "Luganda"
-    - "Swahili"
-    - "African development"
-    - "Uganda tourism"
-    - "Youth Uganda"
-    - "Uganda elections"
-  negative_keywords: ["#shorts", "shorts", "clip", "clips", "podcast clips", "compilation", "reaction", "trailer", "teaser", "livestream", "live stream", "music video", "official audio", "lyrics", "fan edit", "meme", "music", "dance", "concert"]
-  language: en
+    - "Kasuku live"
+    - "Ugandan drama"
+    - "Lugambo"
+    - "Wolokoso"
+    - "Agataliiko Nfuufu"
+    - "SB4 Media"
+    - "Bobi Wine"
+    - "Alien Skin"
+    - "Jose Chameleone"
+    - "Eddy Kenzo"
+    - "Ebya Uganda"
+    - "Kampala gossip"
+    - "Uganda trending"
+    - "Sanyuka TV"
+    - "Uncut Sabula"
+    - "Live Wire"
+    - "Ugandan celebrities"
+    - "Uganda interviews"
+  negative_keywords: ["#shorts", "shorts", "clip", "clips", "podcast clips", "compilation", "reaction", "trailer", "teaser", "livestream", "music video", "official audio", "lyrics", "fan edit", "meme", "music", "dance", "concert", "church service", "preaching", "choir"]
+  language: en  # Keep as 'en' if your primary scraper relies on English metadata/API tags before passing audio to your custom STT layer.
   min_duration: 300
-  max_duration: 7200
+  max_duration: 10800  # Pushed to 3 hours to capture long Kasuku Live streams and podcasts.
   min_score: 0.50
   preferred_upload_days: 365
-  min_views: 50000
+  min_views: 20000  # Lowered slightly from 50k to catch fast-moving, fresh local drama before it peaks.
