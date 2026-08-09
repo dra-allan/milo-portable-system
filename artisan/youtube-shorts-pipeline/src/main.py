@@ -642,7 +642,9 @@ class ShortsPipeline:
             self.stats['errors'] += 1
             return False
         finally:
-            # Clean up audio regardless of success or exception
+            # Clean up audio regardless of success or exception. Audio is
+            # regenerable; section files are small and deliberately kept in
+            # data/temp/sections/ so a retry can resume without re-fetching.
             if audio_path:
                 try:
                     os.remove(audio_path)
