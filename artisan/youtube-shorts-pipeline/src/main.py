@@ -748,6 +748,19 @@ class ShortsPipeline:
             filtered.append(item)
         queue = filtered
 
+        # Per-channel daily budget (Allan's rule: max 5 shorts/channel/day).
+        # Seed from what's already on YouTube for each bound channel, then keep
+        # a running tally so a single sweep can't blow a channel's budget either.
+        per_channel_cap = getattr(self.config, 'upload_max_per_channel', 5)
+        channel_budget = {
+            ch: max(0, per_channel_cap - self.db.uploaded_count_for_channel_since(ch))
+            for ch in channels
+        }
+        logger.info(
+            "Per-channel daily budget: %s",
+            ', '.join(f"{ch}={b}/{per_channel_cap}" for ch, b in channel_budget.items()) or '(none)',
+        )
+
         for item in queue[:cap]:
             item_niche = item.get('niche', niche)
             item_source = item.get('source_video_id', video_id)
@@ -764,15 +777,30 @@ class ShortsPipeline:
             )
             tags = [item_niche, 'Shorts'] + [kw for kw in item_keywords[:10] if kw]
 
-            # Select channel based on multichannel mode.
+            # Select channel based on multichannel mode, skipping channels that
+            # already hit their per-channel daily budget.
             if self.config.multichannel_upload_mode == 'all':
-                target_channels = channels
+                target_channels = [ch for ch in channels if channel_budget.get(ch, 0) > 0]
             elif self.config.multichannel_upload_mode == 'first':
-                target_channels = [channels[0]]
+                target_channels = ([channels[0]] if channel_budget.get(channels[0], 0) > 0
+                                   else [])
             else:  # round_robin
-                # Pick the next channel in round-robin fashion.
-                target_channels = [channels[self._channel_index % len(channels)]]
-                self._channel_index += 1
+                # Pick the next channel in round-robin fashion that still has
+                # daily budget left; try up to a full rotation of the list.
+                target_channels = []
+                for _ in range(len(channels)):
+                    cand = channels[self._channel_index % len(channels)]
+                    self._channel_index += 1
+                    if channel_budget.get(cand, 0) > 0:
+                        target_channels = [cand]
+                        break
+            if not target_channels:
+                logger.info(
+                    "Skipping clip %d (item %d): no bound channel has daily "
+                    "budget left (cap %d/channel)",
+                    item['index'], item.get('index', item['index']), per_channel_cap,
+                )
+                continue
 
             # Anti-burst pacing: space uploads by a random delay so a batch
             # doesn't hit the feed together. Skipped for the first clip.
@@ -817,7 +845,10 @@ class ShortsPipeline:
                     logger.info("Uploaded clip %d to channel '%s' as %s",
                                 item['index'], channel_key, short_id)
                     self.stats['shorts_uploaded'] += 1
-                    self.db.mark_short_uploaded(item_source, item['index'], short_id)
+                    self.db.mark_short_uploaded(item_source, item['index'], short_id,
+                                                channel=channel_key)
+                    if channel_key in channel_budget:
+                        channel_budget[channel_key] = max(0, channel_budget[channel_key] - 1)
                     # Snapshot stats immediately: YouTube returns view counts that
                     # start near zero, but having the row exist means later
                     # --mode stats runs can compare growth over time.
@@ -1412,6 +1443,20 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             logger.error(
                 "Channel '%s' not authenticated for clip %s#%s -- skipping",
                 channel, source_video_id, segment_index
+            )
+            errors += 1
+            continue
+
+        # Per-channel daily cap: don't post more than UPLOAD_MAX_PER_CHANNEL
+        # shorts to one channel in 24h, even when uploading by hand.
+        per_channel_cap = getattr(pipeline.config, 'upload_max_per_channel', 5)
+        used_this_channel = pipeline.db.uploaded_count_for_channel_since(channel)
+        if used_this_channel >= per_channel_cap:
+            logger.info(
+                "Channel '%s' already at per-channel daily cap (%d/%d) -- "
+                "skipping %s#%s",
+                channel, used_this_channel, per_channel_cap,
+                source_video_id, segment_index,
             )
             errors += 1
             continue
