@@ -327,6 +327,21 @@ class Config:
         # own stereo recommendation.
         self.audio_bitrate = os.getenv('AUDIO_BITRATE', '192k')
         self.audio_sample_rate = self._int('AUDIO_SAMPLE_RATE', 48000, minimum=8000)
+
+        # --- Background music ----------------------------------------------
+        # Directory containing copyright-free music tracks (MP3/WAV/OGG).
+        # Tracks should be licensed for commercial use (e.g., YouTube Audio
+        # Library, StreamBeats, NCS, etc.). One random track is picked per clip.
+        self.music_dir = _resolve(os.getenv('MUSIC_DIR', 'data/music'))
+        # Volume of background music relative to main audio (0.0 - 1.0).
+        # 0.05 = 5% (subtle, barely audible under speech).
+        self.music_volume = self._float('MUSIC_VOLUME', 0.05, minimum=0.0, maximum=1.0)
+        # Ducking: when speech is detected, lower music further by this factor.
+        # 0.3 = reduce music to 30% of its already-low volume during speech.
+        self.music_duck_factor = self._float('MUSIC_DUCK_FACTOR', 0.3, minimum=0.0, maximum=1.0)
+        # Enable/disable background music entirely.
+        self.music_enabled = self._bool('MUSIC_ENABLED', True)
+
         # Viral captions are big: at 1080x1920 a 54px font is a caption on a
         # desktop video, not a Short. 104 is ~10% of frame width per character
         # row, which is what the reference Shorts use.
