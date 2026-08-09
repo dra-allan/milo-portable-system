@@ -4,3 +4,17 @@ test_*.part
 # Runtime state -- regenerated, never committed.
 data/dead_channels.json
 data/clip_plans/
+# Media files -- never committed.
+data/music/
+*.mp3
+*.wav
+*.ogg
+*.m4a
+*.aac
+*.flac
+*.opus
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
