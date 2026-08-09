@@ -688,6 +688,10 @@ class ShortsPipeline:
         def get_uploader_for_channel(channel_key: str):
             if channel_key not in self._uploaders:
                 try:
+                    from .uploader import YouTubeUploader
+                except ImportError:
+                    from uploader import YouTubeUploader
+                try:
                     self._uploaders[channel_key] = YouTubeUploader(channel=channel_key)
                 except Exception as exc:
                     logger.error(
