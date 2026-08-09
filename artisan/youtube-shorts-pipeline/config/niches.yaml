@@ -1588,3 +1588,50 @@ geopolitics_power:
   min_score: 0.56
   preferred_upload_days: 730
   min_views: 100000
+
+uganda_chop:
+  # Upload target(s): the channel(s) this niche's Shorts get published to.
+  # Each key must match an authenticated token (config/youtube_token_<name>.json).
+  # The user needs to authenticate this channel first via:
+  #   python -m src.uploader auth --channel uganda_chop
+  upload_channels:
+    - uganda_chop
+  # Legacy single-channel binding (backward compatible). Redundant when
+  # upload_channels is set.
+  channel: uganda_chop
+  # Per-run video cap for this niche (overrides SCHEDULE_MAX_VIDEOS).
+  max_videos: 3
+  # Ugandan blogger/podcast channels - replace with actual Ugandan content sources
+  channels:
+    - "@DanielOmara"  # Example: Daniel Omara Show
+    - "@EddyKenzoOfficial"  # Example: Eddy Kenzo
+    - "@BebeCoolUganda"  # Example: Bebe Cool
+    - "@NBStelevision"  # Example: NBS Television
+    - "@SanyuTV"  # Example: Sanyu TV
+    - "@NilePostUG"  # Example: Nile Post
+    - "@ChimpReports"  # Example: Chimp Reports
+    - "@TheIndependente"  # Example: The Independent Uganda
+  # Keywords for Ugandan content (adjust as needed)
+  keywords:
+    - "Uganda news"
+    - "Kampala"
+    - "President Museveni"
+    - "Parliament Uganda"
+    - "Uganda economy"
+    - "East Africa"
+    - "UGX"
+    - "Visiting Uganda"
+    - "Ugandan culture"
+    - "Luganda"
+    - "Swahili"
+    - "African development"
+    - "Uganda tourism"
+    - "Youth Uganda"
+    - "Uganda elections"
+  negative_keywords: ["#shorts", "shorts", "clip", "clips", "podcast clips", "compilation", "reaction", "trailer", "teaser", "livestream", "live stream", "music video", "official audio", "lyrics", "fan edit", "meme", "music", "dance", "concert"]
+  language: en
+  min_duration: 300
+  max_duration: 7200
+  min_score: 0.50
+  preferred_upload_days: 365
+  min_views: 50000
