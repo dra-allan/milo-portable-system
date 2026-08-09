@@ -33,6 +33,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_NICHE = {
     'channels': [],
     'channel': '',
+    'upload_channels': [],
     'keywords': [],
     'min_duration': 300,
     'max_duration': 7200,
@@ -392,32 +393,45 @@ class Config:
 
     # ------------------------------------------------------------------
     def get_niche_config(self, niche_name: str) -> dict:
-        """Return a niche config, merged over defaults so keys always exist."""
+        """Return a niche config, merged over defaults so keys always exist.
+
+        ``channels`` and ``channel`` mean the SCRAPE sources (who discovery
+        pulls from). ``upload_channels`` means the CHANNELS THIS NICHE POSTS TO
+        (a different thing entirely). Resolution:
+
+        * ``upload_channels``: non-empty list -> used as-is. Missing/empty ->
+          falls back to the legacy ``channel`` string as a single-item list.
+          Still empty -> the niche has no upload binding (sweeps skip it).
+        * ``channels`` / ``channel``: passed through untouched for discovery.
+        """
         merged = dict(DEFAULT_NICHE)
         raw = (self.niches or {}).get(niche_name)
         if isinstance(raw, dict):
             merged.update({k: v for k, v in raw.items() if v is not None})
 
-        # Handle channels: if the YAML provided a non-empty list for 'channels', use it.
-        # Otherwise, if the YAML provided a non-empty string for 'channel', use that as a single-item list.
-        # Otherwise, channels remains empty.
-        channels = merged.get('channels')
-        if isinstance(channels, list):
-            if len(channels) == 0:
-                # Check the legacy channel string
+        # Upload target channels: explicit `upload_channels:` list wins,
+        # otherwise the legacy `channel:` string becomes a single-item list.
+        upload_channels = merged.get('upload_channels')
+        if isinstance(upload_channels, list):
+            if len(upload_channels) == 0:
                 legacy_channel = merged.get('channel')
                 if isinstance(legacy_channel, str) and legacy_channel.strip():
-                    merged['channels'] = [legacy_channel.strip()]
+                    merged['upload_channels'] = [legacy_channel.strip()]
                 else:
-                    merged['channels'] = []
-            # else: non-empty list, we keep it
+                    merged['upload_channels'] = []
+        elif isinstance(upload_channels, str) and upload_channels.strip():
+            merged['upload_channels'] = [upload_channels.strip()]
         else:
-            # If channels is not a list (e.g., None or a string), then we treat it as absent and look at legacy channel.
             legacy_channel = merged.get('channel')
             if isinstance(legacy_channel, str) and legacy_channel.strip():
-                merged['channels'] = [legacy_channel.strip()]
+                merged['upload_channels'] = [legacy_channel.strip()]
             else:
-                merged['channels'] = []
+                merged['upload_channels'] = []
+
+        # Scrape source channels stay untouched: they are what discovery pulls
+        # from and must never be mistaken for upload targets.
+        if not isinstance(merged.get('channels'), list):
+            merged['channels'] = []
 
         # For keywords, we keep the existing conversion (string to list, non-list to empty list)
         key_val = merged.get('keywords')
@@ -432,19 +446,20 @@ class Config:
         return sorted((self.niches or {}).keys())
 
     def get_niche_channel(self, niche_name: str) -> str:
-        """Return the upload channel key bound to a niche.
+        """Return the primary upload channel key bound to a niche.
 
         Resolution order:
-          1. the niche's explicit ``channel:`` value in niches.yaml (first item in the list),
-          2. ``UPLOAD_DEFAULT_CHANNEL`` from .env,
-          3. the niche name itself (a niche whose key matches a token, e.g.
+          1. the niche's ``upload_channels`` list (first item) if it has one,
+          2. the legacy ``channel:`` value in niches.yaml,
+          3. ``UPLOAD_DEFAULT_CHANNEL`` from .env,
+          4. the niche name itself (a niche whose key matches a token, e.g.
              ``flick_shorts`` -> ``youtube_token_flick_shorts.json``),
-          4. '' (no binding) -- uploads are skipped with a warning.
+          5. '' (no binding) -- uploads are skipped with a warning.
         """
         cfg = self.get_niche_config(niche_name)
-        channels = cfg.get('channels', [])
-        if channels:
-            return channels[0]
+        upload_channels = cfg.get('upload_channels', [])
+        if upload_channels:
+            return upload_channels[0]
         if self.upload_default_channel:
             return self.upload_default_channel
         return (niche_name or '').strip()
@@ -452,10 +467,13 @@ class Config:
     def get_niche_channels(self, niche_name: str) -> List[str]:
         """Return the list of upload channel keys bound to a niche.
 
-        Returns an empty list if no channels are bound.
+        These are the channels this niche PUBLISHES to (``upload_channels``,
+        or the legacy ``channel`` string as a single item). ``channels`` --
+        the scrape sources used by discovery -- are deliberately NOT included.
+        Returns an empty list if no upload channels are bound.
         """
         cfg = self.get_niche_config(niche_name)
-        return cfg.get('channels', [])
+        return cfg.get('upload_channels', [])
 
     def authenticated_channels(self) -> List[str]:
         """Channel keys that have a token file on disk."""

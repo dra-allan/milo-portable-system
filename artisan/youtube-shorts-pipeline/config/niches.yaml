@@ -4,8 +4,12 @@
 # If your pipeline only supports channel IDs, resolve @handles before running.
 
 flick_shorts:
-  # Upload target: the channel this niche's Shorts get published to.
-  # Key must match an authenticated token (config/youtube_token_<name>.json).
+  # Upload target(s): the channel(s) this niche's Shorts get published to.
+  # Each key must match an authenticated token (config/youtube_token_<name>.json).
+  upload_channels:
+    - flick_shorts
+  # Legacy single-channel binding (backward compatible). Redundant when
+  # upload_channels is set.
   channel: flick_shorts
   # Per-run video cap for this niche (overrides SCHEDULE_MAX_VIDEOS).
   max_videos: 1
@@ -82,8 +86,16 @@ flick_shorts:
   min_views: 100000
 
 capital_mindset:
-  # Upload target: the channel this niche's Shorts get published to.
-  # Key must match an authenticated token (config/youtube_token_<name>.json).
+  # Upload target(s): the channel(s) this niche's Shorts get published to.
+  # Each key must match an authenticated token (config/youtube_token_<name>.json).
+  # MULTICHANNEL_UPLOAD_MODE=round_robin distributes clips across all listed
+  # channels. wealth_mindset must be authenticated first via:
+  #   python -m src.uploader auth --channel wealth_mindset
+  upload_channels:
+    - capital_mindset
+    - wealth_mindset
+  # Legacy single-channel binding (backward compatible). Redundant when
+  # upload_channels is set.
   channel: capital_mindset
   # Per-run video cap for this niche (overrides SCHEDULE_MAX_VIDEOS).
   max_videos: 2
