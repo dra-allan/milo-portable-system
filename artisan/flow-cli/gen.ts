@@ -124,7 +124,7 @@ cli({
     // sent back to the server in clientContext.userPaygateTier; hard-coding a
     // wrong tier causes silent failures (request looks like a different account
     // tier than the OAuth subject), so we mirror what /v1/credits reports.
-    const balResp = await flowFetch(page, `${FLOW_BASE}/credits?key=***REMOVED***`);
+    const balResp = await flowFetch(page, `${FLOW_BASE}/credits?key=AIzaSyBtrm0o5ab1c-Ec8ZuLcGt3oJAA5VWt3pY`);
     const balance = balResp.ok ? Number(balResp.body?.credits ?? 0) : 0;
     const userPaygateTier: string = balResp.body?.userPaygateTier ?? 'PAYGATE_TIER_ONE';
 

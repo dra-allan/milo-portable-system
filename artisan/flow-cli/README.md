@@ -1,111 +1,175 @@
-# Milo Flow CLI
+# opencli-plugin-flow
 
-**Copyright © 2026 Daada Allan. All rights reserved to the extent permitted by the applicable license.**
+把 **Google Labs Flow** 的 **Omni Flash** 视频生成能力变成命令行。借用你 Chrome 里已登录 Flow 的 session（OAuth + reCAPTCHA），**不存任何凭证**，账号扣费完全是你的。
 
-Milo Flow CLI turns Google Labs Flow and Omni generation into a practical command-line workflow. It uses the Flow session already authenticated in your Chrome browser through the bridge. It does not store OAuth credentials or cookies.
+## 能干什么
 
-## What it does
+- 🎬 纯文字生视频 / 图片+文字生视频 (R2V，多参考)
+- 💰 提交前自动 dry-run 算积分 + 显示余额
+- 🗂️ 图片素材自动 sha256 去重，**重复上传秒命中本地缓存**
+- 🔒 跨进程文件锁，多 agent 并发用同一文件不会重复上传
+- 📦 项目级别隔离 cache（同一文件在不同 project 各自独立 mediaId）
+- 🛡️ 检测 Google reCAPTCHA 静默拒绝（STUB_WORKFLOW），不会让你被骗 ok:true
+- 🎯 友好中文表格 + 一键转 csv / json 给 agent 解析
 
-- Generate videos from text, images, and multiple references.
-- Preview credit cost before submission with `--dryRun`.
-- Deduplicate uploaded media with SHA-256 caching.
-- Keep media caches isolated by Flow project.
-- Track generation jobs, wait for completion, and download MP4 files.
-- Detect common Flow, authentication, rate-limit, and policy failures.
-- Return compact tables by default, or JSON, YAML, and CSV for automation.
+## 价格表（Omni Flash · SERVICE_TIER_ADVANCED）
 
-## Requirements
+| 模式 | 时长 | 积分 |
+|---|---|---|
+| 纯文字 / 多参考 | 4s | 15 |
+| 纯文字 / 多参考 | 6s | 20 |
+| 纯文字 / 多参考 | 8s | 25 |
+| 纯文字 / 多参考 | 10s | 30 |
+| 视频编辑 (abra_edit) | ≤10s 输入 | 40 |
 
-1. Node.js and `@jackwener/opencli` 1.7.22 or newer.
-2. `esbuild` available globally or through your environment.
-3. The Milo Flow browser extension installed and connected.
-4. Google Labs Flow open in Chrome, with your own account signed in.
+参考：75 元 = 45000 积分 ≈ **0.04 元/8s 视频**
 
-## Install
+## 前置
 
-Install the plugin from this repository, then verify the bridge:
+1. **opencli ≥ 1.7.22** （`npm i -g @jackwener/opencli`）
+2. **esbuild** （`npm i -g esbuild`）—— 编译 TS plugin 用
+3. **opencli Chrome 扩展** 装好且桥接连通（跑一次 `opencli doctor` 验证）
+4. **Chrome 里登录你自己的 Google Labs Flow 账号**（[labs.google/fx/tools/flow](https://labs.google/fx/tools/flow)），打开任意一个项目页
+
+## 安装
 
 ```bash
-npm install
-opencli doctor
-opencli flow credits
-opencli flow --help
+opencli plugin install github:LingJingAI-Labs/opencli-plugin-flow
 ```
 
-The command namespace remains `opencli flow` because Milo Flow CLI runs on the OpenCLI host. The product, package, documentation, and browser extension are branded Milo Flow CLI.
+安装时会自动：
+- 编译 TS → JS
+- 把 SKILL.md 链到 `~/.claude/skills/flow/`（Claude Code 会自动发现）
 
-## Quick start
+验证：
 
 ```bash
-# List projects
-opencli flow project-list
-
-# Select the active project
-opencli flow project-use --projectId <PROJECT_UUID>
-
-# Preview cost without submitting
-opencli flow gen --prompt "a cat walking through a sunlit meadow" --length 8 --dryRun true
-
-# Submit a generation
-opencli flow gen --prompt "a cat walking through a sunlit meadow" --length 8 --yes
-
-# Wait for completion, then download
-opencli flow job-wait --mediaId <MEDIA_ID>
-opencli flow job-download --mediaId <MEDIA_ID> --out out.mp4
+opencli flow credits        # 应该看到你的余额
+opencli flow --help         # 12 个子命令
 ```
 
-## Video editing and references
+## 5 分钟快速开始
 
 ```bash
-# Upload a reference video with a cache alias
-opencli flow media-upload --file ./clip.mp4 --name source
+# 1. 切到当前 Flow 项目（在浏览器打开过的）
+opencli flow project-list                                    # 看你有哪些项目
+opencli flow project-use --projectId <从上一步拿到的 UUID>     # 设默认
 
-# Use the reference video for editing
-opencli flow gen --prompt "turn this into a night scene with fog" --refVideo source --yes
+# 2. 试算（不扣分）
+opencli flow gen --prompt "a cat walking on grass" --length 4 --dryRun true
 
-# Upload reference images
+# 3. 真发（4s = 15 积分 ≈ 0.025 元）
+opencli flow gen --prompt "a cat walking on grass" --length 4 --yes
+
+# 4. 等结果（2-4 分钟）
+opencli flow job-wait --mediaId <上一步返回的 mediaId>
+
+# 5. 下 mp4
+opencli flow job-download --mediaId <ID> --out out.mp4
+open out.mp4
+```
+
+## 视频编辑 (abra_edit)
+
+```bash
+# 自动 chunked resumable 上传，sha256 dedupe
+opencli flow media-upload --file ./clip.mp4 --name myclip
+
+# --refVideo 触发视频编辑模式（固定 40 积分；length/aspect 跟原视频一致）
+opencli flow gen --prompt "改成晚上 加点雾气" --refVideo myclip --yes
+
+# 也可以直接传路径或 mediaId
+opencli flow gen --prompt "..." --refVideo ./clip.mp4 --yes
+```
+
+## 多参考图生视频 (R2V)
+
+```bash
+# 上传素材，绑别名（同文件多次上传秒命中 cache）
 opencli flow media-upload --file ./hero.png --name hero
-opencli flow media-upload --file ./background.jpg --name background
+opencli flow media-upload --file ./bg.jpg   --name bg
 
-# Generate with multiple references
-opencli flow gen --prompt "the hero walks across the background" --refs hero,background --length 8 --aspect 9:16 --yes
+# 引用别名生成
+opencli flow gen \
+  --prompt "hero 走在 bg 草地上" \
+  --refs hero,bg --length 8 --aspect 9:16 --yes
 ```
 
-Reference tokens can be cache aliases, local paths, or Flow media IDs. Local files are SHA-256 deduplicated before upload.
+**`--refs` 三种 token 自动识别**：
 
-## Commands
-
-| Command | Purpose |
+| Token | 行为 |
 |---|---|
-| `flow credits` | Show credit balance and account tier |
-| `flow models` | Show supported models, durations, and pricing |
-| `flow project-list/current/use` | Inspect and select Flow projects |
-| `flow media-upload` | Upload and cache image or video media |
-| `flow media-list` | List cached project media |
-| `flow gen` | Submit a video generation |
-| `flow job-status/wait/list` | Inspect or wait for jobs |
-| `flow job-download` | Download a completed MP4 |
+| `hero` | 别名 → 查 cache |
+| `./hero.png` | 本地文件 → sha256 dedupe + 上传（cache 命中时秒回） |
+| `9a42af9d-...` | UUID → 直接当 mediaId 用 |
 
-## Pricing and limits
+可以混用：`--refs hero,./other.png,9a42af9d-...`
 
-Omni currently exposes 4, 6, 8, and 10 second options. Video editing has its own fixed cost. Always use `--dryRun` when testing a new prompt, and use `--yes` only when you intend to spend credits.
+## 命令一览
 
-## Error handling
+| 命令 | 用途 |
+|---|---|
+| `flow credits` | 余额 + 账号等级 |
+| `flow models` | 全部 Omni 变体 + 价格 + 限制 |
+| `flow project-list / current / use` | 项目管理 |
+| `flow media-upload <file> [--name]` | 上传图片 + sha256 dedupe |
+| `flow media-list` | 列当前项目缓存的素材 |
+| `flow gen --prompt ... [--refs ...]` | 生成视频（核心） |
+| `flow job-status / job-wait / job-list` | 查询任务状态 |
+| `flow job-download` | 下载 mp4 |
 
-- `STUB_WORKFLOW`: refresh the Flow page and retry once with `--reload`.
-- `RATE_LIMIT`: wait and retry later.
-- `CONTENT_POLICY` or `CELEBRITY_POLICY`: change the prompt; do not repeatedly retry.
-- `AUTH`: sign in again to Flow in the bound Chrome profile.
-- `INSUFFICIENT_CREDITS`: reduce count or duration, or add credits.
+每个命令的 `--help` 都有详细参数 + footer 给下一步建议。
 
-## Data locations
+## 输出格式
 
-- State: `~/.opencli/clis/flow/state.json`
-- Media cache: `~/.opencli/clis/flow/media-cache.json`
-- Locks: `~/.opencli/clis/flow/locks/`
+| 想要 | 用 |
+|---|---|
+| 终端紧凑表格 | `flow xxx`（默认） |
+| 长字段不截断 | `flow job-list --full -f csv` |
+| 给 agent 用 | `-f json` 或 `-f yaml`（含 mediaId / status_raw / model_raw 等原始字段） |
 
-The CLI does not store OAuth tokens or cookies. It reads the active browser session when a command runs.
+## 限制 + 已知陷阱
 
-## License and attribution
+| 情况 | 表现 | 处理 |
+|---|---|---|
+| **没有 15 秒视频** | model 表只有 4/6/8/10s | Omni 限制 |
+| **同账号被同事并发用** | `STUB_WORKFLOW` / `PUBLIC_ERROR_UNUSUAL_ACTIVITY`，钱可能被扣但视频没产出 | 加 `--reload`；或独占账号 |
+| **真人脸太像名人** | `CELEBRITY_POLICY` | 换 prompt |
+| **mediaId 跨项目用** | 服务端拒 | cache 已按 project 隔离，使用别名时切 project 会失效 |
+| **首尾帧** | Omni 不支持 | 用多参考替代 |
 
-Milo Flow CLI is created and maintained by Daada Allan. This repository preserves the MIT license for the underlying OpenCLI host integration and retains upstream attribution where required. Milo Flow CLI branding, documentation, workflows, and modifications are Copyright © 2026 Daada Allan.
+## 批量并行
+
+CLI 不内置 queue。剧本批量场景用 shell：
+
+```bash
+# 串行（最稳）
+for p in "镜头1：早晨" "镜头2：推门" "镜头3：阳光"; do
+  opencli flow gen --prompt "$p" --refs hero --length 8 --yes
+done
+
+# 并行（GNU parallel；同账号 ≤ 3 并发，避免风控）
+parallel -j3 'opencli flow gen --prompt {} --refs hero --length 8 --yes' \
+  ::: "镜头1..." "镜头2..." "镜头3..."
+```
+
+## 数据存哪
+
+- 项目默认值：`~/.opencli/clis/flow/state.json`
+- 素材缓存：`~/.opencli/clis/flow/media-cache.json`（按 projectId 隔离）
+- 文件锁：`~/.opencli/clis/flow/locks/<projectId>__<sha256>.lock`
+- Claude Code skill: `~/.claude/skills/flow/`（symlink 到此 plugin）
+
+**不存任何 OAuth / cookie / 凭证** —— 每次实时从 Chrome session 取。
+
+## 卸载
+
+```bash
+opencli plugin uninstall flow
+rm -f ~/.claude/skills/flow                       # 移除 skill symlink
+rm -rf ~/.opencli/clis/flow                       # 清缓存（可选）
+```
+
+## License
+
+MIT

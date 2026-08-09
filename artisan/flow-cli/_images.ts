@@ -14,41 +14,42 @@ export type ImageModelSpec = {
   supportsReferenceImages: boolean;
 };
 
-/**
- * Raw imageModelName keys actually accepted by Flow's flowMedia:batchGenerateImages
- * endpoint (verified from flow.projectInitialData modelConfig, 2026-08-11):
- *   NARWHAL     = "Nano Banana 2"        (free, the pipeline default)
- *   HARBOR_SEAL = "Nano Banana 2 Lite"
- *   GEM_PIX_2   = "Nano Banana Pro"
- * The old friendly keys (imagen-4 / nano-banana-2 / nano-banana-2-lite / nano-banana-2-pro)
- * are NOT valid raw keys — Flow returns INVALID_ARGUMENT for them.
- */
 export const IMAGE_MODELS: Record<string, ImageModelSpec> = {
-  // Nano Banana 2 (balanced, free)
-  'NARWHAL': {
-    key: 'NARWHAL',
-    friendlyName: 'Nano Banana 2',
-    cost: 0,                    // free on all service tiers
-    defaultWidth: 768,
-    defaultHeight: 768,
+  // Imagen 4 (latest)
+  'imagen-4': {
+    key: 'imagen-4',
+    friendlyName: 'Imagen 4',
+    cost: 8,                    // Estimated cost - needs verification
+    defaultWidth: 1024,
+    defaultHeight: 1024,
     supportsSeed: true,
     supportsReferenceImages: true,
   },
   // Nano Banana 2 Lite (fastest, cheapest)
-  'HARBOR_SEAL': {
-    key: 'HARBOR_SEAL',
+  'nano-banana-2-lite': {
+    key: 'nano-banana-2-lite',
     friendlyName: 'Nano Banana 2 Lite',
-    cost: 0,
+    cost: 3,                    // Estimated cost - needs verification
     defaultWidth: 512,
     defaultHeight: 512,
     supportsSeed: true,
     supportsReferenceImages: true,
   },
-  // Nano Banana Pro (highest quality)
-  'GEM_PIX_2': {
-    key: 'GEM_PIX_2',
-    friendlyName: 'Nano Banana Pro',
-    cost: 0,
+  // Nano Banana 2 (balanced)
+  'nano-banana-2': {
+    key: 'nano-banana-2',
+    friendlyName: 'Nano Banana 2',
+    cost: 5,                    // Estimated cost - needs verification
+    defaultWidth: 768,
+    defaultHeight: 768,
+    supportsSeed: true,
+    supportsReferenceImages: true,
+  },
+  // Nano Banana 2 Pro (highest quality)
+  'nano-banana-2-pro': {
+    key: 'nano-banana-2-pro',
+    friendlyName: 'Nano Banana 2 Pro',
+    cost: 8,                    // Estimated cost - needs verification
     defaultWidth: 1024,
     defaultHeight: 1024,
     supportsSeed: true,
@@ -58,17 +59,18 @@ export const IMAGE_MODELS: Record<string, ImageModelSpec> = {
 
 // Friendly aliases the user can pass to `--model`
 const IMAGE_MODEL_ALIASES: Record<string, string> = {
+  // Imagen 4
+  'imagen-4': 'imagen-4',
+  'imagen4': 'imagen-4',
+
   // Nano Banana variants
-  'nano-banana-2': 'NARWHAL',
-  'nb2': 'NARWHAL',
-  'NARWHAL': 'NARWHAL',
-  'nano-banana-2-lite': 'HARBOR_SEAL',
-  'nb2-lite': 'HARBOR_SEAL',
-  'HARBOR_SEAL': 'HARBOR_SEAL',
-  'nano-banana-pro': 'GEM_PIX_2',
-  'nb2-pro': 'GEM_PIX_2',
-  'nano-banana-2-pro': 'GEM_PIX_2',
-  'GEM_PIX_2': 'GEM_PIX_2',
+  'nano-banana-2-lite': 'nano-banana-2-lite',
+  'nb2-lite': 'nano-banana-2-lite',
+  'nano-banana-2': 'nano-banana-2',
+  'nb2': 'nano-banana-2',
+  'nano-banana-pro': 'nano-banana-2-pro',
+  'nb2-pro': 'nano-banana-2-pro',
+  'nano-banana-2-pro': 'nano-banana-2-pro',
 };
 
 export function resolveImageModelKey(input: string): string {
@@ -89,7 +91,7 @@ export function pickImageModel(override?: string): ImageModelSpec {
     return m;
   }
   // Default to nano-banana-2 (balanced)
-  return IMAGE_MODELS['NARWHAL'];
+  return IMAGE_MODELS['nano-banana-2'];
 }
 
 export function totalImageCost(model: ImageModelSpec, count: number): number {

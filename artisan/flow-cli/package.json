@@ -1,14 +1,33 @@
 {
-  "name": "milo-flow-cli",
-  "version": "1.0.0",
+  "name": "opencli-plugin-flow",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Milo Flow CLI by Daada Allan: video and image generation through Google Labs Flow",
+  "description": "Google Labs Flow CLI — Omni video generation via browser bridge",
   "license": "MIT",
-  "author": "Daada Allan",
-  "copyright": "Copyright © 2026 Daada Allan",
-  "repository": { "type": "git", "url": "git+https://github.com/dra-allan/milo-portable-system.git" },
-  "scripts": { "postinstall": "node install.mjs && node translate-to-english.mjs" },
-  "peerDependencies": { "@jackwener/opencli": ">=1.7.22" },
-  "keywords": ["milo", "flow-cli", "google-labs-flow", "omni", "video-generation", "image-generation"],
-  "files": ["*.ts", "*.js", "*.json", "*.mjs", "skills/", "install.mjs", "README.md"]
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LingJingAI-Labs/opencli-plugin-flow.git"
+  },
+  "scripts": {
+    "postinstall": "node install.mjs"
+  },
+  "peerDependencies": {
+    "@jackwener/opencli": ">=1.7.22"
+  },
+  "keywords": [
+    "opencli",
+    "plugin",
+    "flow",
+    "google-labs",
+    "omni",
+    "video-generation"
+  ],
+  "files": [
+    "*.ts",
+    "*.js",
+    "*.json",
+    "skills/",
+    "install.mjs",
+    "README.md"
+  ]
 }

@@ -39,27 +39,26 @@ const ASPECT_MAP: Record<string, string> = {
 
 /**
  * Map user-friendly model names to the imageModelName expected by the API.
- * Raw keys verified from flow.projectInitialData modelConfig (2026-08-11):
- *   NARWHAL     = "Nano Banana 2"   (free, the pipeline default)
- *   HARBOR_SEAL = "Nano Banana 2 Lite"
- *   GEM_PIX_2   = "Nano Banana Pro"
- * Anything else (incl. the old friendly keys like imagen-4 / nano-banana-2)
- * makes Flow return INVALID_ARGUMENT.
+ * Extend as needed.
  */
 const IMAGE_MODEL_ALIASES: Record<string, string> = {
-  // Nano Banana 2 (default)
-  'nano-banana-2': 'NARWHAL',
-  'nb2': 'NARWHAL',
-  'NARWHAL': 'NARWHAL',
+  // Imagen 4
+  'imagen-4': 'IMAGEN_4',
+  'imagen4': 'IMAGEN_4',
   // Nano Banana 2 Lite
-  'nano-banana-2-lite': 'HARBOR_SEAL',
-  'nb2-lite': 'HARBOR_SEAL',
-  'HARBOR_SEAL': 'HARBOR_SEAL',
-  // Nano Banana Pro
-  'nano-banana-2-pro': 'GEM_PIX_2',
-  'nano-banana-pro': 'GEM_PIX_2',
-  'nb2-pro': 'GEM_PIX_2',
+  'nano-banana-2-lite': 'GEM_PIX_2_LITE',
+  'nb2-lite': 'GEM_PIX_2_LITE',
+  // Nano Banana 2
+  'nano-banana-2': 'GEM_PIX_2',
+  'nb2': 'GEM_PIX_2',
+  // Nano Banana 2 Pro
+  'nano-banana-2-pro': 'GEM_PIX_2_PRO',
+  'nb2-pro': 'GEM_PIX_2_PRO',
+  // Fallback: if user passes raw enum, pass through
+  'GEM_PIX_2_LITE': 'GEM_PIX_2_LITE',
   'GEM_PIX_2': 'GEM_PIX_2',
+  'GEM_PIX_2_PRO': 'GEM_PIX_2_PRO',
+  'IMAGEN_4': 'IMAGEN_4',
 };
 
 function resolveImageModel(input: string): string {
@@ -85,7 +84,7 @@ cli({
   navigateBefore: false,
   args: [
     { name: 'prompt', required: true, help: 'The image prompt' },
-    { name: 'model', help: 'Model; default nano-banana-2. Friendly aliases: nb2-lite, nb2, nb2-pro' },
+    { name: 'model', help: 'Model; default nano-banana-2. Friendly aliases: nb2-lite, nb2, nb2-pro, imagen-4' },
     { name: 'count', type: 'int', default: 1, help: 'Number of samples per prompt; 1-4' },
     { name: 'refs', help: 'Reference image list, comma-separated; each token can be an alias, local path, or mediaId UUID. Example: --refs cat,./bg.jpg,9a42af9d-...' },
     { name: 'seed', type: 'int', help: 'Random seed, random by default' },
@@ -134,7 +133,7 @@ cli({
     }
 
     // Always check current balance + tier for the preview.
-    const balResp = await flowFetch(page, `${FLOW_BASE}/credits?key=***REMOVED***`);
+    const balResp = await flowFetch(page, `${FLOW_BASE}/credits?key=AIzaSyBtrm0o5ab1c-Ec8ZuLcGt3oJAA5VWt3pY`);
     const balance = balResp.ok ? Number(balResp.body?.credits ?? 0) : 0;
     const userPaygateTier: string = balResp.body?.userPaygateTier ?? 'PAYGATE_TIER_ONE';
 
@@ -177,7 +176,7 @@ cli({
       await page.wait({ time: 1 });
     }
 
-    let recaptchaToken = await getRecaptchaToken(page, 'IMAGE_GENERATION');
+    let recaptchaToken = await getRecaptchaToken(page);
     const batchId = uuid();
     const baseSeed = seed;
 
@@ -257,7 +256,7 @@ cli({
             const filename = count > 1
               ? `${baseName}_${res.index + 1}${ext}`
               : `${baseName}${ext}`;
-            const fullPath = path.join(outDir, filename);
+            const fullPath = path.isAbsolute(filename) ? filename : path.join(process.cwd(), filename);
             // Download image
             const imgResp = await fetch(res.downloadUrl);
             if (!imgResp.ok) {
@@ -310,7 +309,7 @@ cli({
         }
         // Refresh recaptcha token for next attempt
         // eslint-disable-next-line no-await-in-loop
-        recaptchaToken = await getRecaptchaToken(page, 'IMAGE_GENERATION');
+        recaptchaToken = await getRecaptchaToken(page);
       }
     }
     // If we exit loop without returning, throw last error

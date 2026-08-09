@@ -382,7 +382,7 @@ LastOut=$outInput
             Write-Host "image, and save them as <SEG_ID>.jpeg - exactly what the"
             Write-Host "assembler needs. Already-generated images are skipped."
             Write-Host ""
-            $proj = Read-Host "Path to POV project folder (e.g. $env:USERPROFILE\Desktop\Milo Video Factory\pov\projects\WW1)"
+            $proj = Read-Host "Path to POV project folder (e.g. C:\Users\user\Desktop\Milo Video Factory\pov\projects\WW1)"
             if (-not (Test-Path "$proj\05_IMAGES\IMAGE_PROMPTS_BATCH_FINAL.txt")) {
                 Write-Host "Prompt batch file not found at $proj\05_IMAGES\IMAGE_PROMPTS_BATCH_FINAL.txt" -ForegroundColor Red
                 Write-Host "Run the image-director agent first so the batch file exists." -ForegroundColor Yellow
