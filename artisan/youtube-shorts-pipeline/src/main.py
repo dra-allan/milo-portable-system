@@ -2108,6 +2108,36 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
     if not supply:
         return 0
 
+    # Drop rows whose rendered file is gone before the caps are applied.
+    #
+    # The DB is the source of truth for "queued", but the MP4 lives on disk and
+    # can disappear independently (retention sweep, manual cleanup, a moved
+    # working directory). Those rows stayed 'queued' forever: every run picked
+    # them, spent a selection slot on them, failed with "Video file not found",
+    # and left them queued to fail again on the next run. In the observed logs
+    # this consumed the entire per-run cap while uploading nothing.
+    #
+    # Marking them 'missing' takes them out of the queue permanently and frees
+    # the slot for a clip that actually exists.
+    present = []
+    missing = 0
+    for clip in supply:
+        local_path = (clip.get('local_path') or '').strip()
+        if local_path and Path(local_path).exists():
+            present.append(clip)
+            continue
+        missing += 1
+        pipeline.db.update_clip_status(
+            clip['source_video_id'], clip['segment_index'], 'missing')
+    if missing:
+        logger.warning(
+            "Niche '%s': %d queued clip(s) had no file on disk; marked 'missing' "
+            "so they stop consuming upload slots", niche, missing,
+        )
+    supply = present
+    if not supply:
+        return 0
+
     # Per-source and per-channel caps
     per_source_cap = getattr(config, 'upload_max_per_source', 3)
     per_channel_cap = getattr(config, 'upload_max_per_channel', 6)
@@ -2295,19 +2325,29 @@ def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
                         total_budget)
             break
 
-        # Skip niches without authenticated upload channels
+        # Skip niches without authenticated upload channels.
+        #
+        # An empty `authed` means "no per-channel token files exist", which is
+        # the normal single-channel setup: auth comes from the one default
+        # token instead. run_niche() and _upload_backlog_supply() both treat
+        # that as usable, but this gate used `any(c in authed ...)` which is
+        # unconditionally False for an empty list -- so a single-channel
+        # install had every niche skipped here and the sweep did nothing,
+        # while the other two code paths would happily have run. Mirror the
+        # permissive check the rest of the pipeline uses.
         channels = config.get_niche_channels(niche)
         authed = config.authenticated_channels()
-        if not channels or not any(c in authed for c in channels):
+        usable = [c for c in channels if not authed or c in authed]
+        if not usable:
             logger.info(
                 "Niche '%s': no authenticated upload channel bound "
-                "(resolved channels=%r, authed=%s) -- skipping",
+                "(resolved channels=%r, authed=%s) -- skipping until bound in "
+                "config/niches.yaml with `channel: <name>` and authenticated",
                 niche, channels, authed or ['(default token)'],
             )
             continue
 
-        # Filter to authed channels only
-        channels = [c for c in channels if c in authed]
+        channels = usable
 
         # 1. Expire stale backlog
         expired = _expire_stale_backlog(pipeline, niche)
