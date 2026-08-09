@@ -707,9 +707,22 @@ class VideoEditor:
         # BT.709 by others, so an untagged file looks washed out or oversaturated
         # depending on where it is watched.
         filters.append(f"[{last_label}]format=yuv420p[vout]")
-        filter_complex = ';'.join(filters)
 
         has_audio = self.has_audio_stream(str(src))
+
+        # --- audio graph --------------------------------------------------
+        # The music bed (when there is one) needs a SECOND input, and mixing
+        # two inputs is only expressible in -filter_complex. The previous
+        # implementation built a multi-input, labelled graph and handed it to
+        # '-af', which accepts only a simple 1-in/1-out chain -- so FFmpeg
+        # rejected every render with "Simple filtergraph '(null)' was expected
+        # to have exactly 1 input and 1 output. However, it had 2 input(s)".
+        # It also used [0:a:0] as *both* the speech and the music source, so
+        # even as a complex graph it would only ever have ducked the speech
+        # against itself. Both problems are fixed by resolving the music track
+        # first, adding it as input 1, and appending real audio chains to the
+        # same filter_complex we already build for video.
+        music_track = self._pick_music_track() if has_audio else None
 
         cmd = [
             self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
@@ -717,44 +730,27 @@ class VideoEditor:
             # Both are floats, so no sub-second truncation.
             '-ss', f"{start_time:.3f}",
             '-i', str(src),
-            '-t', f"{duration:.3f}",
-            '-filter_complex', filter_complex,
+        ]
+
+        if music_track:
+            # -stream_loop -1 loops the bed for as long as the clip needs it,
+            # which is what 'aloop' was reaching for. Doing it at the input is
+            # cheaper and cannot overflow a frame-count limit.
+            cmd += ['-stream_loop', '-1', '-i', str(music_track)]
+
+        cmd += ['-t', f"{duration:.3f}"]
+
+        if has_audio:
+            filters.extend(self._build_audio_filters(bool(music_track)))
+
+        cmd += [
+            '-filter_complex', ';'.join(filters),
             '-map', '[vout]',
         ]
 
         if has_audio:
-            # Build audio filter chain with optional background music
-            audio_filter_parts = ['loudnorm=I=-16:TP=-1.5:LRA=11']
-            
-            # Add background music if enabled and available
-            if getattr(config, 'music_enabled', True):
-                music_dir = Path(getattr(config, 'music_dir', 'data/music'))
-                if music_dir.exists():
-                    import random
-                    music_files = list(music_dir.glob('*.mp3')) + list(music_dir.glob('*.wav')) + list(music_dir.glob('*.ogg')) + list(music_dir.glob('*.m4a'))
-                    if music_files:
-                        music_file = random.choice(music_files)
-                        music_volume = getattr(config, 'music_volume', 0.15)
-                        music_duck_factor = getattr(config, 'music_duck_factor', 0.3)
-                        
-                        # Build filter: mix source audio with background music
-                        # Duck music during speech using sidechaincompress
-                        music_filter = (
-                            f"[0:a:0]volume={music_volume},"
-                            f"aloop=loop=-1:size=2e+09[music];"
-                            f"[0:a:0][music]sidechaincompress="
-                            f"threshold=0.003:ratio=20:attack=5:release=200:"
-                            f"makeup={1/music_duck_factor}[mixed]"
-                        )
-                        audio_filter_parts = [music_filter]
-                    else:
-                        logger.warning("Music enabled but no tracks found in %s", music_dir)
-            
-            audio_filter = ';'.join(audio_filter_parts)
-            
             cmd += [
-                '-map', '0:a:0',
-                '-af', audio_filter,
+                '-map', '[aout]',
                 # 128k was audibly lossy on music beds. 192k at 48kHz is what
                 # YouTube itself recommends for stereo; the extra bytes are
                 # negligible next to the video track.
@@ -837,6 +833,110 @@ class VideoEditor:
             out.stat().st_size / (1024 * 1024),
         )
         return True
+
+    # ------------------------------------------------------------------
+    # Audio graph
+    # ------------------------------------------------------------------
+    #: Extensions accepted for background music beds.
+    MUSIC_EXTENSIONS = ('.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.opus')
+
+    #: Cached list of music tracks. Scanning the directory per clip is pure
+    #: overhead (the answer cannot change mid-run) and it made the "no tracks
+    #: found" warning fire once per render, spamming the log.
+    _music_cache = None
+    _music_warned = False
+
+    @classmethod
+    def _music_tracks(cls) -> List[Path]:
+        """All usable music beds, scanned once per process."""
+        if cls._music_cache is not None:
+            return cls._music_cache
+
+        tracks: List[Path] = []
+        music_dir = Path(getattr(config, 'music_dir', 'data/music'))
+        if music_dir.exists():
+            for path in sorted(music_dir.iterdir()):
+                if not path.is_file():
+                    continue
+                if path.suffix.lower() not in cls.MUSIC_EXTENSIONS:
+                    continue
+                try:
+                    if path.stat().st_size <= 0:
+                        continue
+                except OSError:
+                    continue
+                tracks.append(path)
+        cls._music_cache = tracks
+        return tracks
+
+    @classmethod
+    def _pick_music_track(cls) -> Optional[Path]:
+        """A random music bed, or None when music is off/unavailable."""
+        if not getattr(config, 'music_enabled', True):
+            return None
+        # A zero volume means the bed would be inaudible: skip the extra input
+        # and the mix entirely rather than paying for a silent track.
+        if float(getattr(config, 'music_volume', 0.15) or 0.0) <= 0.0:
+            return None
+
+        tracks = cls._music_tracks()
+        if not tracks:
+            # Warn once, not once per clip.
+            if not cls._music_warned:
+                cls._music_warned = True
+                logger.warning(
+                    "Music enabled but no tracks found in %s -- rendering "
+                    "speech-only audio. Add .mp3/.wav files there or set "
+                    "MUSIC_ENABLED=false to silence this warning.",
+                    getattr(config, 'music_dir', 'data/music'),
+                )
+            return None
+
+        import random
+        return random.choice(tracks)
+
+    @staticmethod
+    def _build_audio_filters(with_music: bool) -> List[str]:
+        """Audio chains ending in the ``[aout]`` label.
+
+        Speech is always loudness-normalised to YouTube's target. When a music
+        bed is present it is attenuated, side-chain ducked *by the speech* (so
+        it drops under dialogue and swells in the gaps) and mixed underneath.
+        """
+        loudnorm = 'loudnorm=I=-16:TP=-1.5:LRA=11'
+
+        if not with_music:
+            return [f"[0:a:0]{loudnorm},aresample=async=1:first_pts=0[aout]"]
+
+        music_volume = float(getattr(config, 'music_volume', 0.15) or 0.15)
+        duck = float(getattr(config, 'music_duck_factor', 0.3) or 0.3)
+        # music_duck_factor is "how loud the bed stays under speech", so a
+        # smaller factor must mean a *stronger* duck. Expressed as a
+        # sidechaincompress ratio, that is an inverse relationship. The old
+        # code used it as `makeup=1/duck`, i.e. it BOOSTED the music while
+        # speech played -- the opposite of ducking. Clamped so a factor of 0
+        # cannot divide by zero.
+        duck = min(max(duck, 0.05), 1.0)
+        ratio = min(20.0, max(1.5, 1.0 / duck))
+
+        return [
+            # Speech: normalise once, then split -- one copy is the sidechain
+            # control signal, the other is the audible track.
+            f"[0:a:0]{loudnorm},aresample=async=1:first_pts=0,"
+            f"asplit=2[speech][sidechain]",
+            # Music: match the speech layout/rate before it reaches the mixer,
+            # and trim it to the clip so the looped input cannot run long.
+            f"[1:a:0]volume={music_volume:g},aformat=sample_fmts=fltp:"
+            f"sample_rates={int(config.audio_sample_rate)}:channel_layouts=stereo[bed]",
+            # Duck the bed against the speech.
+            f"[bed][sidechain]sidechaincompress="
+            f"threshold=0.03:ratio={ratio:g}:attack=5:release=250[ducked]",
+            # Mix. duration=first keeps the output exactly as long as the
+            # speech track; dropout_transition=0 stops amix from ramping the
+            # gain up when one input ends.
+            "[speech][ducked]amix=inputs=2:duration=first:dropout_transition=0:"
+            "normalize=0[aout]",
+        ]
 
     @staticmethod
     def _cleanup(*paths):
