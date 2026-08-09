@@ -527,15 +527,29 @@ def _cluster_tracks(per_frame: Sequence[List[Box]], src_w: int, src_h: int,
             # Too few samples to compute variance reliably; keep
             pass
         else:
-            # Compute variance of width and height
-            mean_w = t['w'] / t['n']
-            mean_h = t['h'] / t['n']
-            var_w = (t['w2'] / t['n']) - (mean_w * mean_w)
-            var_h = (t['h2'] / t['n']) - (mean_h * mean_h)
+            # t['w'] / t['h'] are maintained as RUNNING MEANS by the update
+            # above, so they must NOT be divided by n again. Doing so scaled
+            # the mean down by a factor of n (150 -> 25 for n=6), which
+            # inflated the relative std-dev to ~5.9 and pushed every track
+            # past max_size_variance (0.3). The practical effect was that
+            # _cluster_tracks returned [] for every clip, so analyse_people
+            # found nobody and smart framing silently degraded to a centre
+            # crop on 100% of renders.
+            mean_w = t['w']
+            mean_h = t['h']
+            # E[x^2] - (E[x])^2. Clamp at 0: with identical boxes the two
+            # terms are equal and float error can make this slightly negative,
+            # which would raise on ** 0.5.
+            var_w = max(0.0, (t['w2'] / t['n']) - (mean_w * mean_w))
+            var_h = max(0.0, (t['h2'] / t['n']) - (mean_h * mean_h))
             # Relative variance (standard deviation / mean)
             rel_var_w = (var_w ** 0.5) / mean_w if mean_w != 0 else float('inf')
             rel_var_h = (var_h ** 0.5) / mean_h if mean_h != 0 else float('inf')
-            if rel_var_w > config.smart_max_size_variance or rel_var_h > config.smart_max_size_variance:
+            # Use the PARAMETER, not config: the function accepted
+            # max_size_variance but read the global config value instead, so
+            # the argument was dead and callers/tests could not override the
+            # threshold. analyse_people still passes the config value in.
+            if rel_var_w > max_size_variance or rel_var_h > max_size_variance:
                 continue  # reject this track due to size instability
         box = Box(t['cx'] - t['w'] / 2.0, t['cy'] - t['h'] / 2.0, t['w'], t['h'])
         out.append((box, int(t['n'])))
