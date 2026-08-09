@@ -2014,13 +2014,13 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
         )
         return 0
 
-    # Log queue health
-    health = pipeline.db.get_queue_health(niche)
+    # Log queue health using the wrapper that computes channel remaining
+    health = _get_queue_health(pipeline, niche, channels)
     logger.info(
         "QUEUE_HEALTH niche=%s total=%d eligible=%d distinct_sources=%d top_source_share=%.2f channel_remaining=%d",
-        niche, health.get('total_queued', 0), health.get('eligible_clips', 0),
-        health.get('distinct_sources', 0), health.get('top_source_share', 0.0),
-        health.get('channel_remaining', 0),
+        niche, health['total_queued'], health['eligible_clips'],
+        health['distinct_sources'], health['top_source_share'],
+        health['channel_remaining'],
     )
 
     uploaders = {}
