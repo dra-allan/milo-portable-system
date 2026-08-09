@@ -1,4 +1,4 @@
-﻿"""Tests for scheduled mode wiring: run_niche gate, sweep budget, discover dry-run."""
+"""Tests for scheduled mode wiring: run_niche gate, sweep budget, discover dry-run."""
 
 import contextlib
 import io
@@ -69,17 +69,40 @@ class FakeDB:
         self.recorded.append((video_id, niche))
 
     def unuploaded_shorts(self, limit=50):
-        return self.unuploaded[:limit]
+        # Only return clips that are still queued (not uploaded/expired)
+        queued = [c for c in self.unuploaded 
+                  if c.get('status', 'queued') == 'queued' 
+                  and c.get('local_path')]
+        return queued[:limit]
 
     def mark_short_uploaded(self, source_video_id, segment_index, youtube_short_id,
                             channel=''):
         self.marked.append((source_video_id, segment_index, channel))
+        # Mark the clip as uploaded in the unuploaded list
+        for c in self.unuploaded:
+            if (c.get('source_video_id') == source_video_id and 
+                c.get('segment_index') == segment_index):
+                c['status'] = 'uploaded'
+                c['youtube_short_id'] = youtube_short_id
+                c['upload_channel'] = channel
+                break
+        # Update internal counters for per-source/per-channel caps
+        if not hasattr(self, '_run_source_counts'):
+            self._run_source_counts = {}
+        if not hasattr(self, '_run_channel_counts'):
+            self._run_channel_counts = {}
+        self._run_source_counts[source_video_id] = self._run_source_counts.get(source_video_id, 0) + 1
+        self._run_channel_counts[channel] = self._run_channel_counts.get(channel, 0) + 1
 
     def uploaded_count_for_source_since(self, source_video_id, hours=24):
-        return getattr(self, 'used_by_source', {}).get(source_video_id, 0)
+        base = getattr(self, 'used_by_source', {}).get(source_video_id, 0)
+        run = getattr(self, '_run_source_counts', {}).get(source_video_id, 0)
+        return base + run
 
     def uploaded_count_for_channel_since(self, channel, hours=24):
-        return getattr(self, 'used_by_channel', {}).get(channel, 0)
+        base = getattr(self, 'used_by_channel', {}).get(channel, 0)
+        run = getattr(self, '_run_channel_counts', {}).get(channel, 0)
+        return base + run
 
     def record_performance(self, *a, **k):
         pass
@@ -100,9 +123,10 @@ class FakeDB:
         total = 0
         for clip in self.unuploaded:
             if (clip.get('niche') or '') == niche and clip.get('local_path'):
-                src = clip['source_video_id']
-                source_counts[src] = source_counts.get(src, 0) + 1
-                total += 1
+                if clip.get('status', 'queued') == 'queued':
+                    src = clip['source_video_id']
+                    source_counts[src] = source_counts.get(src, 0) + 1
+                    total += 1
         max_source = max(source_counts.values()) if source_counts else 0
         top_share = max_source / total if total > 0 else 0.0
         return {
@@ -120,7 +144,9 @@ class FakeDB:
 
     def get_queued_clips_for_upload(self, niche: str, limit: int = 100) -> List[Dict]:
         clips = [c for c in self.unuploaded 
-                 if (c.get('niche') or '') == niche and c.get('local_path')]
+                 if (c.get('niche') or '') == niche 
+                 and c.get('local_path')
+                 and c.get('status', 'queued') == 'queued']
         # Fair source rotation: group by source, round-robin
         by_source = {}
         for c in clips:
@@ -152,12 +178,18 @@ class FakeDB:
         counts = {}
         for c in self.unuploaded:
             if (c.get('niche') or '') == niche:
-                src = c['source_video_id']
-                counts[src] = counts.get(src, 0) + 1
+                if c.get('status', 'queued') == 'queued':
+                    src = c['source_video_id']
+                    counts[src] = counts.get(src, 0) + 1
         return counts
 
     def update_clip_status(self, source_video_id: str, segment_index: int, status: str) -> bool:
-        return True
+        for c in self.unuploaded:
+            if (c.get('source_video_id') == source_video_id and 
+                c.get('segment_index') == segment_index):
+                c['status'] = status
+                return True
+        return False
 
     def get_max_queued_per_source(self, niche: str) -> int:
         counts = self.count_queued_by_source(niche)
@@ -344,14 +376,14 @@ class TestPullOnceBacklog(unittest.TestCase):
             # Queue unhealthy (only 1 source, below min_distinct_sources=4) -> discovery runs
             self.assertEqual(pulled, ['flick_shorts'])
 
-    def test_rich_backlog_means_no_pull_if_queue_healthy(self):
-        """If queue is healthy (enough distinct sources), no discovery runs."""
+def test_rich_backlog_means_no_pull_if_queue_healthy(self):
+        """If queue is healthy (enough distinct sources AND total >= target), no discovery runs."""
         with _workspace() as td:
             _isolate_config(Path(td))
             from src.main import _run_scheduled_sweep
             from src.config import config
-            config.queue_min_distinct_sources = 1  # low threshold for this test
-            config.queue_target_total = 3
+            config.queue_min_distinct_sources = 1
+            config.queue_target_total = 3  # low target so 5 clips meets it
             clips = []
             Path(td).joinpath('clips').mkdir(exist_ok=True)
             for i in range(5):
@@ -371,7 +403,7 @@ class TestPullOnceBacklog(unittest.TestCase):
 
             # 5 clips uploaded from backlog (cap 5)
             self.assertEqual(pipeline.stats['shorts_uploaded'], 5)
-            # Queue healthy (5 distinct sources >= 1, total >= 3) -> no discovery
+            # Queue healthy (5 distinct sources >= 1, total 5 >= target 3) -> no discovery
             self.assertEqual(pulled, [])
 
     def test_per_source_daily_cap_limits_backlog_drain(self):
