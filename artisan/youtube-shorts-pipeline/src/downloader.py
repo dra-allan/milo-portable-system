@@ -187,8 +187,8 @@ class YouTubeDownloader:
             'extractor_retries': 5,
             'fragment_retries': 10,
             'retry_sleep': lambda n: min(60, 2 ** n),  # longer exponential backoff
-            'sleep_interval': 2,
-            'max_sleep_interval': 10,
+            'sleep_interval': 5,
+            'max_sleep_interval': 20,
             # Try to bypass age restrictions and regional blocks
             'age_limit': None,
             'bypass_geoblock': True,
