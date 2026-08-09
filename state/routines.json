@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786182116.007179,
+  "updated_at": 1786240280.6073108,
   "routines": [
     {
       "name": "curate-skills",
@@ -22,11 +22,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0468326,
-      "last_run": 1786150806.8411167,
+      "last_run": 1786237207.983552,
       "last_status": "ok",
       "last_output": "curator not due yet",
-      "next_run": 1786237200.0,
-      "runs": 2,
+      "next_run": 1786323600.0,
+      "runs": 3,
       "failures": 0
     },
     {
@@ -50,11 +50,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0421934,
-      "last_run": 1786134606.6743805,
+      "last_run": 1786221007.3428462,
       "last_status": "ok",
-      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     70\n  notes        7\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1786221000.0,
-      "runs": 3,
+      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     84\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
+      "next_run": 1786307400.0,
+      "runs": 4,
       "failures": 0
     },
     {
@@ -77,12 +77,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786182029.9435055,
-      "last_status": "ok",
-      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     75\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786182407.2354932,
-      "runs": 250,
-      "failures": 7
+      "last_run": 1786239611.3850095,
+      "last_status": "failed (1)",
+      "last_output": "run again with -v for the full traceback\n  [x] TimeoutExpired: Command '['git', '-C', 'C:\\\\Users\\\\user\\\\Desktop\\\\milo-portable-system', 'push']' timed out after 180 seconds",
+      "next_run": 1786240564.7051125,
+      "runs": 329,
+      "failures": 15
     },
     {
       "name": "frequent-vault-sync",
@@ -104,12 +104,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786182107.2888424,
+      "last_run": 1786240264.7616959,
       "last_status": "ok",
-      "last_output": "[ok] vault clean, nothing to commit",
-      "next_run": 1786182416.0068238,
-      "runs": 245,
-      "failures": 45
+      "last_output": "[ok]    4df4497..ba4f005  master -> master",
+      "next_run": 1786240580.6046941,
+      "runs": 324,
+      "failures": 56
     },
     {
       "name": "memory-hygiene",
@@ -132,11 +132,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0488555,
-      "last_run": 0.0,
-      "last_status": "",
-      "last_output": "",
-      "next_run": 1786233600.0,
-      "runs": 0,
+      "last_run": 1786234510.5304742,
+      "last_status": "ok",
+      "last_output": "[ok] expired 0 memory(ies)",
+      "next_run": 1786838400.0,
+      "runs": 1,
       "failures": 0
     },
     {
@@ -212,11 +212,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0510957,
-      "last_run": 1786177516.4405773,
-      "last_status": "failed (1)",
-      "last_output": "[x] vault clean, nothing to commit",
-      "next_run": 1786199116.9391704,
-      "runs": 9,
+      "last_run": 1786221329.4471633,
+      "last_status": "ok",
+      "last_output": "[ok] vault clean, nothing to commit",
+      "next_run": 1786242934.3940792,
+      "runs": 11,
       "failures": 2
     }
   ]
