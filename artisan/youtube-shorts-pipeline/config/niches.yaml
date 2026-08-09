@@ -1597,16 +1597,44 @@ uganda_chop:
   channel: uganda_chop
   max_videos: 5
   channels:
-    - "@Kasukuliveyoutube"         # Kasuku Live: Top tier for gossip, celebrity beef, and long-form current affairs.
-    - "@SB4MediaTuggusaEnsonga"   # SB4 Media: Street interviews, raw emotional Luganda stories, and social issues.
-    - "@bukeddetv"                # Bukedde TV: Huge Luganda reach, great for Agataliiko Nfuufu and local drama.
-    - "@theugandanboytalkshow"    # The Ugandan Boy Talk Show: Long-form podcasts and real-life stories.
-    - "@babatvuganda"             # Baba TV: Heated political and social talk shows.
-    - "@benonfredtwinamasiko"     # Benon Fred Twinamasiko: High-engagement interviews.
-    - "@NBStelevision"            # NBS TV: Pulls in Uncut, Frontline, and major celebrity interviews.
-    - "@SparkTvUganda"            # Spark TV: The home of Live Wire and daily entertainment scoop.
-    - "@GalaxyFM1002"             # Galaxy FM: Zina, Morning Saga, high-energy studio banter and artist interviews.
+    # --- New & Requested Channels ---
+    - "@KOJJAKABAAYAOFFICIAL"     # Kojja Kabaya
+    - "@Shalom256"                # Shalom 256
+    - "@MunaUg-256"               # Muna UG
+    - "@sammieandshawa"           # Sammie and Shawa
+    - "@AlexMuhangi"              # Comedy Store Uganda
+    - "@doreennasasira912"        # Doreen Nasasira
+    - "@ebipya256"                # Ebipya 256
+    - "@UpdateX"                  # Update X
+    - "@Omulangira_Ndawusi"       # Omulangira Ndawusi Live
+    # --- Core Gossip & Drama ---
+    - "@Kasukuliveyoutube"        # Kasuku Live (Also great for Chicken Chicken & Kojja Kabaya appearances)
+    - "@GossipLive"               # Gossip Live (Frequent viral character appearances)
+    - "@SB4MediaTuggusaEnsonga"   # SB4 Media
+    - "@bukeddetv"                # Bukedde TV / Agataliiko Nfuufu
+    - "@theugandanboytalkshow"    # The Ugandan Boy Talk Show
+    - "@babatvuganda"             # Baba TV
+    - "@benonfredtwinamasiko"     # Benon Fred Twinamasiko
+    - "@NBStelevision"            # NBS TV
+    - "@SparkTvUganda"            # Spark TV
+    - "@GalaxyFM1002"             # Galaxy FM
+    - "@kojjampaatalive"          # Kojja Mpaata Live
+    - "@BBSTEREFAYINAlivebutereevu" # BBS Terefayina
   keywords:
+    # --- Requested Keywords ---
+    - "kojja kabaya"
+    - "shalom 256"
+    - "muna ug"
+    - "chicken chicken"
+    - "shawa"
+    - "sammie and shawa"
+    - "comedy store uganda"
+    - "alex muhangi"
+    - "doreen nasasira"
+    - "ebipya 256"
+    - "update x"
+    - "omulangira ndawusi"
+    # --- Core Keywords ---
     - "Kasuku live"
     - "Ugandan drama"
     - "Lugambo"
@@ -1626,9 +1654,9 @@ uganda_chop:
     - "Ugandan celebrities"
     - "Uganda interviews"
   negative_keywords: ["#shorts", "shorts", "clip", "clips", "podcast clips", "compilation", "reaction", "trailer", "teaser", "livestream", "music video", "official audio", "lyrics", "fan edit", "meme", "music", "dance", "concert", "church service", "preaching", "choir"]
-  language: en  # Keep as 'en' if your primary scraper relies on English metadata/API tags before passing audio to your custom STT layer.
+  language: en 
   min_duration: 300
-  max_duration: 10800  # Pushed to 3 hours to capture long Kasuku Live streams and podcasts.
+  max_duration: 10800  
   min_score: 0.50
   preferred_upload_days: 365
-  min_views: 20000  # Lowered slightly from 50k to catch fast-moving, fresh local drama before it peaks.
+  min_views: 20000
