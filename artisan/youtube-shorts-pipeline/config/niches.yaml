@@ -88,7 +88,6 @@ capital_mindset:
   #   python -m src.uploader auth --channel wealth_mindset
   upload_channels:
     - capital_mindset
-    - wealth_mindset
   # Legacy single-channel binding (backward compatible). Redundant when
   # upload_channels is set.
   channel: capital_mindset
@@ -111,6 +110,89 @@ capital_mindset:
     - "@a16z"
     - "@Lennyspodcast"
 #    - "@FoundersPodcast"
+    - "@StanfordGSB"
+    - "@harvardbusinessreview"
+    - "@TheDiaryOfACEO"
+    - "@ChrisWillx"
+  keywords:
+    - "how to get rich"
+    - "billionaire habit"
+    - "building a business"
+    - "first million"
+    - "financial freedom"
+    - "passive income"
+    - "investing strategy"
+    - "cash flow"
+    - "went bankrupt"
+    - "profit margin"
+    - "scale to 7 figures"
+    - "make more money"
+    - "business model"
+    - "how companies make money"
+    - "$100M"
+    - "$10M"
+    - "$1 million"
+    - "millionaire"
+    - "billionaire"
+    - "wealth"
+    - "sales"
+    - "pricing"
+    - "offer"
+    - "lead generation"
+    - "customer acquisition"
+    - "marketing"
+    - "founder"
+    - "CEO"
+    - "startup"
+    - "startup failure"
+    - "business advice"
+    - "entrepreneur"
+    - "negotiation"
+    - "high income skill"
+    - "agency"
+    - "AI business"
+    - "how I built"
+    - "small business"
+    - "boring business"
+    - "cash flowing business"
+    - "buy a business"
+    - "holding company"
+    - "private equity"
+    - "venture capital"
+    - "bootstrapped"
+    - "SaaS"
+    - "subscription business"
+    - "unit economics"
+    - "customer lifetime value"
+    - "profit"
+  negative_keywords: ["#shorts", "shorts", "clip", "clips", "podcast clips", "compilation", "reaction", "trailer", "livestream", "music video", "forex signal", "binary options", "casino", "lottery", "get rich quick", "guaranteed income", "giveaway"]
+  language: en
+  min_duration: 300
+  max_duration: 7200
+  min_score: 0.52
+  preferred_upload_days: 365
+  min_views: 75000
+
+wealth_mindset:
+  # Independent wealth/money niche with its own supply, uploads only to wealth_mindset channel.
+  # Sources mirror capital_mindset but with independent per-source budgets.
+  upload_channels:
+    - wealth_mindset
+  channel: wealth_mindset
+  max_videos: 2
+  channels:
+    - "@AlexHormozi"
+    - "@MyFirstMillionPod"
+    - "@YCombinator"
+    - "@CodieSanchezCT"
+    - "@NoahKagan"
+    - "@Valuetainment"
+    - "@PatrickBetDavid"
+    - "@GaryVee"
+    - "@AliAbdaal"
+    - "@AcquiredFM"
+    - "@a16z"
+    - "@Lennyspodcast"
     - "@StanfordGSB"
     - "@harvardbusinessreview"
     - "@TheDiaryOfACEO"
