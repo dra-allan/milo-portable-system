@@ -70,6 +70,9 @@ class FakeDB:
     def mark_short_uploaded(self, source_video_id, segment_index, youtube_short_id):
         pass
 
+    def uploaded_count_for_source_since(self, source_video_id, hours=24):
+        return getattr(self, 'used_by_source', {}).get(source_video_id, 0)
+
     def record_performance(self, *a, **k):
         pass
 
@@ -270,6 +273,65 @@ class TestPullOnceBacklog(unittest.TestCase):
             # 6 clips >= backlog_min(5): drain, no pull.
             self.assertEqual(pulled, [])
             self.assertEqual(pipeline.stats['shorts_uploaded'], 5)
+
+    def test_per_source_daily_cap_limits_backlog_drain(self):
+        with _workspace() as td:
+            _isolate_config(Path(td))
+            from src.main import _run_scheduled_sweep
+            from src.config import config
+
+            # 5 clips from the SAME source video -- the "How to Get Rich" burst
+            # pattern. Only upload_max_per_source (3) may go up in one run.
+            config.upload_max_per_source = 3
+            clips = []
+            Path(td).joinpath('clips').mkdir(exist_ok=True)
+            for i in range(5):
+                clips.append({
+                    'source_video_id': 'fj5uxdv_j5Y',
+                    'segment_index': i + 1,
+                    'local_path': str(Path(td) / 'clips' / f'{i:02d}.mp4'),
+                    'niche': 'flick_shorts', 'title': f'Hook {i}',
+                })
+                Path(clips[-1]['local_path']).write_bytes(b'fake-mp4')
+
+            pulled = []
+            pipeline = self._make_pipeline_with_backlog(td, clips)
+            pipeline.run_niche = lambda niche, max_videos=1, lookback=None: (pulled.append(niche) or 0)
+
+            _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
+
+            # 5 supplied but per-source cap stops at 3.
+            self.assertEqual(pipeline.stats['shorts_uploaded'], 3)
+
+    def test_per_source_cap_counts_already_uploaded(self):
+        with _workspace() as td:
+            _isolate_config(Path(td))
+            from src.main import _run_scheduled_sweep
+            from src.config import config
+
+            # 2 clips from this source were already posted in the last 24h, so
+            # with a cap of 3 only 1 more may go up this run.
+            config.upload_max_per_source = 3
+            clips = [
+                {'source_video_id': 'aaa11111111', 'segment_index': 1,
+                 'local_path': str(Path(td) / 'clips' / '01.mp4'),
+                 'niche': 'flick_shorts', 'title': 'Hook one'},
+                {'source_video_id': 'aaa11111111', 'segment_index': 2,
+                 'local_path': str(Path(td) / 'clips' / '02.mp4'),
+                 'niche': 'flick_shorts', 'title': 'Hook two'},
+            ]
+            Path(td).joinpath('clips').mkdir(exist_ok=True)
+            for c in clips:
+                Path(c['local_path']).write_bytes(b'fake-mp4')
+
+            pulled = []
+            pipeline = self._make_pipeline_with_backlog(td, clips)
+            pipeline.db.used_by_source = {'aaa11111111': 2}
+            pipeline.run_niche = lambda niche, max_videos=1, lookback=None: (pulled.append(niche) or 0)
+
+            _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
+
+            self.assertEqual(pipeline.stats['shorts_uploaded'], 1)
 
 
 class _FakeUploader:
