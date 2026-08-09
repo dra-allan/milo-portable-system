@@ -40,6 +40,15 @@ DEFAULT_NICHE = {
     'min_score': 0.0,
     'min_views': 0,
     'max_videos': 0,
+    # Burn word-level captions onto this niche's Shorts. Set false for
+    # non-English niches (e.g. Luganda): Whisper transcribes them badly, so
+    # captions would be confidently wrong -- and skipping them also removes
+    # the accurate caption pass + the subtitles filter from the render,
+    # which is the two most expensive things per clip.
+    'captions': True,
+    # Whisper language hint ('' = autodetect). A correct hint removes the
+    # detection pass and stops Whisper hallucinating English.
+    'whisper_language': '',
     # Opt-in countdown/list scoring (enumeration cues, #1 payoff,
     # superlatives). Off by default so existing niches score unchanged.
     'ranking_mode': False,
@@ -120,10 +129,34 @@ class Config:
         # Window size for the memory-safe long-file path. faster-whisper
         # builds a full-file mel array, so a hard cap on how much audio is in
         # flight is what actually prevents the OOM.
+        # 15 min windows were both slow AND the direct cause of the
+        # "mkl_malloc: failed to allocate memory" window failures in the logs:
+        # a 15-minute mel array plus the model plus a decode context does not
+        # fit in a ~4 GB box, so window 2 died and a fifth of the source was
+        # silently dropped. 5 minutes keeps peak memory ~3x lower and lets
+        # windows run in parallel (see transcribe_workers).
         self.transcribe_window_minutes = self._int(
-            'TRANSCRIBE_WINDOW_MINUTES', 15, minimum=1
+            'TRANSCRIBE_WINDOW_MINUTES', 5, minimum=1
         )
+        # 0 => let ctranslate2 pick. On a small box explicitly pinning threads
+        # to the core count avoids oversubscription when windows run in
+        # parallel (each worker then gets cores/workers threads).
         self.transcribe_threads = self._int('TRANSCRIBE_THREADS', 0, minimum=0)
+        # Parallel windows. Whisper on CPU does NOT scale linearly with
+        # threads -- a single ctranslate2 model saturates ~2-4 threads and then
+        # flattens out. Running independent windows concurrently is what
+        # actually uses the rest of the machine. Windows are independent by
+        # construction here (condition_on_previous_text=False), so this is
+        # safe. Default: cores/2, capped at 4, so memory stays bounded.
+        self.transcribe_workers = self._int(
+            'TRANSCRIBE_WORKERS', max(1, min(4, (os.cpu_count() or 2) // 2)),
+            minimum=1,
+        )
+        # Skip transcription entirely when YouTube already published a
+        # transcript. Downloading subtitles takes ~1 second versus ~50 minutes
+        # of Whisper for an hour-long source: by far the largest single speed
+        # win available, and it is free.
+        self.use_youtube_subs = self._bool('USE_YOUTUBE_SUBS', True)
 
         # Caption pass: only ever runs on the selected clips (a few minutes of
         # audio total), so it can afford to be accurate.
@@ -147,8 +180,19 @@ class Config:
         # a 9:16 tile is only ~608px wide, which then has to be upscaled. So
         # allowing 1440p+ genuinely helps when the source offers it, and costs
         # nothing when it does not (the format selector just falls through).
-        self.download_height = self._int('DOWNLOAD_HEIGHT', 1440, minimum=240)
-        self.download_concurrency = self._int('DOWNLOAD_CONCURRENCY', 2, minimum=1)
+        # 1440 was chosen for smart-crop headroom, but it also multiplies the
+        # bytes fetched and the pixels every filter has to touch. A 9:16 tile
+        # cropped from 1080p is 608px wide and upscaled to 1080 -- fine after
+        # lanczos, and roughly half the download and decode cost.
+        self.download_height = self._int('DOWNLOAD_HEIGHT', 1080, minimum=240)
+        # Section fetches are network-bound, not CPU-bound: they overlap almost
+        # perfectly. 4 is well under YouTube's per-client rate limiting.
+        self.download_concurrency = self._int('DOWNLOAD_CONCURRENCY', 4, minimum=1)
+        # Channel listings during discovery are metadata-only HTTP requests
+        # (~2-3s each, serial). With 20+ channels per niche that is a minute of
+        # pure waiting before any real work starts. They are independent, so
+        # they parallelise cleanly.
+        self.discovery_workers = self._int('DISCOVERY_WORKERS', 8, minimum=1)
 
         # --- Render tuning -----------------------------------------------
         # Measured (see BENCHMARKS.md): parallel ffmpeg encodes give only
@@ -156,8 +200,13 @@ class Config:
         # core -- two encodes just split the same CPU and double the memory.
         # So scale with core count instead of blindly defaulting to 2, which
         # is what the original plan called for.
+        # NOTE: that measurement was taken with preset=slow, where libx264 does
+        # saturate every core. At the new default preset ('veryfast') a single
+        # encode leaves cores idle, and with a hardware encoder the CPU is
+        # nearly free -- so parallel renders now do help. Still bounded,
+        # because each worker holds its own filtergraph in memory.
         self.render_workers = self._int(
-            'RENDER_WORKERS', max(1, min(2, (os.cpu_count() or 2) // 2)), minimum=1
+            'RENDER_WORKERS', max(1, min(3, (os.cpu_count() or 2) // 2)), minimum=1
         )
         # The blurred-backdrop fill was the single most expensive filter in
         # the chain (full-res gblur every frame). 'cheap' downscales before
@@ -304,16 +353,21 @@ class Config:
                                                  minimum=0)
 
         # --- Encoding ----------------------------------------------------
-        # 'slow' over 'medium': at a fixed CRF a slower preset spends more time
-        # searching and produces a *better looking* frame for the same file
-        # size. Rendering is not the bottleneck (download + transcription are),
-        # so the extra CPU is worth it for the visible gain.
-        self.video_preset = os.getenv('VIDEO_PRESET', 'slow')
-        # CRF 20 was leaving visible blocking in motion once captions and a
-        # blurred backdrop were composited on top. 18 is effectively
-        # transparent for 1080p delivery; YouTube re-encodes anyway, so
-        # handing it a cleaner master directly improves the published result.
-        self.video_crf = self._int('VIDEO_CRF', 18, minimum=0)
+        # WAS 'slow'. That choice was justified with "rendering is not the
+        # bottleneck", which stopped being true once the channel count grew:
+        # 'slow' is ~6-8x the encode time of 'veryfast' for a difference that
+        # does not survive YouTube's own re-encode of a 1080x1920 Short.
+        # 'veryfast' + CRF 20 is the standard speed/quality knee for delivery
+        # masters that will be transcoded again anyway.
+        self.video_preset = os.getenv('VIDEO_PRESET', 'veryfast')
+        # 20 instead of 18: ~25% fewer bits to search for and write, and it is
+        # still visually transparent at this resolution after YouTube's pass.
+        self.video_crf = self._int('VIDEO_CRF', 20, minimum=0)
+        # Optional hardware encoder ('h264_nvenc', 'h264_qsv', 'h264_amf').
+        # 'auto' probes ffmpeg once and uses one if present -- typically 5-10x
+        # faster than libx264 and it frees the CPU for transcription, which is
+        # the real bottleneck. 'off' forces libx264.
+        self.video_encoder = (os.getenv('VIDEO_ENCODER') or 'auto').strip().lower()
         # swscale flag for the *visible* rescale. fast_bilinear (the old
         # hard-coded value) is the lowest-quality option available and softened
         # every frame; lanczos keeps edges and text sharp on the downscale from

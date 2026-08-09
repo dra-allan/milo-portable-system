@@ -51,6 +51,7 @@ import random
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -146,6 +147,7 @@ class ShortsPipeline:
         # and a no-upload run don't require every dependency to be installed.
         self._downloader = None
         self._transcriber = None
+        self._caption_transcriber = None
         self._video_editor = None
         self._uploader = None
         self._uploaders = {}  # channel key -> YouTubeUploader (cached)
@@ -203,6 +205,54 @@ class ShortsPipeline:
                 word_timestamps=True,
             )
         return self._caption_transcriber
+
+    def _transcript_from_subtitles(self, metadata: Dict) -> Optional[List[Dict]]:
+        """Transcript from YouTube's published subtitles, or None.
+
+        This is the single biggest speed win in the pipeline. Transcription was
+        ~85% of runtime (a 65-minute source took ~50 minutes at 1.3x realtime),
+        and the resulting transcript is only used to *rank* moments -- a job
+        that does not need Whisper-grade text. Most sources already ship a
+        transcript, which yt-dlp fetched alongside the audio for ~200 KB.
+
+        Returns None when there is no track, when it is too sparse to rank
+        against, or when the feature is switched off -- and the caller then
+        falls back to Whisper, so nothing is lost.
+        """
+        if not getattr(self.config, 'use_youtube_subs', True):
+            return None
+
+        sub_path = metadata.get('subtitle_path')
+        if not sub_path or not Path(sub_path).exists():
+            return None
+
+        try:
+            from .subtitles import parse_subtitle_file
+        except ImportError:
+            from subtitles import parse_subtitle_file
+
+        segments = parse_subtitle_file(sub_path)
+        if not segments:
+            return None
+
+        # Sanity gate: a track that covers almost none of the source (a
+        # forced-narrative or credits-only track) would starve highlight
+        # detection. Require it to span a decent share of the duration.
+        duration = float(metadata.get('duration') or 0)
+        covered = float(segments[-1]['end']) - float(segments[0]['start'])
+        if duration > 0 and covered < duration * 0.5:
+            logger.info(
+                "Published subtitles cover only %.0f%% of the source; "
+                "falling back to Whisper", 100.0 * covered / duration,
+            )
+            return None
+
+        logger.info(
+            "FAST PATH: using YouTube's published transcript (%s) -- "
+            "%d segments covering %.1f min, skipping the Whisper pass",
+            Path(sub_path).name, len(segments), covered / 60.0,
+        )
+        return segments
 
     def _clip_word_transcript(self, video_path: str, start: float, end: float,
                               padding: float = 0.35):
@@ -455,14 +505,34 @@ class ShortsPipeline:
             logger.info("Step 2/6: Transcribing audio (cached transcripts are reused)")
             transcript = None if force else self.load_cached_transcript(video_id)
 
+            # Per-niche captions/language policy. Non-English niches turn
+            # captions off, because a wrong caption is worse than none.
+            captions_on = bool(niche_config.get('captions', True))
+            whisper_language = (niche_config.get('whisper_language')
+                                or niche_config.get('language') or '') or None
+            if whisper_language in ('en', 'english'):
+                whisper_language = 'en'
+
             if transcript is None:
-                max_seconds = getattr(self.transcriber, 'max_seconds', None)
-                transcript = self.transcriber.transcribe_audio(audio_path, max_seconds=max_seconds)
-                if not transcript:
-                    logger.error("Transcription produced nothing for %s", audio_path)
-                    self.stats['errors'] += 1
-                    return False
-                logger.info("Transcribed audio into %d segments", len(transcript))
+                # FAST PATH: YouTube already published a transcript for most
+                # sources. Parsing it takes milliseconds instead of the ~50
+                # minutes Whisper spent on a 65-minute source, and it is only
+                # used to *locate* highlights, so ASR-grade text is sufficient.
+                transcript = self._transcript_from_subtitles(metadata)
+
+                if transcript is None:
+                    self.transcriber.language = whisper_language
+                    max_seconds = getattr(self.transcriber, 'max_seconds', None)
+                    transcript = self.transcriber.transcribe_audio(
+                        audio_path, language=whisper_language,
+                        max_seconds=max_seconds,
+                    )
+                    if not transcript:
+                        logger.error("Transcription produced nothing for %s", audio_path)
+                        self.stats['errors'] += 1
+                        return False
+                    logger.info("Transcribed audio into %d segments", len(transcript))
+
                 self.save_transcript(video_id, transcript, title)
 
             # -- 3. find highlights ----------------------------------------
@@ -550,7 +620,17 @@ class ShortsPipeline:
                 published_at=metadata.get('upload_date'),
             )
 
+            if not captions_on:
+                logger.info(
+                    "Niche '%s': captions disabled -- rendering without them "
+                    "(and skipping the word-level caption pass)", niche,
+                )
+
+            # Plan every clip first, so the ones that actually need encoding
+            # can be handed to a pool. Resume hits are settled here because
+            # they touch the DB and must stay on the main thread.
             created = []
+            todo = []
             for i, (highlight, section) in enumerate(zip(highlights, section_files), start=1):
                 hook_text = (highlight.get('text') or '').strip()
                 safe_hook = sanitize_filename(hook_text) if hook_text else f"clip{i}"
@@ -573,6 +653,18 @@ class ShortsPipeline:
                     )
                     continue
 
+                todo.append((i, highlight, section, output_path))
+
+            workers = max(1, int(getattr(self.config, 'render_workers', 1) or 1))
+            workers = max(1, min(workers, len(todo))) if todo else 1
+            # Split the CPU budget so concurrent encodes don't each try to
+            # claim every core and thrash.
+            per_render_threads = None
+            if workers > 1:
+                per_render_threads = max(1, (os.cpu_count() or 2) // workers)
+
+            def render_one(item):
+                i, highlight, section, output_path = item
                 logger.info(
                     "Rendering clip %d/%d: %.1f-%.1fs (score %.2f)",
                     i, len(highlights), highlight['start'], highlight['end'],
@@ -583,14 +675,26 @@ class ShortsPipeline:
                 clip_start_in_file = section['clip_start_in_file']
                 clip_duration = section['clip_duration']
 
-                # Build clip-relative transcript from the section's audio
-                clip_transcript = [
-                    seg for seg in transcript
-                    if not (seg['end'] <= highlight['start']
-                            or seg['start'] >= highlight['end'])
-                ]
+                clip_transcript = []
+                clip_relative = False
+                if captions_on:
+                    # Accurate word-level pass on just this clip's audio. Only
+                    # worth its cost when captions will actually be burned in.
+                    if getattr(self.config, 'two_pass_captions', True):
+                        words = self._clip_word_transcript(
+                            section_path, clip_start_in_file,
+                            clip_start_in_file + clip_duration,
+                        )
+                        if words:
+                            clip_transcript = words
+                            clip_relative = True
+                    if not clip_transcript:
+                        clip_transcript = [
+                            seg for seg in transcript
+                            if not (seg['end'] <= highlight['start']
+                                    or seg['start'] >= highlight['end'])
+                        ]
 
-                # Use the section file as source; timestamps are rebased by clip_start_in_file
                 ok = self.video_editor.create_short_from_segment(
                     video_path=section_path,
                     start_time=clip_start_in_file,
@@ -598,9 +702,22 @@ class ShortsPipeline:
                     transcript_segments=clip_transcript,
                     output_path=output_path,
                     add_branding=False,
-                    captions_are_clip_relative=False,
+                    burn_captions=captions_on,
+                    captions_are_clip_relative=clip_relative,
+                    threads=per_render_threads,
+                    keywords=niche_keywords,
                 )
+                return i, highlight, output_path, ok
 
+            if workers > 1:
+                logger.info("Rendering %d clip(s) with %d parallel encode(s)",
+                            len(todo), workers)
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    results = list(pool.map(render_one, todo))
+            else:
+                results = [render_one(item) for item in todo]
+
+            for i, highlight, output_path, ok in sorted(results, key=lambda r: r[0]):
                 if not ok or not Path(output_path).exists():
                     logger.error("Failed to create clip %d", i)
                     self.stats['errors'] += 1
@@ -613,6 +730,7 @@ class ShortsPipeline:
                     title=title, local_path=output_path,
                     score=highlight.get('score'),
                 )
+            created.sort(key=lambda c: c['index'])
 
             if not created:
                 logger.error("No clips could be rendered for %s", video_id)

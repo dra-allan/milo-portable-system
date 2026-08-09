@@ -1596,16 +1596,28 @@ chop_ug:
     - chop_ug
   channel: chop_ug
   max_videos: 5
+  # Luganda content. Whisper is trained overwhelmingly on English and gets
+  # Luganda badly wrong -- it does not fail, it confidently invents English
+  # words, which is worse than no captions at all. So captions are off for
+  # this niche. Bonus: this also skips the word-level caption pass and the
+  # subtitles filter in ffmpeg, the two most expensive per-clip steps.
+  captions: false
+  # Tell Whisper the language outright instead of letting it autodetect (and
+  # guess English). Highlight detection still needs *some* transcript to rank
+  # moments; 'lg' keeps it from hallucinating fluent English.
+  whisper_language: lg
   channels:
     # --- New & Requested Channels ---
     - "@KOJJAKABAAYAOFFICIAL"     # Kojja Kabaya
-    - "@Shalom256"                # Shalom 256
+    # @Shalom256 resolves but exposes no /videos tab, so it can never be
+    # listed. Left commented rather than deleted so the intent is preserved.
+    # - "@Shalom256"              # Shalom 256 -- no videos tab
     - "@MunaUg-256"               # Muna UG
     - "@sammieandshawa"           # Sammie and Shawa
     - "@AlexMuhangi"              # Comedy Store Uganda
     - "@doreennasasira912"        # Doreen Nasasira
     - "@ebipya256"                # Ebipya 256
-    - "@UpdateX"                  # Update X
+    - "@UpdateXUg"                # Update X (was @UpdateX -> 404)
     - "@Omulangira_Ndawusi"       # Omulangira Ndawusi Live
     # --- Core Gossip & Drama ---
     - "@Kasukuliveyoutube"        # Kasuku Live (Also great for Chicken Chicken & Kojja Kabaya appearances)
@@ -1615,9 +1627,9 @@ chop_ug:
     - "@theugandanboytalkshow"    # The Ugandan Boy Talk Show
     - "@babatvuganda"             # Baba TV
     - "@benonfredtwinamasiko"     # Benon Fred Twinamasiko
-    - "@NBStelevision"            # NBS TV
-    - "@SparkTvUganda"            # Spark TV
-    - "@GalaxyFM1002"             # Galaxy FM
+    - "@nbstelevision9218"        # NBS TV (was @NBStelevision -> 404)
+    - "@sparktv-uganda"           # Spark TV (was @SparkTvUganda -> 404)
+    - "@galaxyfmug1002"           # Galaxy FM (was @GalaxyFM1002 -> 404)
     - "@kojjampaatalive"          # Kojja Mpaata Live
     - "@BBSTEREFAYINAlivebutereevu" # BBS Terefayina
   keywords:
@@ -1654,7 +1666,7 @@ chop_ug:
     - "Ugandan celebrities"
     - "Uganda interviews"
   negative_keywords: ["#shorts", "shorts", "clip", "clips", "podcast clips", "compilation", "reaction", "trailer", "teaser", "livestream", "music video", "official audio", "lyrics", "fan edit", "meme", "music", "dance", "concert", "church service", "preaching", "choir"]
-  language: en 
+  language: lg
   min_duration: 300
   max_duration: 10800  
   min_score: 0.50

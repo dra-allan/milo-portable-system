@@ -46,7 +46,9 @@ WHAT IT DOES NOW
 import os
 import shutil
 import subprocess
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -63,6 +65,9 @@ logger = setup_logger(__name__)
 # and the two-pass design asks for two of them. Cache per (size, device,
 # compute type) so the caption model is built once per process, not per clip.
 _MODEL_CACHE: Dict[Tuple[str, str, str, int], object] = {}
+# Model construction is not thread-safe and two threads racing to build the
+# same model would load the weights twice (and can deadlock in ctranslate2).
+_MODEL_LOCK = threading.Lock()
 
 
 class VideoTranscriber:
@@ -105,6 +110,13 @@ class VideoTranscriber:
         self.vad = bool(vad if vad is not None else config.transcribe_vad)
         self.threads = int(config.transcribe_threads or 0)
         self.window_seconds = max(60.0, float(config.transcribe_window_minutes) * 60.0)
+        # How many windows to decode at once. Caption passes are already tiny
+        # and run per-clip, so they stay serial.
+        self.workers = 1 if self.profile == 'caption' else max(
+            1, int(getattr(config, 'transcribe_workers', 1) or 1))
+        # Default language for this transcriber (per-niche hint). Callers can
+        # still override per call.
+        self.language: Optional[str] = None
 
         self.ffmpeg = os.getenv('MILO_FFMPEG') or shutil.which('ffmpeg') or 'ffmpeg'
         self.ffprobe = os.getenv('MILO_FFPROBE') or shutil.which('ffprobe') or 'ffprobe'
@@ -133,31 +145,46 @@ class VideoTranscriber:
         if self._model is not None:
             return self._model
 
-        key = (self.model_size, self.device, self.compute_type, self.threads)
-        cached = _MODEL_CACHE.get(key)
-        if cached is not None:
-            self._model = cached
-            return self._model
+        # Threads per model instance. With N parallel windows sharing one
+        # model, letting ctranslate2 default to "all cores" makes the workers
+        # fight each other and can be *slower* than serial. Divide explicitly.
+        threads = self.threads
+        if threads <= 0 and self.workers > 1:
+            threads = max(1, (os.cpu_count() or 2) // self.workers)
 
-        from faster_whisper import WhisperModel
+        key = (self.model_size, self.device, self.compute_type, threads)
 
-        kwargs = dict(device=self.device, compute_type=self.compute_type)
-        if self.threads > 0:
-            kwargs['cpu_threads'] = self.threads
-        try:
-            model = WhisperModel(self.model_size, **kwargs)
-        except Exception as exc:
-            logger.error("Failed to load Whisper model '%s': %s", self.model_size, exc)
-            raise
+        with _MODEL_LOCK:
+            cached = _MODEL_CACHE.get(key)
+            if cached is not None:
+                self._model = cached
+                return self._model
 
-        logger.info(
-            "Whisper '%s' loaded on %s (%s) [profile=%s beam=%d word_ts=%s]",
-            self.model_size, self.device, self.compute_type,
-            self.profile, self.beam, self.word_timestamps,
-        )
-        _MODEL_CACHE[key] = model
-        self._model = model
-        return model
+            from faster_whisper import WhisperModel
+
+            kwargs = dict(device=self.device, compute_type=self.compute_type)
+            if threads > 0:
+                kwargs['cpu_threads'] = threads
+            # One decoding worker per window we intend to run concurrently.
+            if self.workers > 1:
+                kwargs['num_workers'] = self.workers
+            try:
+                model = WhisperModel(self.model_size, **kwargs)
+            except Exception as exc:
+                logger.error("Failed to load Whisper model '%s': %s",
+                             self.model_size, exc)
+                raise
+
+            logger.info(
+                "Whisper '%s' loaded on %s (%s) [profile=%s beam=%d word_ts=%s "
+                "threads=%s windows=%d]",
+                self.model_size, self.device, self.compute_type,
+                self.profile, self.beam, self.word_timestamps,
+                threads or 'auto', self.workers,
+            )
+            _MODEL_CACHE[key] = model
+            self._model = model
+            return model
 
     # ------------------------------------------------------------------
     def _get_audio_duration(self, audio_path: str) -> float:
@@ -186,8 +213,12 @@ class VideoTranscriber:
         )
         if self.vad:
             kwargs['vad_parameters'] = dict(min_silence_duration_ms=500)
-        if language:
-            kwargs['language'] = language
+        lang = language or self.language
+        if lang:
+            # Skipping language detection saves a full 30s-window encode pass
+            # per transcribe() call, and stops a non-English source from being
+            # "detected" as English and hallucinated into nonsense.
+            kwargs['language'] = lang
         return kwargs
 
     # ------------------------------------------------------------------
@@ -315,7 +346,7 @@ class VideoTranscriber:
 
         tmp_dir = Path(config.temp_dir)
         tmp_dir.mkdir(parents=True, exist_ok=True)
-        slice_path = tmp_dir / f"{Path(audio_path).stem}_w{int(start)}.wav"
+        slice_path = tmp_dir / f"{Path(audio_path).stem}_w{int(start * 1000)}.wav"
         if not self._extract_audio_chunk(audio_path, str(slice_path), start, duration):
             return None
         try:
@@ -324,6 +355,22 @@ class VideoTranscriber:
             )
             return self._collect(seg_iter, time_offset=start)
         except Exception as exc:
+            # An allocation failure (mkl_malloc / bad_alloc / MemoryError) means
+            # this window was too big for the memory available *right now*, not
+            # that the audio is bad. Retrying the same size would fail again --
+            # and the old code just dropped the window, silently losing a fifth
+            # of the source. Halving it and recursing keeps the audio.
+            if self._is_memory_error(exc) and duration > 60.0:
+                half = duration / 2.0
+                logger.warning(
+                    "Window at %.1fs (%.1f min) ran out of memory; retrying as "
+                    "2x%.1f min", start, duration / 60.0, half / 60.0,
+                )
+                first = self._transcribe_range(audio_path, start, half,
+                                               language=language) or []
+                second = self._transcribe_range(audio_path, start + half, half,
+                                                language=language) or []
+                return (first + second) or None
             logger.error("Window at %.1fs failed: %s", start, exc)
             return None
         finally:
@@ -331,6 +378,22 @@ class VideoTranscriber:
                 slice_path.unlink()
             except OSError:
                 pass
+
+    @staticmethod
+    def _is_memory_error(exc: Exception) -> bool:
+        """True for out-of-memory failures, whatever layer raised them.
+
+        ctranslate2/MKL report allocation failure as a plain RuntimeError with
+        'mkl_malloc: failed to allocate memory' in the text, so the type alone
+        is not enough to recognise it.
+        """
+        if isinstance(exc, MemoryError):
+            return True
+        text = str(exc).lower()
+        return any(s in text for s in (
+            'failed to allocate', 'out of memory', 'bad_alloc',
+            'mkl_malloc', 'cannot allocate',
+        ))
 
     def _retry_without_vad(self, audio_path: str,
                            language: Optional[str]) -> Optional[List[Dict]]:
@@ -361,53 +424,69 @@ class VideoTranscriber:
         window = self.window_seconds
         overlap = 2.0
         advance = max(window - overlap, 1.0)
-        total_windows = max(1, int((duration + advance - 1) // advance))
 
-        logger.info(
-            "Source is %.1f min; processing in %d window(s) of %.0f min to "
-            "cap memory use", duration / 60.0, total_windows, window / 60.0,
-        )
-
-        all_segments: List[Dict] = []
+        # Plan every window up front. This is what makes the work
+        # parallelisable: previously the loop advanced a cursor, so window N+1
+        # could not start until window N returned.
+        plan: List[Tuple[int, float, float]] = []
         start = 0.0
-        index = 0
-        started = time.time()
-
-        while start < duration:
+        while start < duration and len(plan) < 500:
             chunk_len = min(window, duration - start)
             if chunk_len <= 0.05:
                 break
+            plan.append((len(plan) + 1, start, chunk_len))
+            start += advance
 
-            index += 1
-            segs = self._transcribe_range(audio_path, start, chunk_len, language=language)
+        total_windows = len(plan) or 1
+        workers = max(1, min(self.workers, total_windows))
+
+        logger.info(
+            "Source is %.1f min; processing in %d window(s) of %.0f min "
+            "across %d worker(s)",
+            duration / 60.0, total_windows, window / 60.0, workers,
+        )
+
+        started = time.time()
+        done_seconds = [0.0]
+        progress_lock = threading.Lock()
+
+        def run_window(item: Tuple[int, float, float]) -> Tuple[int, List[Dict]]:
+            index, win_start, win_len = item
+            segs = self._transcribe_range(audio_path, win_start, win_len,
+                                          language=language)
             if segs is None:
                 logger.error("Window %d/%d failed; keeping what we have",
                              index, total_windows)
                 segs = []
+            with progress_lock:
+                done_seconds[0] += win_len
+                done = min(done_seconds[0], duration)
+                elapsed = max(time.time() - started, 1e-6)
+                rate = done / elapsed
+                remaining = (duration - done) / rate if rate > 0 else 0.0
+                logger.info(
+                    "  window %d/%d done (%.0f%% of audio, %.1fx realtime, "
+                    "~%.1f min left)",
+                    index, total_windows, 100.0 * done / max(duration, 1e-6),
+                    rate, remaining / 60.0,
+                )
+            return index, segs
 
-            # Drop anything that overlaps what we already kept, so the overlap
-            # region does not duplicate speech into the transcript.
+        if workers == 1:
+            results = [run_window(item) for item in plan]
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                results = list(pool.map(run_window, plan))
+
+        # Reassemble in source order, then drop overlap duplicates. Order
+        # matters here and thread completion order does not follow it, which is
+        # why the de-dup happens after the sort rather than inline.
+        all_segments: List[Dict] = []
+        for _index, segs in sorted(results, key=lambda r: r[0]):
             if all_segments and segs:
                 last_end = all_segments[-1]['end']
                 segs = [s for s in segs if s['start'] >= last_end - 0.25]
-
             all_segments.extend(segs)
-
-            done = min(start + chunk_len, duration)
-            elapsed = max(time.time() - started, 1e-6)
-            rate = done / elapsed
-            remaining = (duration - done) / rate if rate > 0 else 0.0
-            logger.info(
-                "  window %d/%d done (%.0f%% of audio, %d segments so far, "
-                "%.1fx realtime, ~%.1f min left)",
-                index, total_windows, 100.0 * done / duration, len(all_segments),
-                rate, remaining / 60.0,
-            )
-
-            start += advance
-            if index > 500:
-                logger.error("Window limit reached; stopping")
-                break
 
         self._cleanup_chunks(Path(config.temp_dir), Path(audio_path).stem)
         return all_segments or None
