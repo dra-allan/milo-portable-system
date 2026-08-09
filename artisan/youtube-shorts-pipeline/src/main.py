@@ -549,7 +549,7 @@ def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
                 published_at=metadata.get('upload_date'),
             )
 
-            created: List[Dict] = []
+            created = []
             for i, (highlight, section) in enumerate(zip(highlights, section_files), start=1):
                 hook_text = (highlight.get('text') or '').strip()
                 safe_hook = sanitize_filename(hook_text) if hook_text else f"clip{i}"
@@ -649,7 +649,9 @@ def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
                     os.remove(audio_path)
                 except OSError:
                     pass
-        
+
+        # End of process_video_for_shorts
+
     def _generate_unique_title(self, hook_text: str, niche: str, clip_index: int) -> str:
         """Generate a unique, attention-optimized title for a Short.
 
