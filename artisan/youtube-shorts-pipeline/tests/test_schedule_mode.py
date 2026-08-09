@@ -310,14 +310,16 @@ class TestScheduledSweepBudget(unittest.TestCase):
             config.queue_max_top_source_share = 0.50
             config.backlog_ttl_days = 7
             pipeline = _make_pipeline(Path(td), authed_channels=('flick_shorts', 'capital_mindset'))
+            pipeline.upload_enabled = True  # Enable discovery path
             processed = []
-            pipeline.process_video_for_shorts = lambda vid, niche, force=False, local_only=False, source_channel='': (processed.append((vid, niche)) or True)
+            # Mock run_niche which is what _discover_and_render calls
+            pipeline.run_niche = lambda niche, max_videos=1, lookback=None: (processed.append(niche) or 1)
 
             # Production run_niche is bound-gated: unbound niche starts 0 and
             # never calls process_video_for_shorts.
             _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
 
-            processed_niches = [n for _v, n in processed]
+            processed_niches = processed
             self.assertNotIn('unbound', processed_niches)
             self.assertEqual(sorted(processed_niches), ['capital_mindset', 'flick_shorts'])
 
@@ -404,6 +406,7 @@ class TestPullOnceBacklog(unittest.TestCase):
             config.queue_min_distinct_sources = 1
             config.queue_target_total = 3
             config.upload_max_per_run = 3
+            config.upload_max_per_channel = 3  # limit total to match per-run cap
             pipeline.run_niche = lambda niche, max_videos=1, lookback=None: (pulled.append(niche) or 0)
 
             _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
