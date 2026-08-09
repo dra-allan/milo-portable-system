@@ -134,6 +134,14 @@ SECTIONS_SUBDIR = 'sections'
 
 
 class YouTubeDownloader:
+    # Guards the dead-channel cache. Class-level on purpose: what it protects
+    # is a single JSON file on disk, so two *instances* racing would corrupt it
+    # exactly as two threads would. Being a class attribute also means it
+    # exists even when an instance is built without running __init__ (which is
+    # how the tests construct one), so the locked helpers can never fail on a
+    # missing attribute.
+    _dead_lock = threading.Lock()
+
     def __init__(self):
         self.temp_dir = Path(get_temp_dir())
         self.temp_dir.mkdir(parents=True, exist_ok=True)
@@ -149,10 +157,10 @@ class YouTubeDownloader:
         # YouTube and re-log the same ERROR. Re-probed after a cooldown.
         self.dead_channels_path = Path(config.data_dir) / 'dead_channels.json'
         self._dead_channels = self._load_dead_channels()
-        # Listings now run in parallel, so the cache is read/written from
-        # several threads. Without this, two threads can interleave a
-        # dict-mutate + json.dump and write a truncated file.
-        self._dead_lock = threading.Lock()
+        # NOTE: the cache is now read/written from several threads (listings run
+        # in parallel), so all access goes through the class-level _dead_lock
+        # declared above -- otherwise two threads can interleave a dict-mutate
+        # and a json.dump and leave a truncated file on disk.
         self.dead_channel_cooldown = int(
             getattr(config, 'dead_channel_cooldown_days', 14) or 14
         )
