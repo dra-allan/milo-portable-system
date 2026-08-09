@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS generated_shorts (
     uploaded_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     title TEXT NOT NULL DEFAULT '',
-    upload_channel TEXT NOT NULL DEFAULT ''
+    upload_channel TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued'
 );
 
 CREATE INDEX IF NOT EXISTS idx_processed_videos_id
@@ -58,6 +59,10 @@ CREATE INDEX IF NOT EXISTS idx_generated_shorts_source
     ON generated_shorts(source_video_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_generated_shorts_segment
     ON generated_shorts(source_video_id, segment_index);
+CREATE INDEX IF NOT EXISTS idx_generated_shorts_status
+    ON generated_shorts(status);
+CREATE INDEX IF NOT EXISTS idx_generated_shorts_created_at
+    ON generated_shorts(created_at);
 
 CREATE TABLE IF NOT EXISTS short_performance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,6 +119,7 @@ class PipelineDatabase:
             ('local_path', 'TEXT'),
             ('created_at', 'TIMESTAMP'),
             ('upload_channel', "TEXT NOT NULL DEFAULT ''"),
+            ('status', "TEXT NOT NULL DEFAULT 'queued'"),
         ):
             if column not in existing:
                 try:
@@ -121,6 +127,15 @@ class PipelineDatabase:
                     logger.info("Migrated generated_shorts: added %s", column)
                 except sqlite3.OperationalError:
                     pass
+        # Add indexes if missing
+        for idx_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_generated_shorts_status ON generated_shorts(status)",
+            "CREATE INDEX IF NOT EXISTS idx_generated_shorts_created_at ON generated_shorts(created_at)",
+        ):
+            try:
+                conn.execute(idx_sql)
+            except sqlite3.OperationalError:
+                pass
 
     # ------------------------------------------------------------------
     def is_video_processed(self, video_id: str) -> bool:
@@ -469,4 +484,216 @@ class PipelineDatabase:
         except Exception as exc:
             logger.warning("Could not read source performance: %s", exc)
         return out
-        return out
+
+    # ------------------------------------------------------------------
+    # Queue health and backlog management
+    # ------------------------------------------------------------------
+    def get_queue_health(self, niche: str) -> Dict:
+        """Return health metrics for a niche's upload queue.
+
+        Returns dict with:
+        - total_queued: total unuploaded clips
+        - distinct_sources: number of distinct source_video_ids
+        - eligible_clips: clips not blocked by per-source cap
+        - top_source_share: ratio of largest source / total
+        - channel_remaining: upload capacity remaining for niche's channels
+        - capped_sources: list of source_video_ids currently at cap
+        - source_counts: dict of source_video_id -> clip count
+        """
+        try:
+            with self._connect() as conn:
+                # Get all queued clips for this niche
+                rows = conn.execute(
+                    """SELECT g.source_video_id, g.segment_index, g.title,
+                              g.created_at, g.status,
+                              COALESCE(p.niche, '') AS niche,
+                              COALESCE(p.title, '') AS source_title
+                       FROM generated_shorts g
+                       LEFT JOIN processed_videos p
+                              ON p.youtube_video_id = g.source_video_id
+                       WHERE g.youtube_short_id IS NULL
+                         AND g.local_path IS NOT NULL AND g.local_path != ''
+                         AND g.status = 'queued'
+                         AND (p.niche = ? OR ? = '')
+                       ORDER BY g.id ASC""",
+                    (niche, niche),
+                ).fetchall()
+
+                clips = [dict(r) for r in rows]
+                total = len(clips)
+                if total == 0:
+                    return {
+                        'total_queued': 0,
+                        'distinct_sources': 0,
+                        'eligible_clips': 0,
+                        'top_source_share': 0.0,
+                        'channel_remaining': 0,
+                        'capped_sources': [],
+                        'source_counts': {},
+                    }
+
+                # Group by source
+                source_counts = {}
+                for c in clips:
+                    src = c['source_video_id']
+                    source_counts[src] = source_counts.get(src, 0) + 1
+
+                distinct_sources = len(source_counts)
+                max_source = max(source_counts.values()) if source_counts else 0
+                top_source_share = max_source / total if total > 0 else 0.0
+
+                # Check per-source caps (would need runtime config, return raw counts)
+                return {
+                    'total_queued': total,
+                    'distinct_sources': distinct_sources,
+                    'eligible_clips': 0,  # Will be filled by caller with cap logic
+                    'top_source_share': round(top_source_share, 2),
+                    'channel_remaining': 0,  # Will be filled by caller
+                    'capped_sources': [],
+                    'source_counts': source_counts,
+                    'oldest_clip_age_days': 0,
+                }
+        except Exception as exc:
+            logger.warning("Could not get queue health for %s: %s", niche, exc)
+            return {
+                'total_queued': 0,
+                'distinct_sources': 0,
+                'eligible_clips': 0,
+                'top_source_share': 0.0,
+                'channel_remaining': 0,
+                'capped_sources': [],
+                'source_counts': {},
+            }
+
+    def expire_stale_backlog(self, niche: str, ttl_days: int = 7) -> int:
+        """Mark backlog clips older than TTL as 'expired'.
+
+        Returns number of clips marked expired.
+        """
+        try:
+            with self._connect() as conn:
+                cursor = conn.execute(
+                    """UPDATE generated_shorts
+                       SET status = 'expired'
+                       WHERE youtube_short_id IS NULL
+                         AND status = 'queued'
+                         AND created_at < datetime('now', ?)
+                         AND source_video_id IN (
+                           SELECT g.source_video_id
+                           FROM generated_shorts g
+                           LEFT JOIN processed_videos p
+                                  ON p.youtube_video_id = g.source_video_id
+                           WHERE g.youtube_short_id IS NULL
+                             AND g.status = 'queued'
+                             AND (p.niche = ? OR ? = '') )""",
+                    (f'-{int(ttl_days)} days', niche, niche),
+                )
+                return cursor.rowcount
+        except Exception as exc:
+            logger.warning("Could not expire stale backlog for %s: %s", niche, exc)
+            return 0
+
+    def get_queued_clips_for_upload(self, niche: str, limit: int = 100) -> List[Dict]:
+        """Get queued clips for upload, grouped by source with fair ordering.
+
+        Returns clips ordered by round-robin across sources:
+        - Group by source_video_id
+        - Sort within each source by score/created_at
+        - Interleave sources (round-robin)
+        """
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """SELECT g.source_video_id, g.segment_index, g.start_time,
+                              g.end_time, g.score, g.local_path, g.title,
+                              g.created_at, g.status,
+                              COALESCE(p.niche, '') AS niche,
+                              COALESCE(p.title, '') AS source_title
+                       FROM generated_shorts g
+                       LEFT JOIN processed_videos p
+                              ON p.youtube_video_id = g.source_video_id
+                       WHERE g.youtube_short_id IS NULL
+                         AND g.local_path IS NOT NULL AND g.local_path != ''
+                         AND g.status = 'queued'
+                         AND (p.niche = ? OR ? = '')
+                       ORDER BY g.score DESC, g.created_at ASC""",
+                    (niche, niche),
+                ).fetchall()
+
+                clips = [dict(r) for r in rows]
+                if not clips:
+                    return []
+
+                # Group by source and sort within each source
+                by_source = {}
+                for c in clips:
+                    src = c['source_video_id']
+                    if src not in by_source:
+                        by_source[src] = []
+                    by_source[src].append(c)
+
+                # Sort sources by count (ascending for fair distribution)
+                sources = sorted(by_source.keys(), key=lambda s: len(by_source[s]))
+
+                # Round-robin interleave
+                result = []
+                pointers = {s: 0 for s in sources}
+                remaining_sources = list(sources)
+
+                while remaining_sources and len(result) < limit:
+                    next_remaining = []
+                    for src in remaining_sources:
+                        idx = pointers[src]
+                        if idx < len(by_source[src]):
+                            result.append(by_source[src][idx])
+                            pointers[src] += 1
+                            if pointers[src] < len(by_source[src]):
+                                next_remaining.append(src)
+                    remaining_sources = next_remaining
+                    if len(result) >= limit:
+                        break
+
+                return result[:limit]
+        except Exception as exc:
+            logger.warning("Could not get queued clips for %s: %s", niche, exc)
+            return []
+
+    def count_queued_by_source(self, niche: str) -> Dict[str, int]:
+        """Return count of queued clips per source for a niche."""
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """SELECT g.source_video_id, COUNT(*) as cnt
+                       FROM generated_shorts g
+                       LEFT JOIN processed_videos p
+                              ON p.youtube_video_id = g.source_video_id
+                       WHERE g.youtube_short_id IS NULL
+                         AND g.status = 'queued'
+                         AND (p.niche = ? OR ? = '')
+                       GROUP BY g.source_video_id""",
+                    (niche, niche),
+                ).fetchall()
+                return {r['source_video_id']: r['cnt'] for r in rows}
+        except Exception as exc:
+            logger.warning("Could not count queued by source for %s: %s", niche, exc)
+            return {}
+
+    def update_clip_status(self, source_video_id: str, segment_index: int, status: str) -> bool:
+        """Update the status of a queued clip."""
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """UPDATE generated_shorts
+                       SET status = ?
+                       WHERE source_video_id = ? AND segment_index = ?""",
+                    (status, source_video_id, int(segment_index)),
+                )
+                return True
+        except Exception as exc:
+            logger.warning("Could not update clip status: %s", exc)
+            return False
+
+    def get_max_queued_per_source(self, niche: str) -> int:
+        """Get the maximum number of queued clips for any single source in a niche."""
+        counts = self.count_queued_by_source(niche)
+        return max(counts.values()) if counts else 0
