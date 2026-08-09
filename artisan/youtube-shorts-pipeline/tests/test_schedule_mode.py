@@ -55,6 +55,7 @@ class FakeDB:
     def __init__(self, processed_ids=(), unuploaded=()):
         self.processed = set(processed_ids)
         self.recorded = []
+        self.marked = []
         self.unuploaded = list(unuploaded)
 
     def is_video_processed(self, video_id):
@@ -67,11 +68,15 @@ class FakeDB:
     def unuploaded_shorts(self, limit=50):
         return self.unuploaded[:limit]
 
-    def mark_short_uploaded(self, source_video_id, segment_index, youtube_short_id):
-        pass
+    def mark_short_uploaded(self, source_video_id, segment_index, youtube_short_id,
+                            channel=''):
+        self.marked.append((source_video_id, segment_index, channel))
 
     def uploaded_count_for_source_since(self, source_video_id, hours=24):
         return getattr(self, 'used_by_source', {}).get(source_video_id, 0)
+
+    def uploaded_count_for_channel_since(self, channel, hours=24):
+        return getattr(self, 'used_by_channel', {}).get(channel, 0)
 
     def record_performance(self, *a, **k):
         pass
@@ -333,6 +338,63 @@ class TestPullOnceBacklog(unittest.TestCase):
 
             self.assertEqual(pipeline.stats['shorts_uploaded'], 1)
 
+    def test_per_channel_daily_cap_limits_backlog_drain(self):
+        with _workspace() as td:
+            _isolate_config(Path(td))
+            from src.main import _run_scheduled_sweep
+            from src.config import config
+
+            # Channel already published 4 shorts in the last 24h. With a
+            # per-channel cap of 5, only 1 more may go up this run -- even
+            # though the backlog has 3 clips ready.
+            config.upload_max_per_channel = 5
+            config.upload_max_per_source = 3
+            clips = []
+            Path(td).joinpath('clips').mkdir(exist_ok=True)
+            for i in range(3):
+                clips.append({
+                    'source_video_id': f'src{i}',
+                    'segment_index': i + 1,
+                    'local_path': str(Path(td) / 'clips' / f'{i:02d}.mp4'),
+                    'niche': 'flick_shorts', 'title': f'Hook {i}',
+                })
+                Path(clips[-1]['local_path']).write_bytes(b'fake-mp4')
+
+            pulled = []
+            pipeline = self._make_pipeline_with_backlog(td, clips)
+            pipeline.db.used_by_channel = {'flick_shorts': 4}
+            pipeline.run_niche = lambda niche, max_videos=1, lookback=None: (pulled.append(niche) or 0)
+
+            _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
+
+            self.assertEqual(pipeline.stats['shorts_uploaded'], 1)
+
+    def test_per_channel_cap_exhausted_skips_drain_entirely(self):
+        with _workspace() as td:
+            _isolate_config(Path(td))
+            from src.main import _run_scheduled_sweep
+            from src.config import config
+
+            config.upload_max_per_channel = 5
+            config.upload_max_per_source = 3
+            clips = [
+                {'source_video_id': 'aaa11111111', 'segment_index': 1,
+                 'local_path': str(Path(td) / 'clips' / '01.mp4'),
+                 'niche': 'flick_shorts', 'title': 'Hook one'},
+            ]
+            Path(td).joinpath('clips').mkdir(exist_ok=True)
+            for c in clips:
+                Path(c['local_path']).write_bytes(b'fake-mp4')
+
+            pulled = []
+            pipeline = self._make_pipeline_with_backlog(td, clips)
+            pipeline.db.used_by_channel = {'flick_shorts': 5}
+            pipeline.run_niche = lambda niche, max_videos=1, lookback=None: (pulled.append(niche) or 0)
+
+            _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
+
+            self.assertEqual(pipeline.stats['shorts_uploaded'], 0)
+
 
 class _FakeUploader:
     def __init__(self):
@@ -375,6 +437,66 @@ class TestDiscoveryConfig(unittest.TestCase):
             self.assertTrue(hasattr(config, 'discovery_lookback'))
             self.assertTrue(hasattr(config, 'schedule_max_videos'))
             self.assertGreaterEqual(config.discovery_lookback, config.schedule_max_videos)
+
+
+class TestAddChannelBind(unittest.TestCase):
+    """Line-based niches.yaml binding must survive mid-file niches + comments."""
+
+    def _bind(self, td, yaml_text, channel, niche):
+        from src.config import config
+        from src.add_channel import bind_channel_to_niche
+        path = td / 'niches.yaml'
+        path.write_text(yaml_text, encoding='utf-8')
+        config.niches_file = path
+        bind_channel_to_niche(channel, niche)
+        return path.read_text(encoding='utf-8')
+
+    def test_appends_to_existing_upload_channels_list(self):
+        with _workspace() as td:
+            _isolate_config(Path(td))
+            out = self._bind(
+                td,
+                'flick_shorts:\n  upload_channels:\n    - flick_shorts\n  max_videos: 1\n',
+                'wealth_mindset', 'flick_shorts',
+            )
+            import yaml
+            self.assertEqual(
+                yaml.safe_load(out)['flick_shorts']['upload_channels'],
+                ['flick_shorts', 'wealth_mindset'],
+            )
+
+    def test_mid_file_niche_only_gets_its_own_block(self):
+        with _workspace() as td:
+            _isolate_config(Path(td))
+            out = self._bind(
+                td,
+                'flick_shorts:\n  upload_channels:\n    - flick_shorts\n\n'
+                'capital_mindset:\n  upload_channels:\n    - capital_mindset\n'
+                '    - wealth_mindset\n\n'
+                'future_tech_daily:\n  channels:\n    - "@OpenAI"\n',
+                'my_new_channel', 'capital_mindset',
+            )
+            import yaml
+            d = yaml.safe_load(out)
+            self.assertEqual(d['capital_mindset']['upload_channels'],
+                             ['capital_mindset', 'wealth_mindset', 'my_new_channel'])
+            # Sibling niches must be untouched.
+            self.assertEqual(d['flick_shorts']['upload_channels'], ['flick_shorts'])
+            self.assertEqual(d['future_tech_daily']['channels'], ['@OpenAI'])
+
+    def test_legacy_channel_only_gets_upload_channels_added(self):
+        with _workspace() as td:
+            _isolate_config(Path(td))
+            out = self._bind(
+                td,
+                'capital_mindset:\n  channel: capital_mindset\n  max_videos: 2\n',
+                'wealth_mindset', 'capital_mindset',
+            )
+            import yaml
+            self.assertEqual(
+                yaml.safe_load(out)['capital_mindset']['upload_channels'],
+                ['wealth_mindset'],
+            )
 
 
 if __name__ == '__main__':
