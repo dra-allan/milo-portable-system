@@ -577,7 +577,7 @@ class VideoEditor:
                     music_files = list(music_dir.glob('*.mp3')) + list(music_dir.glob('*.wav')) + list(music_dir.glob('*.ogg')) + list(music_dir.glob('*.m4a'))
                     if music_files:
                         music_file = random.choice(music_files)
-                        music_volume = getattr(config, 'music_volume', 0.05)
+                        music_volume = getattr(config, 'music_volume', 0.15)
                         music_duck_factor = getattr(config, 'music_duck_factor', 0.3)
                         
                         # Build filter: mix source audio with background music
