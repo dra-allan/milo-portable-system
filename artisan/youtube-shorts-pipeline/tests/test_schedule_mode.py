@@ -396,6 +396,85 @@ class TestPullOnceBacklog(unittest.TestCase):
             self.assertEqual(pipeline.stats['shorts_uploaded'], 0)
 
 
+class TestBacklogRoundRobin(unittest.TestCase):
+    """Multi-channel backlog drain: clips round-robin across a niche's
+    upload_channels so every bound channel posts and the same clip never
+    lands on two channels."""
+
+    def _pipeline(self, td, clips, authed=('capital_mindset', 'wealth_mindset'),
+                  used_by_channel=None):
+        from src.config import config
+        from src.main import ShortsPipeline
+        config.niches = {
+            'capital_mindset': {
+                'channels': ['@ch2'],
+                'channel': 'capital_mindset',
+                'upload_channels': ['capital_mindset', 'wealth_mindset'],
+            },
+        }
+        config.authenticated_channels = lambda: list(authed)
+        config.schedule_backlog_first = True
+        config.upload_max_per_run = 5
+        config.upload_max_per_channel = 5
+        config.upload_max_per_source = 3
+        config.upload_pacing_min = 0
+        config.upload_pacing_max = 0
+
+        pipeline = ShortsPipeline.__new__(ShortsPipeline)
+        pipeline.config = config
+        pipeline.upload_enabled = True
+        pipeline.db = FakeDB(unuploaded=clips)
+        if used_by_channel:
+            pipeline.db.used_by_channel = dict(used_by_channel)
+        pipeline.stats = {'videos_processed': 0, 'shorts_created': 0,
+                          'shorts_uploaded': 0, 'errors': 0}
+        pipeline._uploaders = {}
+        pipeline._uploader_for_channel = lambda ch: _FakeUploader()
+        pipeline.run_niche = lambda niche, max_videos=1, lookback=None: 0
+        return pipeline
+
+    def _clip(self, td, idx):
+        path = str(Path(td) / 'clips' / f'{idx:02d}.mp4')
+        Path(path).write_bytes(b'fake-mp4')
+        return {'source_video_id': f'src{idx:02d}', 'segment_index': idx,
+                'local_path': path, 'niche': 'capital_mindset', 'title': f'Hook {idx}'}
+
+    def test_drain_round_robins_across_niche_channels(self):
+        with _workspace() as td:
+            _isolate_config(Path(td))
+            Path(td).joinpath('clips').mkdir(exist_ok=True)
+            from src.main import _run_scheduled_sweep
+            clips = [self._clip(td, i) for i in range(1, 5)]
+
+            pipeline = self._pipeline(td, clips)
+            _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
+
+            self.assertEqual(pipeline.stats['shorts_uploaded'], 4)
+            channels = [m[2] for m in pipeline.db.marked]
+            self.assertEqual(sorted(channels),
+                             ['capital_mindset', 'capital_mindset',
+                              'wealth_mindset', 'wealth_mindset'])
+
+    def test_one_channel_at_cap_does_not_starve_other(self):
+        with _workspace() as td:
+            _isolate_config(Path(td))
+            Path(td).joinpath('clips').mkdir(exist_ok=True)
+            from src.main import _run_scheduled_sweep
+            clips = [self._clip(td, i) for i in range(1, 4)]
+
+            # capital_mindset already published its 5/day; wealth_mindset has
+            # budget left, so the whole supply must flow to wealth_mindset.
+            pipeline = self._pipeline(
+                td, clips,
+                used_by_channel={'capital_mindset': 5, 'wealth_mindset': 0},
+            )
+            _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
+
+            self.assertEqual(pipeline.stats['shorts_uploaded'], 3)
+            self.assertEqual([m[2] for m in pipeline.db.marked],
+                             ['wealth_mindset'] * 3)
+
+
 class _FakeUploader:
     def __init__(self):
         self.count = 0
