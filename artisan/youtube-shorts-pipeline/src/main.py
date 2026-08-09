@@ -649,8 +649,7 @@ def process_video_for_shorts(self, video_id: str, niche: Optional[str] = None,
                     os.remove(audio_path)
                 except OSError:
                     pass
-            # End of cleanup
-
+        pass  # End of process_video_for_shorts method
     def _generate_unique_title(self, hook_text: str, niche: str, clip_index: int) -> str:
         """Generate a unique, attention-optimized title for a Short.
 
