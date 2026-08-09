@@ -14,8 +14,6 @@ flick_shorts:
   # Per-run video cap for this niche (overrides SCHEDULE_MAX_VIDEOS).
   max_videos: 1
   channels:
-    - "UCpDYvYi3_6k3f7J6oH6fLgA" # The Diary Of A CEO - existing
-    - "UCzQUP1qoWzcujL62pL1m6Dg" # Joe Rogan Experience - existing
     - "@TheDiaryOfACEO"
     - "@joerogan"
     - "@lexfridman"
@@ -23,13 +21,10 @@ flick_shorts:
     - "@HubermanLab"
     - "@RichRoll"
     - "@lewishowes"
-    - "@JayShettyPodcast"
     - "@TomBilyeu"
-    - "@ImpactTheory"
     - "@TimFerriss"
     - "@BigThink"
     - "@TED"
-    - "@MarkManson"
     - "@TheSchoolOfLife"
   keywords:
     - "the biggest mistake"
