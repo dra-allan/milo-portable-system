@@ -280,20 +280,21 @@ class TestScheduledSweepBudget(unittest.TestCase):
 
         class FakePipeline:
 
-                upload_enabled = False
+            upload_enabled = False
+            db = FakeDB()
 
-                def run_niche(self, niche, max_videos=1, lookback=None):
-                    calls.append(niche)
-                    return 1
+            def run_niche(self, niche, max_videos=1, lookback=None):
+                calls.append(niche)
+                return 1
 
-            class Args:
-                niche = None
-                videos = 5
+        class Args:
+            niche = None
+            videos = 5
 
-            _run_scheduled_sweep(FakePipeline(), Args())
+        _run_scheduled_sweep(FakePipeline(), Args())
 
-            # Only one niche processed due to total budget
-            self.assertEqual(len(calls), 1)
+        # Only one niche processed due to total budget
+        self.assertEqual(len(calls), 1)
 
     def test_sweep_skips_unbound_through_run_niche(self):
         with _workspace() as td:
@@ -385,10 +386,11 @@ class TestPullOnceBacklog(unittest.TestCase):
             from src.main import _run_scheduled_sweep
             from src.config import config
             config.queue_min_distinct_sources = 1
-            config.queue_target_total = 3  # low target so 5 clips meets it
+            config.queue_target_total = 3
+            config.upload_max_per_run = 3  # cap lower than total clips
             clips = []
             Path(td).joinpath('clips').mkdir(exist_ok=True)
-            for i in range(5):
+            for i in range(6):  # 6 clips, cap 3 -> 3 remain after drain
                 clips.append({
                     'source_video_id': f'aaa111111{i}',
                     'segment_index': i + 1,
@@ -403,9 +405,9 @@ class TestPullOnceBacklog(unittest.TestCase):
 
             _run_scheduled_sweep(pipeline, type('Args', (), {'niche': None})())
 
-            # 5 clips uploaded from backlog (cap 5)
-            self.assertEqual(pipeline.stats['shorts_uploaded'], 5)
-            # Queue healthy (5 distinct sources >= 1, total 5 >= target 3) -> no discovery
+            # 3 clips uploaded from backlog (cap 3), 3 remain in queue
+            self.assertEqual(pipeline.stats['shorts_uploaded'], 3)
+            # Queue healthy (3 remaining >= target 3, 6 distinct sources >= 1) -> no discovery
             self.assertEqual(pulled, [])
 
     def test_per_source_daily_cap_limits_backlog_drain(self):
