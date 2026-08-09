@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786276253.4530396,
+  "updated_at": 1786276858.0892603,
   "routines": [
     {
       "name": "curate-skills",
@@ -77,11 +77,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786276211.2309697,
+      "last_run": 1786276806.735185,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     90\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786276547.319732,
-      "runs": 381,
+      "next_run": 1786277151.0142238,
+      "runs": 382,
       "failures": 16
     },
     {
@@ -104,11 +104,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786276247.3387446,
+      "last_run": 1786276851.0250885,
       "last_status": "ok",
       "last_output": "[ok] vault clean, nothing to commit",
-      "next_run": 1786276553.452786,
-      "runs": 376,
+      "next_run": 1786277158.0881639,
+      "runs": 377,
       "failures": 58
     },
     {
