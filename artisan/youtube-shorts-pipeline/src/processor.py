@@ -20,6 +20,11 @@ try:  # package-relative first (python -m src.main)
 except ImportError:  # pragma: no cover - direct script execution
     from utils import setup_logger
 
+try:
+    from .discovery import matched_keywords
+except ImportError:  # pragma: no cover - direct script execution
+    from discovery import matched_keywords
+
 logger = setup_logger(__name__)
 
 # Words that signal a hook / payoff moment rather than filler narration.
@@ -34,6 +39,66 @@ HOOK_PHRASES = (
 
 FILLER_WORDS = ("um", "uh", "erm", "hmm", "like", "you know", "i mean", "kinda", "sorta")
 
+# ----------------------------------------------------------------------
+# Ranking / countdown signals.
+#
+# A list video's value is concentrated at the *item boundaries*: the moment
+# the narrator says "coming in at number three" is the moment a self-contained
+# clip can start. A clip that begins mid-item has no context and no payoff, so
+# we reward clips that open on an enumeration cue and contain a complete item.
+# ----------------------------------------------------------------------
+
+# "number 3", "number three", "no. 3", "#3", "at 3:", "3." at a clause start.
+_NUMBER_WORDS = (
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "twenty",
+)
+
+ENUMERATION_RE = re.compile(
+    r"(?:\b(?:number|no\.?|coming in at|in at|next up at|at)\s*#?\s*"
+    r"(?:\d{1,2}|" + "|".join(_NUMBER_WORDS) + r")\b)"
+    r"|(?:#\s*\d{1,2}\b)",
+    re.IGNORECASE,
+)
+
+# Countdown position cues that mark a payoff moment ("and the number one...").
+PAYOFF_RE = re.compile(
+    r"\b(?:number one|no\.?\s*1|#\s*1|top spot|first place|"
+    r"the winner|our winner|takes the crown|best of the bunch)\b",
+    re.IGNORECASE,
+)
+
+# Comparative / superlative language that carries a ranking claim.
+SUPERLATIVE_RE = re.compile(
+    r"\b\w+(?:est)\b"
+    r"|\b(?:most|least|best|worst|biggest|largest|smallest|fastest|slowest|"
+    r"richest|deadliest|rarest|strangest|weirdest|craziest)\b"
+    r"|\b(?:better|worse|cheaper|bigger|smaller|faster|slower|longer|shorter)"
+    r"\s+than\b"
+    r"|\b(?:versus|vs\.?)\b",
+    re.IGNORECASE,
+)
+
+
+def ranking_signals(text: str) -> Dict[str, int]:
+    """Count enumeration, payoff and superlative cues in ``text``."""
+    body = text or ''
+    return {
+        'enumerations': len(ENUMERATION_RE.findall(body)),
+        'payoffs': len(PAYOFF_RE.findall(body)),
+        'superlatives': len(SUPERLATIVE_RE.findall(body)),
+    }
+
+
+def opens_on_enumeration(text: str, window: int = 60) -> bool:
+    """True if an enumeration cue appears in the first ``window`` characters.
+
+    A ranking clip that opens with "Coming in at number four..." is
+    self-contained; one that opens halfway through item four is not.
+    """
+    head = (text or '')[:window]
+    return bool(ENUMERATION_RE.search(head))
+
 
 class ContentProcessor:
     """Scores transcript regions and selects the best Shorts candidates."""
@@ -46,11 +111,17 @@ class ContentProcessor:
     # ------------------------------------------------------------------
     def score_segment(self, segment: Dict, prev_segment: Optional[Dict] = None,
                       next_segment: Optional[Dict] = None,
-                      niche_keywords: Optional[List[str]] = None) -> float:
+                      niche_keywords: Optional[List[str]] = None,
+                      ranking_mode: bool = False) -> float:
         """Score one candidate region for "interestingness".
 
         Returns a non-negative score. Kept backwards compatible with the
         previous signature because tests and callers rely on it.
+
+        Args:
+            ranking_mode: enable countdown/list scoring (enumeration cues,
+                the #1 payoff, superlatives). Off by default so existing
+                niches score exactly as before.
         """
         if niche_keywords is None:
             niche_keywords = []
@@ -79,7 +150,10 @@ class ContentProcessor:
 
         # 2. Niche keywords. Normalised per-clip so a 60s clip full of the
         #    same keyword cannot dwarf a tight 20s clip.
-        keyword_hits = sum(1 for kw in niche_keywords if kw and kw.lower() in text)
+        #    Word-boundary matched: substring matching credited "vs" inside
+        #    "versus"/"Vsauce" and "last" inside "plastic", inflating the
+        #    score of clips that never used the keyword at all.
+        keyword_hits = len(matched_keywords(text, niche_keywords))
         score += min(keyword_hits, 6) * 2.5
 
         # 3. Hook phrases -- the strongest retention signal we can detect
@@ -130,13 +204,44 @@ class ContentProcessor:
         elif duration < 12.0:
             score -= 2.0
 
+        # 10. Ranking / countdown structure (opt-in per niche).
+        #     A list video is only clippable at item boundaries, so this
+        #     rewards clips that open on an enumeration cue and carry a
+        #     complete ranked item, and it strongly rewards the #1 payoff.
+        if ranking_mode:
+            signals = ranking_signals(raw_text)
+
+            # Opening on "coming in at number four" makes the clip
+            # self-contained -- the single most valuable property here.
+            if opens_on_enumeration(raw_text):
+                score += 7.0
+            elif signals['enumerations']:
+                # Cue present but not at the top: still useful, less so.
+                score += 2.0
+            else:
+                # No enumeration at all: likely mid-item narration with no
+                # setup and no payoff.
+                score -= 3.0
+
+            # The #1 reveal is the retention peak of any countdown.
+            score += min(signals['payoffs'], 2) * 5.0
+
+            # Superlatives carry the actual ranking claim.
+            score += min(signals['superlatives'], 5) * 1.2
+
+            # Exactly one item per clip reads best; a clip spanning many
+            # boundaries is a compilation, which loses the payoff structure.
+            if signals['enumerations'] > 3:
+                score -= (signals['enumerations'] - 3) * 1.5
+
         return max(0.0, score)
 
     # ------------------------------------------------------------------
     # Candidate construction
     # ------------------------------------------------------------------
     def _build_candidates(self, transcript: List[Dict], niche_keywords: List[str],
-                          min_len: float, max_len: float) -> List[Dict]:
+                          min_len: float, max_len: float,
+                          ranking_mode: bool = False) -> List[Dict]:
         """Grow candidate clips from every transcript boundary.
 
         A candidate starts at transcript[i] and absorbs following segments
@@ -183,7 +288,8 @@ class ContentProcessor:
                     'last_index': j,
                 }
                 candidate['score'] = self.score_segment(
-                    candidate, prev_seg, next_seg, niche_keywords
+                    candidate, prev_seg, next_seg, niche_keywords,
+                    ranking_mode=ranking_mode,
                 )
                 candidates.append(candidate)
                 emitted += 1
@@ -197,7 +303,8 @@ class ContentProcessor:
                                 min_gap_between: int = 30,
                                 max_clips: int = 8,
                                 min_score: float = 0.0,
-                                max_candidates: Optional[int] = None) -> List[Dict]:
+                                max_candidates: Optional[int] = None,
+                                ranking_mode: bool = False) -> List[Dict]:
         """Select the best non-overlapping Shorts candidates.
 
         Args:
@@ -214,6 +321,9 @@ class ContentProcessor:
                 nothing extra and "give me 10 more" needs no re-download and no
                 re-transcribe. Rendering is still capped separately by the
                 caller.
+            ranking_mode: score for countdown/list content (enumeration cues,
+                #1 payoff, superlatives). Driven by the niche's
+                ``ranking_mode`` flag in niches.yaml.
 
         Returns:
             Chronologically sorted list of clips with start/end/text/score/rank.
@@ -248,7 +358,10 @@ class ContentProcessor:
                 total_span, min_len,
             )
 
-        candidates = self._build_candidates(transcript, niche_keywords, min_len, max_len)
+        candidates = self._build_candidates(
+            transcript, niche_keywords, min_len, max_len,
+            ranking_mode=ranking_mode,
+        )
         if not candidates:
             logger.warning(
                 "No candidate clips could be built from %d transcript segments "

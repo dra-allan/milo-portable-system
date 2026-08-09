@@ -40,6 +40,9 @@ DEFAULT_NICHE = {
     'min_score': 0.0,
     'min_views': 0,
     'max_videos': 0,
+    # Opt-in countdown/list scoring (enumeration cues, #1 payoff,
+    # superlatives). Off by default so existing niches score unchanged.
+    'ranking_mode': False,
 }
 
 
