@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786234515.051067,
+  "updated_at": 1786235305.6684637,
   "routines": [
     {
       "name": "curate-skills",
@@ -77,12 +77,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786231509.2028508,
-      "last_status": "skipped",
+      "last_run": 1786234819.0313125,
+      "last_status": "failed (1)",
       "last_output": "run again with -v for the full traceback\n  [x] TimeoutExpired: Command '['git', '-C', 'C:\\\\Users\\\\user\\\\Desktop\\\\milo-portable-system', 'push']' timed out after 180 seconds",
-      "next_run": 1786234810.5266938,
-      "runs": 322,
-      "failures": 9
+      "next_run": 1786235597.1133754,
+      "runs": 323,
+      "failures": 10
     },
     {
       "name": "frequent-vault-sync",
@@ -104,11 +104,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786232017.6035178,
-      "last_status": "skipped",
-      "last_output": "[ok]    e6c6f20..ead4606  master -> master",
-      "next_run": 1786234810.5266938,
-      "runs": 317,
+      "last_run": 1786235297.149575,
+      "last_status": "ok",
+      "last_output": "[ok]    ead4606..9b7465e  master -> master",
+      "next_run": 1786235605.667828,
+      "runs": 318,
       "failures": 56
     },
     {
