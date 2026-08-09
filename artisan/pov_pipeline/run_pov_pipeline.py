@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-POV Pipeline Orchestrator — URL to POV project + TTS in one command.
+POV Pipeline Orchestrator — URL to finished POV video.
 
 Usage:
   python run_pov_pipeline.py <youtube_url|transcript_file> [--name TITLE] [--skip-tts]
+  python run_pov_pipeline.py --project <NAME> --stage <gate|tts|images|thumb|assemble|video>
 
 What it does:
   1. Scrapes the transcript from a YouTube URL (or reads a transcript file)
@@ -14,8 +15,12 @@ What it does:
      runs.
   3. Runs the SCRIPT GATE (rewrite-originality + wordcount) before TTS.
   4. Auto-runs Gemini TTS (voice Fenrir) to generate 06_AUDIO/<SEG>.mp3.
-  5. Stops with a handoff report. YOU still generate images + thumbnail
-     (Google Flow) from the prompts, then run the assembler.
+  5. Stage `images` generates every image from 05_IMAGES/IMAGE_PROMPTS_BATCH_FINAL.txt
+     via Google Flow (opencli flow images) into 05_IMAGES/<SEG_ID>.jpeg —
+     resume-safe, skips images that already exist.
+  6. Stage `thumb` generates the thumbnail from 04_THUMBNAIL/THUMBNAIL_PROMPT.txt.
+  7. Stage `assemble` runs the assembler (01_SCRIPT_RAW + 06_AUDIO + 05_IMAGES
+     → output_pro/). Stage `video` = images + thumb + assemble in one shot.
 
 Exit codes:
   0 = success
@@ -252,25 +257,118 @@ def run_tts(project_dir: Path) -> bool:
     return result.returncode == 0
 
 
+def run_flow_images(project_dir: Path, profiles: str = "") -> bool:
+    """Generate all segment images via Google Flow (opencli flow images)."""
+    print("\n" + "=" * 60)
+    print("  IMAGE GENERATION (Google Flow)")
+    print("=" * 60)
+    batch = project_dir / "05_IMAGES" / "IMAGE_PROMPTS_BATCH_FINAL.txt"
+    if not batch.exists():
+        eprint(f"[images] FAIL - {batch.name} missing (run the image-director agent first)")
+        return False
+
+    opencli = shutil.which("opencli")
+    if not opencli:
+        eprint("[images] FAIL - 'opencli' not on PATH (needed for Google Flow image generation)")
+        return False
+
+    cmd = ["opencli", "flow", "images", "--file", str(batch)]
+    if profiles:
+        cmd += ["--profiles", profiles]
+
+    print("[images] " + " ".join(str(c) for c in cmd[:4]) + " ...")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+    print(result.stdout[-3000:] if result.stdout else "")
+    if result.stderr:
+        print("STDERR:", result.stderr[-1500:])
+    return result.returncode == 0
+
+
+def run_thumbnail(project_dir: Path) -> bool:
+    """Generate the thumbnail via Google Flow (opencli flow image-gen)."""
+    print("\n" + "=" * 60)
+    print("  THUMBNAIL GENERATION (Google Flow)")
+    print("=" * 60)
+    prompt_file = project_dir / "04_THUMBNAIL" / "THUMBNAIL_PROMPT.txt"
+    if not prompt_file.exists():
+        eprint(f"[thumb] FAIL - {prompt_file.name} missing (run the thumbnail-artist agent first)")
+        return False
+
+    prompt = prompt_file.read_text(encoding="utf-8").strip()
+    if not prompt:
+        eprint("[thumb] FAIL - thumbnail prompt is empty")
+        return False
+
+    opencli = shutil.which("opencli")
+    if not opencli:
+        eprint("[thumb] FAIL - 'opencli' not on PATH")
+        return False
+
+    out_file = project_dir / "04_THUMBNAIL" / "thumbnail.png"
+    cmd = [
+        "opencli", "flow", "image-gen",
+        "--prompt", prompt,
+        "--aspect", "16:9",
+        "--out", str(out_file),
+        "--yes",
+    ]
+    print("[thumb] " + " ".join(str(c) for c in cmd[:3]) + " ...")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    print(result.stdout[-2000:] if result.stdout else "")
+    if result.stderr:
+        print("STDERR:", result.stderr[-1500:])
+    return result.returncode == 0 and out_file.exists()
+
+
+def run_assembler(project_dir: Path) -> bool:
+    """Run the POV assembler to build the final video."""
+    print("\n" + "=" * 60)
+    print("  VIDEO ASSEMBLY")
+    print("=" * 60)
+    script = project_dir / "01_SCRIPT_RAW.txt"
+    audio = project_dir / "06_AUDIO"
+    images = project_dir / "05_IMAGES"
+    if not script.exists() or not audio.exists() or not images.exists():
+        eprint("[assemble] FAIL - need 01_SCRIPT_RAW.txt, 06_AUDIO/, 05_IMAGES/ all present")
+        return False
+
+    py = shutil.which("python")
+    if not py:
+        eprint("[assemble] FAIL - no python on PATH")
+        return False
+
+    assembler = SCRIPTS_DIR / "pov_assembler_pro.py"
+    if not assembler.exists():
+        eprint(f"[assemble] FAIL - assembler not found: {assembler}")
+        return False
+
+    cmd = [
+        str(py), str(assembler),
+        "--script", str(script),
+        "--audio", str(audio),
+        "--images", str(images),
+        "--output", str(project_dir / "output_pro"),
+        "--cpu-preset", "light",
+    ]
+    print("[assemble] " + " ".join(str(c) for c in cmd[:5]) + " ...")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10800)
+    print(result.stdout[-4000:] if result.stdout else "")
+    if result.stderr:
+        print("STDERR:", result.stderr[-2000:])
+    return result.returncode == 0
+
+
 def print_handoff(project_dir: Path, source: Path | None):
     print("\n" + "=" * 60)
     print("  POV PIPELINE HANDOFF")
     print("=" * 60)
     print(f"  Project:  {project_dir}")
     print(f"  Status:   agents + TTS done (if run with TTS)")
-    print(f"\n  YOU DO:")
-    print(f"  1. Generate images from 05_IMAGES/IMAGE_PROMPTS_BATCH_FINAL.txt")
-    print(f"     (Google Flow / your image tool). Name files <SEG_ID>.png")
-    print(f"     and put them in {project_dir / '05_IMAGES'}")
-    print(f"  2. Generate thumbnail from 04_THUMBNAIL/THUMBNAIL_PROMPT.txt")
-    print(f"  3. Run the assembler:")
-    print(f"     python scripts/pov_assembler_pro.py \\")
-    print(f"       --script {project_dir / '01_SCRIPT_RAW.txt'} \\")
-    print(f"       --audio  {project_dir / '06_AUDIO'} \\")
-    print(f"       --images {project_dir / '05_IMAGES'} \\")
-    print(f"       --output {project_dir / 'output_pro'} \\")
-    print(f"       --cpu-preset light")
-    print(f"  4. Post with metadata from 07_METADATA.txt")
+    print(f"\n  NEXT:")
+    print(f"  1. Generate images + thumbnail + assemble in one shot:")
+    print(f"     python run_pov_pipeline.py --project {project_dir.name} --stage video")
+    print(f"     (or run the stages separately: images | thumb | assemble)")
+    print(f"  2. Post with metadata from 07_METADATA.txt")
     print("=" * 60)
 
 
@@ -279,10 +377,12 @@ def main():
     ap.add_argument("input", nargs="?", help="YouTube URL or path to a transcript file (for scrape phase)")
     ap.add_argument("--project", default=None,
                     help="Existing project folder name (for gate/tts phase)")
-    ap.add_argument("--stage", choices=["scrape", "gate", "tts"],
-                    help="Which phase to run: scrape | gate | tts (default: scrape when input given)")
+    ap.add_argument("--stage", choices=["scrape", "gate", "tts", "images", "thumb", "assemble", "video"],
+                    help="Which phase to run: scrape | gate | tts | images | thumb | assemble | video (default: scrape when input given, else gate+tts)")
     ap.add_argument("--name", default=None, help="Project title (used as folder name)")
     ap.add_argument("--skip-tts", action="store_true", help="Run gate only, stop before TTS")
+    ap.add_argument("--flow-profiles", default=None,
+                    help="Google Flow account profiles to rotate through on rate limits (e.g. flow-account-1,flow-account-2)")
     a = ap.parse_args()
 
     projects_dir = PROJECTS_DIR
@@ -342,6 +442,24 @@ def main():
         ok = run_tts(project_dir)
         if not ok:
             eprint("[error] TTS failed (check above). Re-run to resume (it skips existing segments).")
+            sys.exit(1)
+
+    if a.stage in ("images", "video"):
+        ok = run_flow_images(project_dir, profiles=a.flow_profiles or "")
+        if not ok:
+            eprint("[error] Image generation failed (check above). Re-run to resume (it skips existing images).")
+            sys.exit(1)
+
+    if a.stage in ("thumb", "video"):
+        ok = run_thumbnail(project_dir)
+        if not ok:
+            eprint("[error] Thumbnail generation failed (check above).")
+            sys.exit(1)
+
+    if a.stage in ("assemble", "video"):
+        ok = run_assembler(project_dir)
+        if not ok:
+            eprint("[error] Assembly failed (check above).")
             sys.exit(1)
 
     print_handoff(project_dir, project_dir / "00_SOURCE_SCRIPT.txt" if (project_dir / "00_SOURCE_SCRIPT.txt").exists() else None)
