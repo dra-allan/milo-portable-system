@@ -42,10 +42,15 @@ if not exist venv\Scripts\python.exe (
  echo No virtual environment found. Creating it now...
  python -m venv venv
  if errorlevel 1 (echo Could not create venv.&pause&exit /b 1)
- echo Installing ranking dependencies. First run may take a few minutes...
+)
+venv\Scripts\python.exe -c "import yaml, yt_dlp" >nul 2>&1
+if errorlevel 1 (
+ echo Ranking dependencies are incomplete. Installing requirements now...
  venv\Scripts\python.exe -m pip install --upgrade pip
  venv\Scripts\python.exe -m pip install -r requirements.txt
- if errorlevel 1 (echo Dependency install failed.&pause&exit /b 1)
+ if errorlevel 1 (echo Dependency install failed. Fix the error above and retry.&pause&exit /b 1)
+ venv\Scripts\python.exe -c "import yaml, yt_dlp" >nul 2>&1
+ if errorlevel 1 (echo Dependency verification failed: PyYAML or yt-dlp is still missing.&pause&exit /b 1)
 )
 exit /b 0
 :start_timer
@@ -64,6 +69,7 @@ exit /b %errorlevel%
 :build_private
 call :start_timer "build no-upload"
 call :ensure_env
+if errorlevel 1 goto main
 call :python -m src.main --mode once --topic "%RANKING_TOPIC%" --no-upload
 call :python cleanup_runtime.py
 call :stop_timer "build no-upload"
@@ -72,6 +78,7 @@ goto main
 :build_upload
 call :start_timer "build and upload"
 call :ensure_env
+if errorlevel 1 goto main
 call :python -m src.main --mode once --topic "%RANKING_TOPIC%"
 call :python cleanup_runtime.py
 call :stop_timer "build and upload"
@@ -80,6 +87,7 @@ goto main
 :source
 call :start_timer "source and vet"
 call :ensure_env
+if errorlevel 1 goto main
 call :python -m src.main --mode source --topic "%RANKING_TOPIC%"
 call :stop_timer "source and vet"
 pause
@@ -89,6 +97,7 @@ set /p plan="Plan JSON path, or BACK: "
 if /i "%plan%"=="BACK" goto main
 call :start_timer "assemble plan"
 call :ensure_env
+if errorlevel 1 goto main
 call :python -m src.main --mode assemble --plan "%plan%"
 call :python cleanup_runtime.py
 call :stop_timer "assemble plan"
@@ -97,6 +106,7 @@ goto main
 :upload
 call :start_timer "upload pending"
 call :ensure_env
+if errorlevel 1 goto main
 call :python -m src.main --mode upload
 call :stop_timer "upload pending"
 pause
@@ -104,6 +114,7 @@ goto main
 :test
 call :start_timer "environment test"
 call :ensure_env
+if errorlevel 1 goto main
 call :python -m src.main --mode test
 call :stop_timer "environment test"
 pause
@@ -121,6 +132,7 @@ goto main
 :cleanup_uploaded
 call :start_timer "delete uploaded local videos"
 call :ensure_env
+if errorlevel 1 goto main
 call :python cleanup_uploaded.py
 call :stop_timer "delete uploaded local videos"
 pause
