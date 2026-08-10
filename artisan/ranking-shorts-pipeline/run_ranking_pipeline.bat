@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 title Ranking Shorts Pipeline - Easy Runner
-if not defined RANKING_TOPIC set "RANKING_TOPIC=fishing_moments"
+if not defined RANKING_TOPIC set "RANKING_TOPIC=auto"
 if not defined UPLOAD_PRIVACY set "UPLOAD_PRIVACY=private"
 if defined VIDEO_FACTORY_ROOT set "RANKING_RUNTIME=%VIDEO_FACTORY_ROOT%\ranking-shorts-pipeline"
 if not defined RANKING_RUNTIME set "RANKING_RUNTIME=%LOCALAPPDATA%\DRA\VideoFactory\ranking-shorts-pipeline"
@@ -70,7 +70,7 @@ exit /b %errorlevel%
 call :start_timer "build no-upload"
 call :ensure_env
 if errorlevel 1 goto main
-call :python -m src.main --mode once --topic "%RANKING_TOPIC%" --no-upload
+if /i "%RANKING_TOPIC%"=="auto" (call :python -m src.main --mode auto --no-upload) else (call :python -m src.main --mode once --topic "%RANKING_TOPIC%" --no-upload)
 call :python cleanup_runtime.py
 call :stop_timer "build no-upload"
 pause
@@ -79,7 +79,7 @@ goto main
 call :start_timer "build and upload"
 call :ensure_env
 if errorlevel 1 goto main
-call :python -m src.main --mode once --topic "%RANKING_TOPIC%"
+if /i "%RANKING_TOPIC%"=="auto" (call :python -m src.main --mode auto) else (call :python -m src.main --mode once --topic "%RANKING_TOPIC%")
 call :python cleanup_runtime.py
 call :stop_timer "build and upload"
 pause
@@ -88,7 +88,7 @@ goto main
 call :start_timer "source and vet"
 call :ensure_env
 if errorlevel 1 goto main
-call :python -m src.main --mode source --topic "%RANKING_TOPIC%"
+if /i "%RANKING_TOPIC%"=="auto" (call :python -m src.main --mode source --topic animal_moments) else (call :python -m src.main --mode source --topic "%RANKING_TOPIC%")
 call :stop_timer "source and vet"
 pause
 goto main
@@ -120,8 +120,9 @@ call :stop_timer "environment test"
 pause
 goto main
 :set_topic
-set /p new_topic="Topic key, or BACK: "
+set /p new_topic="Topic key, or AUTO or BACK: "
 if /i "%new_topic%"=="BACK" goto main
+if /i "%new_topic%"=="AUTO" set "new_topic=auto"
 if not "%new_topic%"=="" set "RANKING_TOPIC=%new_topic%"
 goto main
 :folders
