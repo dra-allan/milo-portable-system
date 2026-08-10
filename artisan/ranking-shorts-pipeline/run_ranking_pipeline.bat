@@ -4,6 +4,9 @@ cd /d "%~dp0"
 title Ranking Shorts Pipeline - Easy Runner
 if not defined RANKING_TOPIC set "RANKING_TOPIC=auto"
 if not defined UPLOAD_PRIVACY set "UPLOAD_PRIVACY=private"
+rem Load config\.env so the menu path matches python's runtime root.
+rem Values are KEY=VALUE with no quoting; lines with an empty value are skipped.
+if exist "config\.env" for /f "usebackq eol=# tokens=1,* delims==" %%a in ("config\.env") do if not "%%b"=="" set "%%a=%%b"
 if defined VIDEO_FACTORY_ROOT set "RANKING_RUNTIME=%VIDEO_FACTORY_ROOT%\ranking-shorts-pipeline"
 if not defined RANKING_RUNTIME set "RANKING_RUNTIME=%LOCALAPPDATA%\DRA\VideoFactory\ranking-shorts-pipeline"
 :main
