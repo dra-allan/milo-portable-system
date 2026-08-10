@@ -62,9 +62,6 @@ sfx_map:
 topics:
   fishing_moments:
     title: "TOP {n} FISHING MOMENTS"
-    # Same discovery shape as the Shorts pipeline: yt-dlp searches YouTube
-    # and walks configured YouTube channel video feeds. No TikTok/Instagram
-    # source is enabled in the shipped config.
     queries:
       - "funny fishing moments"
       - "fishing fails"
@@ -87,37 +84,7 @@ topics:
     channel: ranking_animals
     tags: ["animals", "funnyanimals", "top5", "shorts"]
 
-  # -------------------------------------------------------------------------
-  # gta6_countdown  --  Lane A of PLAN_GTA_NICHE.md (the monetisable lane).
-  #
-  # Original TTS narration over sourced b-roll, assembled as a countdown.
-  # This is the lane that survives YPP review: youtube-shorts-pipeline output
-  # is a straight recut of one source, which is reused content with no
-  # transformation. This one writes its own script and speaks it.
-  #
-  # THREE CONSTRAINTS FROM `defaults:` THAT SHAPE THE QUERIES BELOW.
-  # `defaults` is GLOBAL -- RankingConfig.topic() never merges it, and
-  # config.get() reads self.defaults only, so there is no topic-level
-  # override. Changing any of these for GTA also changes it for
-  # fishing_moments and animal_moments. So we design around them:
-  #
-  #   max_music_confidence: 0.55 -- rejects wall-to-wall-score footage, which
-  #     means official Rockstar trailer b-roll cannot pass vetting. The
-  #     queries therefore ask for BREAKDOWN and ANALYSIS footage (someone
-  #     talking over the trailer), never the trailer itself.
-  #   max_text_coverage: 0.18 + blur_detected_text -- GTA news footage is
-  #     plastered in on-screen text and watermarks, so the reject rate here
-  #     will run high. collect_clips() gives up after max(12, needed*4)
-  #     rejects, so a starved render means raising candidates_per_topic --
-  #     and that cost lands on all three topics.
-  #   max_source_duration: 900 -- fine, GTA breakdowns run 8-15 min.
-  #
-  # Uploads route to youtube_token_ranking_gta6_countdown.json via the
-  # `channel:` key (publisher.RankingPublisher builds the token filename from
-  # it). There is no `auth` CLI mode in this pipeline -- pre-authenticate with
-  #   python -c "from src.publisher import auth; print(auth('gta6_countdown'))"
-  # or the first build will stop mid-run to open a browser.
-  # -------------------------------------------------------------------------
+  # Original narration over sourced b-roll. This is the monetisable lane.
   gta6_countdown:
     title: "TOP {n} GTA 6 DETAILS"
     queries:
@@ -129,8 +96,7 @@ topics:
       - "gta 6 vs gta 5 comparison"
     channels: []
     extra_sources: []
-    # "leaked build"/"leaked footage" is the one hard line with Rockstar:
-    # discussing a leak is fine, hosting the footage is channel-ending.
     negative_keywords: ["leaked footage", "leaked gameplay", "leaked build", "fan made", "concept", "mod showcase", "reaction", "livestream", "podcast", "ai generated"]
-    channel: gta6_countdown
+    # Publisher token: youtube_token_ranking_NXS.json
+    channel: NXS
     tags: ["gta6", "gta6trailer", "leonida", "gtavi", "shorts"]
