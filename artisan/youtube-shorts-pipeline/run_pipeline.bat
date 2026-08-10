@@ -6,9 +6,12 @@ set "SCHEDULE_MAX_VIDEOS=1"
 set "SCHEDULE_MAX_TOTAL=0"
 set "BACKGROUND_MODE=smart"
 set "CAPTION_STYLE=hormozi"
+rem YouTube is currently rate-limiting subtitle requests. Audio discovery must not depend on them.
+set "USE_YOUTUBE_SUBS=false"
 if exist .env (
  for /f "tokens=1,* delims==" %%a in ('findstr /b /i "BACKGROUND_MODE=" .env') do set "BACKGROUND_MODE=%%b"
  for /f "tokens=1,* delims==" %%a in ('findstr /b /i "CAPTION_STYLE=" .env') do set "CAPTION_STYLE=%%b"
+ for /f "tokens=1,* delims==" %%a in ('findstr /b /i "USE_YOUTUBE_SUBS=" .env') do set "USE_YOUTUBE_SUBS=%%b"
 )
 :main
 cls
@@ -46,7 +49,8 @@ echo [START] %~1 at %RUN_START%
 exit /b 0
 :stop_timer
 set "RUN_END=%TIME%"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=[datetime]::ParseExact('%RUN_START%','HH:mm:ss.ff',$null);$e=[datetime]::ParseExact('%RUN_END%','HH:mm:ss.ff',$null);if($e -lt $s){$e=$e.AddDays(1)};$d=$e-$s;Write-Host ('[DONE] '+('%~1')+' | elapsed '+('{0:00}:{1:00}:{2:00}' -f [int]$d.TotalHours,$d.Minutes,$d.Seconds)) -ForegroundColor Green"
+rem TIME has a leading space before single-digit hours. Parse as TimeSpan after trimming.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=[timespan]::Parse($env:RUN_START.Trim());$e=[timespan]::Parse($env:RUN_END.Trim());if($e -lt $s){$e=$e.Add([timespan]::FromDays(1))};$d=$e-$s;Write-Host ('[DONE] '+('%~1')+' | elapsed '+('{0:00}:{1:00}:{2:00}' -f [int]$d.TotalHours,$d.Minutes,$d.Seconds)) -ForegroundColor Green"
 exit /b 0
 :activate
 if not exist venv\Scripts\activate.bat (echo Missing venv. Create it and install requirements.&pause&exit /b 1)
