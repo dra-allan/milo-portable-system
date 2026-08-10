@@ -1,39 +1,28 @@
-# ---------------------------------------------------------------------------
-# Ranking Shorts pipeline - topic + style configuration
-#
-# One entry per topic queue. `--mode auto` walks the queue, picks the topic
-# with the oldest last_run (tracked in the DB, not here) and builds one video.
-# ---------------------------------------------------------------------------
+# Ranking Shorts pipeline configuration.
+# Runtime files are outside this repo; set VIDEO_FACTORY_ROOT in config/.env
+# to the same shared parent used by the other video pipelines.
 
 defaults:
   clips_per_video: 5
-  # Per-clip trim window. Anything outside this is re-cut or dropped: pacing
-  # is the whole game, a slow clip gets swiped.
   min_clip_seconds: 2.5
   max_clip_seconds: 9.0
   target_total_seconds: 45
-  hard_max_total_seconds: 59      # stay inside the Shorts window
-
-  # Sourcing
-  candidates_per_topic: 40        # how many raw candidates to pull before vetting
-  max_source_duration: 900        # ignore long-form uploads, we want raw clips
+  hard_max_total_seconds: 59
+  candidates_per_topic: 40
+  max_source_duration: 900
   min_source_views: 500
-
-  # Vetting thresholds (see src/vetting.py for what each one measures)
-  max_words_per_second: 0.45      # above this the clip has commentary -> reject
-  max_music_confidence: 0.55      # above this it has a music bed -> reject
-  max_text_coverage: 0.18         # fraction of frame covered by on-screen text
-  blur_detected_text: true        # auto-mask what OCR finds instead of rejecting
-  min_motion_score: 0.10          # a static clip is a dead clip
-  phash_distance: 6               # <= this against a used clip == duplicate
-
-  # Style
+  max_words_per_second: 0.45
+  max_music_confidence: 0.55
+  max_text_coverage: 0.18
+  blur_detected_text: true
+  min_motion_score: 0.10
+  phash_distance: 6
   rank_colors:
-    1: "0xFFD700"   # gold
-    2: "0xC0C0C0"   # silver
-    3: "0xCD7F32"   # bronze
-    4: "0x1E90FF"   # blue
-    5: "0x1E90FF"   # blue
+    1: "0xFFD700"
+    2: "0xC0C0C0"
+    3: "0xCD7F32"
+    4: "0x1E90FF"
+    5: "0x1E90FF"
   rank_fill: "white"
   rank_outline: "black"
   accent_color: "0x1E90FF"
@@ -43,27 +32,20 @@ defaults:
   rank_y: 760
   clip_title_y: 1180
   video_title_y: 300
-
-  # Motion
-  transition: zoomin              # xfade name; 'zoomin' is the CapCut pull-in
+  transition: zoomin
   transition_duration: 0.28
-  hook_zoom: true                 # zoom-in on the opening clip
+  hook_zoom: true
   hook_zoom_amount: 1.18
   hook_zoom_frames: 24
-
-  # Audio
-  vo_offset: 0.4                  # VO starts this far into its clip
+  vo_offset: 0.4
   vo_gain: 1.6
-  duck_threshold: 0.05            # source audio ducks under the VO
+  duck_threshold: 0.05
   duck_ratio: 8
   sfx_gain: 0.9
   swoosh_gain: 0.5
   music_enabled: false
   music_volume: 0.12
 
-# SFX are matched by keyword against the action the vetting pass detected and
-# the generated clip title. First match wins; `swoosh` is reserved for
-# transitions and the hook.
 sfx_map:
   swoosh: swoosh.mp3
   slip: cartoon_slip.mp3
@@ -80,16 +62,16 @@ sfx_map:
 topics:
   fishing_moments:
     title: "TOP {n} FISHING MOMENTS"
+    # Same discovery shape as the Shorts pipeline: yt-dlp searches YouTube
+    # and walks configured YouTube channel video feeds. No TikTok/Instagram
+    # source is enabled in the shipped config.
     queries:
       - "funny fishing moments"
       - "fishing fails"
-      - "big fish catch reaction"
-    # yt-dlp handles these directly. YouTube search is the autonomous path;
-    # TikTok/IG have no reliable search endpoint, so list creators or hashtag
-    # pages explicitly and they get walked for new uploads each run.
-    extra_sources:
-      - "https://www.tiktok.com/tag/fishingfails"
-    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "tutorial", "asmr", "music"]
+      - "big fish catch"
+    channels: []
+    extra_sources: []
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "tutorial", "asmr", "music", "podcast", "commentary"]
     channel: ranking_fishing
     tags: ["fishing", "fishingfails", "funnymoments", "top5", "shorts"]
 
@@ -98,7 +80,9 @@ topics:
     queries:
       - "funny animal moments"
       - "animal fails"
+      - "animal caught on camera"
+    channels: []
     extra_sources: []
-    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music"]
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary"]
     channel: ranking_animals
     tags: ["animals", "funnyanimals", "top5", "shorts"]
