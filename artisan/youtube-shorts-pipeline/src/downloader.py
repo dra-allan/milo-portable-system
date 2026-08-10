@@ -88,7 +88,9 @@ than by arithmetic.
 
 import json
 import os
+import random
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -125,6 +127,32 @@ MIN_AUDIO_BYTES = 8 * 1024
 
 # Filenames are "<video_id>__<safe title>.<ext>" so the ID survives renaming.
 ID_SEPARATOR = '__'
+
+# Exception classes whose message indicates a transient network fault rather
+# than a real channel problem. yt-dlp wraps socket errors in urllib/YoutubeDLE,
+# so we match on message text as well as type.
+_TRANSIENT_MARKERS = (
+    'getaddrinfo', 'name or service not known', 'temporary failure in name',
+    'nodename nor servname', '[errno 1100', '[errno -2]', '[errno 11001]',
+    'timed out', 'timeout', 'connection reset', 'connection refused',
+    'connection aborted', 'remote end closed', 'unexpected eof',
+    'broken pipe', 'max retries exceeded', 'network is unreachable',
+    'no route to host', 'ssl', 'certificate verify failed',
+    'rate limit', '429', '502', '503', '504', 'too many requests',
+)
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    """True if the exception is a network/transient fault, not a channel issue."""
+    import urllib.error
+    import urllib.request
+    # Common transient types, regardless of message.
+    if isinstance(exc, (socket.timeout, TimeoutError, ConnectionError,
+                        ConnectionResetError, ConnectionRefusedError,
+                        ConnectionAbortedError, urllib.error.URLError)):
+        return True
+    text = str(exc).lower()
+    return any(marker in text for marker in _TRANSIENT_MARKERS)
 
 # Subdirectories of temp_dir. Keeping audio and clip sections apart from full
 # downloads means find_local_video() can never mistake a 40 MB audio file or a
@@ -1114,13 +1142,43 @@ class YouTubeDownloader:
             'playlistend': max(1, int(max_results)),
         })
 
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-        except Exception as exc:
-            # A channel that can't list is either dead or temporarily broken.
-            # Remember it so the next sweep is quiet; it's re-probed after the
-            # cooldown and self-heals if the channel comes back.
+        # Transient network faults (DNS resolution, timeouts, connection
+        # resets, rate limiting) are NOT channel failures. Marking the channel
+        # dead on one of these is how a single internet hiccup can take every
+        # source channel offline for the whole 14-day cooldown: each listing in
+        # a sweep fails with the same socket error, each one gets cached, and
+        # discovery silently returns zero candidates for weeks. Only
+        # channel-level failures (404 / no such handle / no videos tab / wrong
+        # ID) are worth remembering.
+        transient = _is_transient_error(exc)
+        if transient:
+            # yt-dlp already retries internally (extractor_retries); give the
+            # listing one more bounded attempt here, then back off, but never
+            # cache it as dead. The sweep keeps going and the next sweep
+            # retries cleanly.
+            for attempt in range(1, getattr(config, 'channel_listing_retries', 2) + 1):
+                wait = min(30.0, 2 ** attempt + random.uniform(0, 1))
+                logger.warning(
+                    "Channel listing for %s hit a transient network error: %s "
+                    "(retry %d/%d in %.1fs)",
+                    url, exc, attempt, getattr(config, 'channel_listing_retries', 2), wait,
+                )
+                time.sleep(wait)
+                try:
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(url, download=False)
+                    break
+                except Exception as retry_exc:
+                    exc = retry_exc
+            else:
+                logger.warning(
+                    "Channel listing failed for %s after retries (transient "
+                    "network error, NOT cached dead): %s", url, exc,
+                )
+                return []
+        else:
+            # Real channel-level failure: dead ID, no videos tab, 404 handle.
+            # Cache it so the next sweep is quiet; re-probed after the cooldown.
             self._mark_channel_dead(channel_id)
             logger.warning(
                 "Channel listing failed for %s: %s (cached as dead for %d days)",
