@@ -72,7 +72,7 @@ def _candidate(entry:Dict,info:Dict,seen:set,topic_cfg:Dict,db)->Optional[Dict]:
  if duration and duration<min_duration:
   db.mark_rejected(url,topic_cfg['name'],'too_short');return None
  if views and views<min_views:return None
- return {'url':url,'source_id':vid,'title':title,'duration':duration,'views':views,'uploader':entry.get('uploader') or entry.get('channel') or '','extractor':entry.get('ie_key') or info.get('extractor') or ''}
+ return {'url':url,'source_id':vid,'title':title,'duration':duration,'views':views,'uploader':entry.get('uploader') or entry.get('channel') or '','extractor':entry.get('ie_key') or info.get('extractor') or '','source_kind':topic_cfg.get('source_kind') or ''}
 
 def discover(topic_cfg:Dict,db,limit:Optional[int]=None)->List[Dict]:
  limit=limit or int(config.get('candidates_per_topic',40))
@@ -111,8 +111,6 @@ def download(candidate:Dict,dest_dir:Optional[Path]=None)->Optional[Path]:
  template=str(dest_dir/f'{stem}.%(ext)s')
  source_kind=str(candidate.get('source_kind') or '')
  if source_kind == 'youtube_shorts':
-  # Shorts are already the unit we need. Keep the source tiny: 360p is enough
-  # for motion/OCR/phash vetting, and the accepted source is only 15-60s.
   height=int(config.get('shorts_download_height',360) or 360)
   max_bytes=int(config.get('shorts_max_download_bytes',50*1024*1024) or 0)
  else:
