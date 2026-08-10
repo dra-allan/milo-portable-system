@@ -1,0 +1,18 @@
+{
+  "default_voice": "Puck",
+  "output_format": "mp3",
+  "model": "gemini-2.5-flash-preview-tts",
+  "style_prompt": "Read this as a punchy, deadpan short-form video narrator. Casual, confident, slightly amused. Do not add words:",
+  "max_workers": 3,
+  "rpm_per_key": 3,
+  "max_concurrent_per_key": 1,
+  "request_timeout": 90,
+  "backoff_sequence": [15, 30, 60, 120],
+  "key_cooldown": 35,
+  "max_quota_attempts": 10,
+  "max_network_attempts": 8,
+  "network_backoff": [2, 4, 8, 15, 30, 45, 60, 90],
+  "final_sweep_pause": 30,
+  "final_sweep_attempts": 2,
+  "base_delay": 0.0
+}
