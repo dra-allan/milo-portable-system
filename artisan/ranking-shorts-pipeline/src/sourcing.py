@@ -123,5 +123,6 @@ def download(candidate:Dict,dest_dir:Optional[Path]=None)->Optional[Path]:
  if not info:return None
  for path in sorted(dest_dir.glob(f'{stem}.*')):
   if path.suffix.lower() in ('.mp4','.mkv','.webm','.mov') and path.stat().st_size>64*1024:
+   if re.search(r'\.f\d+\.', path.name):continue
    candidate['local_path']=str(path);candidate['title']=info.get('title') or candidate.get('title');logger.info('SOURCE_READY id=%s size_mb=%.1f height_cap=%d kind=%s',candidate.get('source_id'),path.stat().st_size/1048576,height,source_kind or 'longform');return path
  logger.warning('SOURCE_DOWNLOAD_EMPTY id=%s',candidate.get('source_id'));return None
