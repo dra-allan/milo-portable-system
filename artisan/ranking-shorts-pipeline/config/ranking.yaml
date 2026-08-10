@@ -2,13 +2,6 @@
 # Runtime files are outside this repo; set VIDEO_FACTORY_ROOT in config/.env
 # to the same shared parent used by the other video pipelines.
 
-# NOTE ON `defaults:` -- it is GLOBAL, not per-topic.
-# RankingConfig.topic() (src/config.py) returns the raw topic dict with five
-# setdefault calls and never merges `defaults`, and config.get() reads
-# `defaults` only. So there is no such thing as a topic-level override:
-# changing max_music_confidence for gta6_countdown also changes it for
-# fishing_moments and animal_moments. Design around the values below rather
-# than loosening them for one topic.
 defaults:
   clips_per_video: 5
   min_clip_seconds: 2.5
@@ -95,25 +88,35 @@ topics:
     tags: ["animals", "funnyanimals", "top5", "shorts"]
 
   # -------------------------------------------------------------------------
-  # gta6_countdown -- Lane A of the GTA plan (see
-  # artisan/youtube-shorts-pipeline/PLAN_GTA_NICHE.md).
+  # gta6_countdown  --  Lane A of PLAN_GTA_NICHE.md (the monetisable lane).
   #
-  # This is the lane that carries volume AND the lane that survives YPP
-  # review. Original TTS narration over sourced b-roll, assembled as a
-  # countdown, is genuinely transformed output. The shorts-pipeline clipper
-  # (Lane B) is not, and a Lane-B-only catalogue should never be submitted for
-  # monetisation.
+  # Original TTS narration over sourced b-roll, assembled as a countdown.
+  # This is the lane that survives YPP review: youtube-shorts-pipeline output
+  # is a straight recut of one source, which is reused content with no
+  # transformation. This one writes its own script and speaks it.
   #
-  # Query set deliberately asks for BREAKDOWN and ANALYSIS footage, never raw
-  # trailer footage. Rockstar trailers are wall-to-wall score and would be
-  # rejected by the global max_music_confidence: 0.55 -- and that value cannot
-  # be overridden per-topic (see the note on `defaults:` above). Breakdown
-  # footage has a person talking over it and clears the gate fine.
+  # THREE CONSTRAINTS FROM `defaults:` THAT SHAPE THE QUERIES BELOW.
+  # `defaults` is GLOBAL -- RankingConfig.topic() never merges it, and
+  # config.get() reads self.defaults only, so there is no topic-level
+  # override. Changing any of these for GTA also changes it for
+  # fishing_moments and animal_moments. So we design around them:
   #
-  # Watch on the first run: max_text_coverage 0.18 + blur_detected_text will
-  # bin a lot of GTA news footage (on-screen text, channel watermarks). If the
-  # vet stage starves the render, raise candidates_per_topic -- but note that
-  # is global too, so the extra sourcing cost lands on fishing and animals.
+  #   max_music_confidence: 0.55 -- rejects wall-to-wall-score footage, which
+  #     means official Rockstar trailer b-roll cannot pass vetting. The
+  #     queries therefore ask for BREAKDOWN and ANALYSIS footage (someone
+  #     talking over the trailer), never the trailer itself.
+  #   max_text_coverage: 0.18 + blur_detected_text -- GTA news footage is
+  #     plastered in on-screen text and watermarks, so the reject rate here
+  #     will run high. collect_clips() gives up after max(12, needed*4)
+  #     rejects, so a starved render means raising candidates_per_topic --
+  #     and that cost lands on all three topics.
+  #   max_source_duration: 900 -- fine, GTA breakdowns run 8-15 min.
+  #
+  # Uploads route to youtube_token_ranking_gta6_countdown.json via the
+  # `channel:` key (publisher.RankingPublisher builds the token filename from
+  # it). There is no `auth` CLI mode in this pipeline -- pre-authenticate with
+  #   python -c "from src.publisher import auth; print(auth('gta6_countdown'))"
+  # or the first build will stop mid-run to open a browser.
   # -------------------------------------------------------------------------
   gta6_countdown:
     title: "TOP {n} GTA 6 DETAILS"
@@ -126,10 +129,8 @@ topics:
       - "gta 6 vs gta 5 comparison"
     channels: []
     extra_sources: []
-    # "leaked footage" / "leaked gameplay" / "leaked build" are the hard line.
-    # Rockstar tolerates coverage -- it is free marketing -- but aggressively
-    # nukes leaked-build videos. Discussing leaks is fine; hosting the footage
-    # is channel-ending.
+    # "leaked build"/"leaked footage" is the one hard line with Rockstar:
+    # discussing a leak is fine, hosting the footage is channel-ending.
     negative_keywords: ["leaked footage", "leaked gameplay", "leaked build", "fan made", "concept", "mod showcase", "reaction", "livestream", "podcast", "ai generated"]
     channel: gta6_countdown
     tags: ["gta6", "gta6trailer", "leonida", "gtavi", "shorts"]
