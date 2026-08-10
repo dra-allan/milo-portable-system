@@ -47,10 +47,12 @@ logger = setup_logger(__name__)
 def _quote(path) -> str:
     """Quote a filesystem path for a filter option value.
 
-    Single quotes protect the colon in a Windows path. Verified against real
-    FFmpeg: an unquoted ``C:/...`` is parsed as an option boundary.
+    FFmpeg's filtergraph parser strips single quotes before drawtext's own
+    option splitter runs, so a bare ``C:/...`` still breaks on the colon.
+    The verified form is single quotes AND a backslash-escaped colon:
+    ``'C\\:/Windows/Fonts/impact.ttf'``.
     """
-    return "'" + str(path).replace('\\', '/') + "'"
+    return "'" + str(path).replace('\\', '/').replace(':', '\\:') + "'"
 
 
 def write_text_file(work_dir: Path, name: str, text: str) -> Path:
