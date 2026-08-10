@@ -37,9 +37,16 @@ if "%choice%"=="8" goto folders
 if "%choice%"=="9" goto cleanup_uploaded
 if "%choice%"=="10" goto done
 goto main
-:activate
-if not exist venv\Scripts\activate.bat (echo Missing venv. Create it and install requirements.&pause&exit /b 1)
-call venv\Scripts\activate.bat
+:ensure_env
+if not exist venv\Scripts\python.exe (
+ echo No virtual environment found. Creating it now...
+ python -m venv venv
+ if errorlevel 1 (echo Could not create venv.&pause&exit /b 1)
+ echo Installing ranking dependencies. First run may take a few minutes...
+ venv\Scripts\python.exe -m pip install --upgrade pip
+ venv\Scripts\python.exe -m pip install -r requirements.txt
+ if errorlevel 1 (echo Dependency install failed.&pause&exit /b 1)
+)
 exit /b 0
 :start_timer
 set "RUN_START=%TIME%"
@@ -51,26 +58,29 @@ set "RUN_END=%TIME%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=[datetime]::ParseExact('%RUN_START%','HH:mm:ss.ff',$null);$e=[datetime]::ParseExact('%RUN_END%','HH:mm:ss.ff',$null);if($e -lt $s){$e=$e.AddDays(1)};$d=$e-$s;Write-Host ('[DONE] '+('%~1')+' | elapsed '+('{0:00}:{1:00}:{2:00}' -f [int]$d.TotalHours,$d.Minutes,$d.Seconds)) -ForegroundColor Green"
 echo.
 exit /b 0
+:python
+venv\Scripts\python.exe %*
+exit /b %errorlevel%
 :build_private
 call :start_timer "build no-upload"
-call :activate
-python -m src.main --mode once --topic "%RANKING_TOPIC%" --no-upload
-python cleanup_runtime.py
+call :ensure_env
+call :python -m src.main --mode once --topic "%RANKING_TOPIC%" --no-upload
+call :python cleanup_runtime.py
 call :stop_timer "build no-upload"
 pause
 goto main
 :build_upload
 call :start_timer "build and upload"
-call :activate
-python -m src.main --mode once --topic "%RANKING_TOPIC%"
-python cleanup_runtime.py
+call :ensure_env
+call :python -m src.main --mode once --topic "%RANKING_TOPIC%"
+call :python cleanup_runtime.py
 call :stop_timer "build and upload"
 pause
 goto main
 :source
 call :start_timer "source and vet"
-call :activate
-python -m src.main --mode source --topic "%RANKING_TOPIC%"
+call :ensure_env
+call :python -m src.main --mode source --topic "%RANKING_TOPIC%"
 call :stop_timer "source and vet"
 pause
 goto main
@@ -78,23 +88,23 @@ goto main
 set /p plan="Plan JSON path, or BACK: "
 if /i "%plan%"=="BACK" goto main
 call :start_timer "assemble plan"
-call :activate
-python -m src.main --mode assemble --plan "%plan%"
-python cleanup_runtime.py
+call :ensure_env
+call :python -m src.main --mode assemble --plan "%plan%"
+call :python cleanup_runtime.py
 call :stop_timer "assemble plan"
 pause
 goto main
 :upload
 call :start_timer "upload pending"
-call :activate
-python -m src.main --mode upload
+call :ensure_env
+call :python -m src.main --mode upload
 call :stop_timer "upload pending"
 pause
 goto main
 :test
 call :start_timer "environment test"
-call :activate
-python -m src.main --mode test
+call :ensure_env
+call :python -m src.main --mode test
 call :stop_timer "environment test"
 pause
 goto main
@@ -110,8 +120,8 @@ start "Ranking output" "%RANKING_RUNTIME%\output"
 goto main
 :cleanup_uploaded
 call :start_timer "delete uploaded local videos"
-call :activate
-python cleanup_uploaded.py
+call :ensure_env
+call :python cleanup_uploaded.py
 call :stop_timer "delete uploaded local videos"
 pause
 goto main
