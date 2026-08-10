@@ -1,5 +1,5 @@
 # Ranking Shorts pipeline configuration.
-# Runtime files are outside this repo; set VIDEO_FACTORY_ROOT in config/.env
+# Runtime files are outside the repo; set VIDEO_FACTORY_ROOT in config/.env
 # to the same shared parent used by the other video pipelines.
 
 defaults:
@@ -8,7 +8,6 @@ defaults:
   max_clip_seconds: 9.0
   target_total_seconds: 45
   hard_max_total_seconds: 59
-  # Broad discovery pool; sourcing.py caps actual full-video download attempts.
   candidates_per_topic: 30
   max_download_attempts: 6
   max_download_height: 480
@@ -19,7 +18,9 @@ defaults:
   max_music_confidence: 0.55
   max_text_coverage: 0.18
   blur_detected_text: true
-  min_motion_score: 0.10
+  # scene_profile is scene-change density, not optical-flow motion. 0.10 was
+  # rejecting ordinary single-shot moments and is why the run burned hours.
+  min_motion_score: 0.02
   phash_distance: 6
   rank_colors:
     1: "0xFFD700"
@@ -126,13 +127,7 @@ topics:
 
   gta6_countdown:
     title: "TOP {n} GTA 6 DETAILS"
-    queries:
-      - "gta 6 trailer breakdown details"
-      - "gta 6 extended look analysis"
-      - "gta 6 map leonida breakdown"
-      - "gta 6 details you missed"
-      - "gta 6 confirmed features"
-      - "gta 6 vs gta 5 comparison"
+    queries: ["gta 6 trailer breakdown details", "gta 6 extended look analysis", "gta 6 map leonida breakdown", "gta 6 details you missed", "gta 6 confirmed features", "gta 6 vs gta 5 comparison"]
     channels: []
     extra_sources: []
     max_download_attempts: 6
