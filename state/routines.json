@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786346108.3733838,
+  "updated_at": 1786346471.2955754,
   "routines": [
     {
       "name": "curate-skills",
@@ -77,11 +77,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786331706.5933547,
-      "last_status": "skipped",
+      "last_run": 1786346408.4642477,
+      "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     91\n  notes        8\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1786346408.3717294,
-      "runs": 465,
+      "next_run": 1786346741.8444707,
+      "runs": 466,
       "failures": 22
     },
     {
@@ -104,11 +104,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786331718.0668714,
-      "last_status": "skipped",
+      "last_run": 1786346441.8954768,
+      "last_status": "ok",
       "last_output": "[ok] vault clean, nothing to commit",
-      "next_run": 1786346408.3717294,
-      "runs": 460,
+      "next_run": 1786346751.2737932,
+      "runs": 461,
       "failures": 65
     },
     {
@@ -159,12 +159,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1786248008.6788456,
-      "last_status": "ok",
-      "last_output": "\n> milo · nvidia/nemotron-3-ultra-550b-a55b\n\n⚙ milo_mem_recall {\"query\":\"followups due today website-flip\",\"limit\":10}\n! permission requested: external_directory (C:\\Users\\user\\Desktop\\Milo Workspace\\website-flip\\*); auto-rejecting\n✗ cd \"C:\\Users\\user\\Desktop\\Milo Workspace\\website-flip\" && python followups.py due failed\nError: The user rejected permission to use this specific tool call.",
-      "next_run": 1786334400.0,
-      "runs": 4,
-      "failures": 0
+      "last_run": 1786346451.3018842,
+      "last_status": "failed (1)",
+      "last_output": "Not logged in · Please run /login",
+      "next_run": 1786420800.0,
+      "runs": 5,
+      "failures": 1
     },
     {
       "name": "persona-refresh",
