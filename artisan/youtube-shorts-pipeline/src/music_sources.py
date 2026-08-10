@@ -2,6 +2,11 @@
 
 Uses yt-dlp (imported via Python library) to fetch copyright-free INSTRUMENTAL
 background music beds (no vocals) from YouTube / NCS sources into config.music_dir.
+
+HARD RULES:
+- Max track duration: 600 seconds (10 minutes). Anything longer is a stream/compilation.
+- Max file size: 50 MB. Safety net against multi-hour lofi streams.
+- Instrumental only: reject titles with vocals/features/lyrics.
 """
 
 import os
@@ -20,15 +25,25 @@ except ImportError:  # pragma: no cover
 
 logger = setup_logger(__name__)
 
-# Search queries & playlists strictly targeting INSTRUMENTAL / NO VOCALS background music
+# ── Duration & size gates ──────────────────────────────────────────
+MAX_TRACK_DURATION_SECS = 600   # 10 min — real NCS tracks are 2-5 min
+MAX_FILESIZE_BYTES = 50_000_000  # 50 MB — catches anything that slipped past duration
+
+# Search queries targeting SHORT, INDIVIDUAL instrumental tracks (not compilations/streams)
 NCS_MUSIC_SOURCES = [
-    "https://www.youtube.com/results?search_query=NoCopyrightSounds+instrumental+background+music",
-    "https://www.youtube.com/results?search_query=NCS+instrumental+no+vocals+background+music",
-    "https://www.youtube.com/results?search_query=copyright+free+lofi+instrumental+background+music",
-    "https://www.youtube.com/results?search_query=copyright+free+ambient+instrumental+background+music",
+    "ytsearch15:NCS instrumental no copyright short track",
+    "ytsearch15:copyright free lofi instrumental short beat",
+    "ytsearch15:royalty free ambient background music short",
+    "ytsearch15:NCS release instrumental 2024",
+    "ytsearch15:free instrumental beat no vocals background",
 ]
 
 MUSIC_EXTENSIONS = ('.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.opus')
+
+
+def _safe_str(s: str) -> str:
+    """Strip non-ASCII characters that crash cp1252 Windows terminals."""
+    return s.encode('ascii', errors='replace').decode('ascii')
 
 
 def get_existing_music_tracks(music_dir: str | Path) -> List[Path]:
@@ -46,19 +61,28 @@ def get_existing_music_tracks(music_dir: str | Path) -> List[Path]:
 def is_instrumental_title(title: str) -> bool:
     """Return True if title indicates instrumental / background audio suitable for voiceovers."""
     low = title.lower()
-    # Reject titles that explicitly mention vocals or features unless marked instrumental
-    if 'instrumental' in low or 'no vocal' in low or 'bgm' in low or 'background music' in low or 'lofi' in low or 'beat' in low:
-        return True
-    if 'feat.' in low or 'ft.' in low or 'vocals' in low or 'lyric' in low:
-        return False
-    return True  # default pass for general NCS instrumental queries
+    # Hard reject: anything clearly vocal
+    vocal_signals = ['feat.', 'ft.', 'vocals', 'lyric', 'lyrics', 'singing',
+                     'official video', 'music video', 'live performance']
+    for sig in vocal_signals:
+        if sig in low:
+            return False
+    # Hard reject: compilations / mixes / streams (they bypass duration filter at metadata stage)
+    compilation_signals = ['hour', 'hours', 'compilation', 'mix 20', 'mix 30',
+                           'mega mix', '1 hr', '2 hr', '3 hr', 'live stream',
+                           'study music', '24/7']
+    for sig in compilation_signals:
+        if sig in low:
+            return False
+    # Positive signals (not required, but boost confidence)
+    return True
 
 
 def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, max_new_tracks: int = 5) -> List[Path]:
     """Ensure music_dir has at least `min_tracks` instrumental tracks available.
 
     If fewer than `min_tracks` exist, uses yt-dlp to download instrumental audio
-    from NCS/copyright-free sources.
+    from NCS/copyright-free sources. Enforces duration and filesize limits.
     """
     target_dir = Path(music_dir or getattr(config, 'music_dir', 'data/music'))
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -69,7 +93,7 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
         return existing
 
     logger.info(
-        "Music dir %s has only %d instrumental track(s) (target min %d). Auto-syncing instrumental music...",
+        "Music dir %s has only %d instrumental track(s) (target min %d). Auto-syncing...",
         target_dir, len(existing), min_tracks
     )
 
@@ -81,32 +105,32 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
 
     clients = [c.strip() for c in (os.getenv('YTDLP_PLAYER_CLIENTS') or 'android_vr,ios,web_safari').split(',') if c.strip()]
 
-    source_url = random.choice(NCS_MUSIC_SOURCES)
+    source_query = random.choice(NCS_MUSIC_SOURCES)
 
-    opts = {
+    # Phase 1: list candidates (metadata only, no download)
+    list_opts = {
         'format': 'bestaudio/best',
         'extract_flat': 'in_playlist',
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'playlistend': 30,
         'extractor_args': {'youtube': {'player_client': clients}},
     }
 
     cookies_file = (os.getenv('YTDLP_COOKIES_FILE') or '').strip()
     if cookies_file and Path(cookies_file).exists():
-        opts['cookiefile'] = cookies_file
+        list_opts['cookiefile'] = cookies_file
 
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(source_url, download=False)
+        with yt_dlp.YoutubeDL(list_opts) as ydl:
+            info = ydl.extract_info(source_query, download=False)
     except Exception as exc:
-        logger.warning("Failed to list music tracks from %s: %s", source_url, exc)
+        logger.warning("Failed to list music tracks from %s: %s", source_query, exc)
         return existing
 
     entries = (info or {}).get('entries') or []
     if not entries:
-        logger.warning("No entries found in music source %s", source_url)
+        logger.warning("No entries found in music source: %s", source_query)
         return existing
 
     random.shuffle(entries)
@@ -123,9 +147,15 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
 
         raw_title = entry.get('title') or vid
 
-        # Instrumental check
+        # Duration gate (metadata-level, before downloading)
+        duration = entry.get('duration')
+        if duration and duration > MAX_TRACK_DURATION_SECS:
+            logger.debug("Skipping too-long track (%ds): %s", duration, _safe_str(raw_title))
+            continue
+
+        # Instrumental/title check
         if not is_instrumental_title(raw_title):
-            logger.debug("Skipping vocal/non-instrumental track: %s", raw_title)
+            logger.debug("Skipping vocal/compilation track: %s", _safe_str(raw_title))
             continue
 
         safe_title = re.sub(r'[^\w\s-]', '', raw_title)[:40].strip()
@@ -135,11 +165,18 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
         if out_path.exists() and out_path.stat().st_size > 0:
             continue
 
+        # Phase 2: download individual track with hard duration + size limits
         dl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': str(target_dir / f"ncs_instrumental_{vid}_%(title).40s.%(ext)s"),
             'quiet': True,
             'no_warnings': True,
+            # ── HARD SAFETY GATES ──
+            'match_filter': yt_dlp.utils.match_filter_func(
+                f'duration <= {MAX_TRACK_DURATION_SECS}'
+            ),
+            'max_filesize': MAX_FILESIZE_BYTES,
+            # ── Post-processing ──
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
@@ -152,17 +189,25 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
 
         video_url = f"https://www.youtube.com/watch?v={vid}"
         try:
-            logger.info("Downloading instrumental background bed: %s (%s)", raw_title, vid)
+            logger.info("Downloading instrumental bed: %s (%s)", _safe_str(raw_title), vid)
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
                 ydl.download([video_url])
             downloaded += 1
-            time.sleep(1.0)
+            time.sleep(1.5)
         except Exception as exc:
             logger.warning("Failed downloading music track %s: %s", vid, exc)
             continue
 
+    # Clean up any partial .part files left by interrupted downloads
+    for p in target_dir.glob('*.part'):
+        try:
+            p.unlink()
+            logger.debug("Cleaned up partial download: %s", p.name)
+        except OSError:
+            pass
+
     updated = get_existing_music_tracks(target_dir)
-    logger.info("Music auto-sync completed: %d total instrumental tracks in %s", len(updated), target_dir)
+    logger.info("Music auto-sync done: %d instrumental tracks in %s", len(updated), target_dir)
     return updated
 
 
