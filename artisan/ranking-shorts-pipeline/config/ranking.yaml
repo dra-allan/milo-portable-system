@@ -8,7 +8,11 @@ defaults:
   max_clip_seconds: 9.0
   target_total_seconds: 45
   hard_max_total_seconds: 59
-  candidates_per_topic: 40
+  # Broad discovery pool; sourcing.py caps actual full-video download attempts.
+  candidates_per_topic: 30
+  max_download_attempts: 6
+  max_download_height: 480
+  max_download_bytes: 100000000
   max_source_duration: 900
   min_source_views: 500
   max_words_per_second: 0.45
@@ -62,29 +66,64 @@ sfx_map:
 topics:
   fishing_moments:
     title: "TOP {n} FISHING MOMENTS"
-    queries:
-      - "funny fishing moments"
-      - "fishing fails"
-      - "big fish catch"
+    queries: ["single fishing fail caught on camera", "unexpected fishing catch", "funny fishing moment caught"]
     channels: []
     extra_sources: []
+    max_download_attempts: 6
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "tutorial", "asmr", "music", "podcast", "commentary"]
-    channel: ranking_fishing
+    channel: NXS
     tags: ["fishing", "fishingfails", "funnymoments", "top5", "shorts"]
 
   animal_moments:
     title: "TOP {n} ANIMAL MOMENTS"
-    queries:
-      - "funny animal moments"
-      - "animal fails"
-      - "animal caught on camera"
+    queries: ["single funny animal moment caught on camera", "animal fails caught on camera", "unexpected animal moment"]
     channels: []
     extra_sources: []
+    max_download_attempts: 6
     negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary"]
-    channel: ranking_animals
+    channel: NXS
     tags: ["animals", "funnyanimals", "top5", "shorts"]
 
-  # Original narration over sourced b-roll. This is the monetisable lane.
+  sports_moments:
+    title: "TOP {n} SPORTS MOMENTS"
+    queries: ["sports moment caught on camera", "unexpected sports fail", "crazy sports moment"]
+    channels: []
+    extra_sources: []
+    max_download_attempts: 6
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "full game"]
+    channel: NXS
+    tags: ["sports", "sportsfails", "sportsmoments", "top5", "shorts"]
+
+  wildlife_moments:
+    title: "TOP {n} WILDLIFE MOMENTS"
+    queries: ["wildlife moment caught on camera", "unexpected animal encounter", "wild animal close call"]
+    channels: []
+    extra_sources: []
+    max_download_attempts: 6
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "documentary full"]
+    channel: NXS
+    tags: ["wildlife", "nature", "animals", "top5", "shorts"]
+
+  satisfying_processes:
+    title: "TOP {n} SATISFYING MOMENTS"
+    queries: ["satisfying process caught on camera", "oddly satisfying real process", "perfect machine moment"]
+    channels: []
+    extra_sources: []
+    max_download_attempts: 6
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "asmr"]
+    channel: NXS
+    tags: ["satisfying", "oddlysatisfying", "process", "top5", "shorts"]
+
+  street_moments:
+    title: "TOP {n} STREET MOMENTS"
+    queries: ["unexpected street moment caught on camera", "funny public moment", "street performance surprise"]
+    channels: []
+    extra_sources: []
+    max_download_attempts: 6
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music video", "podcast", "commentary", "livestream"]
+    channel: NXS
+    tags: ["street", "caughtoncamera", "funny", "top5", "shorts"]
+
   gta6_countdown:
     title: "TOP {n} GTA 6 DETAILS"
     queries:
@@ -96,7 +135,7 @@ topics:
       - "gta 6 vs gta 5 comparison"
     channels: []
     extra_sources: []
+    max_download_attempts: 6
     negative_keywords: ["leaked footage", "leaked gameplay", "leaked build", "fan made", "concept", "mod showcase", "reaction", "livestream", "podcast", "ai generated"]
-    # Publisher token: youtube_token_ranking_NXS.json
     channel: NXS
     tags: ["gta6", "gta6trailer", "leonida", "gtavi", "shorts"]
