@@ -481,6 +481,12 @@ class Config:
         # cache lives in data/dead_channels.json.
         self.dead_channel_cooldown_days = self._int(
             'DEAD_CHANNEL_COOLDOWN_DAYS', 14, minimum=1)
+        # Extra bounded retries for a channel listing that fails with a
+        # TRANSIENT network error (DNS, timeout, reset, rate limit). These are
+        # never cached as dead -- see downloader._is_transient_error. 0 disables
+        # the extra retries (yt-dlp's own extractor_retries still applies).
+        self.channel_listing_retries = self._int(
+            'CHANNEL_LISTING_RETRIES', 2, minimum=0)
 
         for d in (self.temp_dir, self.data_dir, self.logs_dir, self.shorts_dir):
             d.mkdir(parents=True, exist_ok=True)
