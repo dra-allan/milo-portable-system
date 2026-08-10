@@ -25,7 +25,8 @@ echo 4. Upload existing Shorts
 echo 5. Process library
 echo 6. Test mode
 echo 7. Stats report
-echo 8. Exit
+echo 8. Delete already-uploaded local videos
+echo 9. Exit
 echo.
 set /p choice="Select: "
 if "%choice%"=="1" goto full_sweep
@@ -35,7 +36,8 @@ if "%choice%"=="4" goto upload
 if "%choice%"=="5" goto library
 if "%choice%"=="6" goto test
 if "%choice%"=="7" goto stats
-if "%choice%"=="8" goto done
+if "%choice%"=="8" goto cleanup_uploaded
+if "%choice%"=="9" goto done
 goto main
 :start_timer
 set "RUN_START=%TIME%"
@@ -45,7 +47,6 @@ exit /b 0
 :stop_timer
 set "RUN_END=%TIME%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=[datetime]::ParseExact('%RUN_START%','HH:mm:ss.ff',$null);$e=[datetime]::ParseExact('%RUN_END%','HH:mm:ss.ff',$null);if($e -lt $s){$e=$e.AddDays(1)};$d=$e-$s;Write-Host ('[DONE] '+('%~1')+' | elapsed '+('{0:00}:{1:00}:{2:00}' -f [int]$d.TotalHours,$d.Minutes,$d.Seconds)) -ForegroundColor Green"
-echo.
 exit /b 0
 :activate
 if not exist venv\Scripts\activate.bat (echo Missing venv. Create it and install requirements.&pause&exit /b 1)
@@ -107,6 +108,13 @@ call :start_timer "stats report"
 call :activate
 python -m src.main --mode stats --stats-age-hours 0
 call :stop_timer "stats report"
+pause
+goto main
+:cleanup_uploaded
+call :start_timer "delete uploaded local videos"
+call :activate
+python cleanup_uploaded.py
+call :stop_timer "delete uploaded local videos"
 pause
 goto main
 :done

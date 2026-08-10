@@ -22,7 +22,8 @@ echo 5. Upload pending builds
 echo 6. Test environment
 echo 7. Set topic
 echo 8. Open runtime folders
-echo 9. Exit
+echo 9. Delete already-uploaded local videos
+echo 10. Exit
 echo.
 set /p choice="Select: "
 if "%choice%"=="1" goto build_private
@@ -33,7 +34,8 @@ if "%choice%"=="5" goto upload
 if "%choice%"=="6" goto test
 if "%choice%"=="7" goto set_topic
 if "%choice%"=="8" goto folders
-if "%choice%"=="9" goto done
+if "%choice%"=="9" goto cleanup_uploaded
+if "%choice%"=="10" goto done
 goto main
 :activate
 if not exist venv\Scripts\activate.bat (echo Missing venv. Create it and install requirements.&pause&exit /b 1)
@@ -105,6 +107,13 @@ goto main
 start "Ranking data" "%RANKING_RUNTIME%\data"
 start "Ranking temp" "%RANKING_RUNTIME%\temp"
 start "Ranking output" "%RANKING_RUNTIME%\output"
+goto main
+:cleanup_uploaded
+call :start_timer "delete uploaded local videos"
+call :activate
+python cleanup_uploaded.py
+call :stop_timer "delete uploaded local videos"
+pause
 goto main
 :done
 endlocal
