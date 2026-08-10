@@ -3,6 +3,12 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 title Ranking Shorts Pipeline - Easy Runner
 
+if not defined RANKING_TOPIC set "RANKING_TOPIC=fishing_moments"
+if not defined UPLOAD_PRIVACY set "UPLOAD_PRIVACY=private"
+if not defined DRY_RUN set "DRY_RUN=false"
+if defined VIDEO_FACTORY_ROOT set "RANKING_RUNTIME=%VIDEO_FACTORY_ROOT%\ranking-shorts-pipeline"
+if not defined RANKING_RUNTIME set "RANKING_RUNTIME=%LOCALAPPDATA%\DRA\VideoFactory\ranking-shorts-pipeline"
+
 if not "%~1"=="" goto arg_%~1
 
 :main
@@ -12,18 +18,20 @@ echo ================================================================
 echo             Ranking Shorts Pipeline - Easy Runner
 echo ================================================================
 echo.
-echo  Runtime root: %VIDEO_FACTORY_ROOT%
-echo  Code folder : %CD%
+echo  Topic       : %RANKING_TOPIC%
+echo  Privacy     : %UPLOAD_PRIVACY%
+echo  Dry run     : %DRY_RUN%
+echo  Runtime     : %RANKING_RUNTIME%
 echo.
-echo   1. Run YouTube ranking build (no upload)
-echo   2. Run YouTube ranking build and upload
- echo  3. Source and vet clips only
+echo   1. Build ranking video, no upload
+ echo  2. Build ranking video and upload
+ echo  3. Source and vet YouTube clips only
  echo  4. Assemble a saved plan
  echo  5. Upload pending builds
  echo  6. Test environment
  echo  7. Set topic
  echo  8. Set upload privacy
- echo  9. Set dry-run mode
+ echo  9. Toggle dry-run mode
  echo 10. Open runtime folders
  echo 11. Exit
  echo.
@@ -70,7 +78,7 @@ exit /b 0
 
 :build_private
 cls
-echo Building %RANKING_TOPIC% with upload disabled. This is the safe first run.
+echo Building %RANKING_TOPIC% with upload disabled. Safe first run.
 call :activate
 python -m src.main --mode once --topic "%RANKING_TOPIC%" --no-upload
 pause
@@ -86,7 +94,7 @@ goto main
 
 :source
 cls
-echo Discovering YouTube candidates and vetting clips for %RANKING_TOPIC%.
+echo Discovering and vetting YouTube candidates for %RANKING_TOPIC%.
 call :activate
 python -m src.main --mode source --topic "%RANKING_TOPIC%"
 pause
@@ -111,7 +119,6 @@ python -m src.main --mode upload
 pause
 goto main
 
-'test
 :test
 cls
 echo Running dependency, FFmpeg, font and topic checks.
@@ -153,8 +160,8 @@ goto main
 cls
 echo Current dry-run: %DRY_RUN%
 echo 1. Enable
- echo 2. Disable
- echo 0. Back
+echo 2. Disable
+echo 0. Back
 set "dry_choice="
 set /p "dry_choice=Select: "
 if "%dry_choice%"=="0" goto main
@@ -166,8 +173,6 @@ goto main
 
 :folders
 cls
-if not defined VIDEO_FACTORY_ROOT echo VIDEO_FACTORY_ROOT is not set. The app will use its safe external default.
-echo.
 echo Runtime folders are outside the repo:
 echo   Data  : %RANKING_RUNTIME%\data
 echo   Temp  : %RANKING_RUNTIME%\temp
