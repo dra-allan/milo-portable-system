@@ -1945,7 +1945,15 @@ gta_hype:
     - "leaked gameplay"
     - "leaked build"
     - "mod showcase"
+    # GTA Online gameplay videos (heist guides, escapes, car showcases) are
+    # playable-game content, not talk track. require_keywords passes them
+    # because the title contains "gta"; negatives must block them or the
+    # niche fills up with gameplay clips it was never designed for.
+    - "gta online"
+    - "gta online gameplay"
     - "gta 5 gameplay"
+    - "gta v"
+    - "heist guide"
     - "roleplay"
     - "rp server"
     - "no commentary"
