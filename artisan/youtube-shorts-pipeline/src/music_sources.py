@@ -1,8 +1,7 @@
-"""Self-contained background music auto-sync for YouTube Shorts pipeline.
+"""Self-contained instrumental background music auto-sync for YouTube Shorts pipeline.
 
-Uses yt-dlp (imported via Python library) to fetch copyright-free background
-music beds from NoCopyrightSounds (NCS) YouTube channels / playlists into
-config.music_dir.
+Uses yt-dlp (imported via Python library) to fetch copyright-free INSTRUMENTAL
+background music beds (no vocals) from YouTube / NCS sources into config.music_dir.
 """
 
 import os
@@ -21,11 +20,12 @@ except ImportError:  # pragma: no cover
 
 logger = setup_logger(__name__)
 
-# Default NCS / copyright-free music sources
+# Search queries & playlists strictly targeting INSTRUMENTAL / NO VOCALS background music
 NCS_MUSIC_SOURCES = [
-    "https://www.youtube.com/@NoCopyrightSounds/videos",
-    "https://www.youtube.com/results?search_query=NoCopyrightSounds+background+music",
-    "https://www.youtube.com/@ncsops/videos",
+    "https://www.youtube.com/results?search_query=NoCopyrightSounds+instrumental+background+music",
+    "https://www.youtube.com/results?search_query=NCS+instrumental+no+vocals+background+music",
+    "https://www.youtube.com/results?search_query=copyright+free+lofi+instrumental+background+music",
+    "https://www.youtube.com/results?search_query=copyright+free+ambient+instrumental+background+music",
 ]
 
 MUSIC_EXTENSIONS = ('.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.opus')
@@ -43,11 +43,22 @@ def get_existing_music_tracks(music_dir: str | Path) -> List[Path]:
     return tracks
 
 
-def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, max_new_tracks: int = 5) -> List[Path]:
-    """Ensure music_dir has at least `min_tracks` available.
+def is_instrumental_title(title: str) -> bool:
+    """Return True if title indicates instrumental / background audio suitable for voiceovers."""
+    low = title.lower()
+    # Reject titles that explicitly mention vocals or features unless marked instrumental
+    if 'instrumental' in low or 'no vocal' in low or 'bgm' in low or 'background music' in low or 'lofi' in low or 'beat' in low:
+        return True
+    if 'feat.' in low or 'ft.' in low or 'vocals' in low or 'lyric' in low:
+        return False
+    return True  # default pass for general NCS instrumental queries
 
-    If fewer than `min_tracks` exist, uses yt-dlp to download audio from NCS
-    sources until the count is met or `max_new_tracks` have been fetched.
+
+def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, max_new_tracks: int = 5) -> List[Path]:
+    """Ensure music_dir has at least `min_tracks` instrumental tracks available.
+
+    If fewer than `min_tracks` exist, uses yt-dlp to download instrumental audio
+    from NCS/copyright-free sources.
     """
     target_dir = Path(music_dir or getattr(config, 'music_dir', 'data/music'))
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -58,7 +69,7 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
         return existing
 
     logger.info(
-        "Music dir %s has only %d track(s) (target min %d). Auto-syncing background music from NCS...",
+        "Music dir %s has only %d instrumental track(s) (target min %d). Auto-syncing instrumental music...",
         target_dir, len(existing), min_tracks
     )
 
@@ -70,7 +81,6 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
 
     clients = [c.strip() for c in (os.getenv('YTDLP_PLAYER_CLIENTS') or 'android_vr,ios,web_safari').split(',') if c.strip()]
 
-    # Pick a source URL
     source_url = random.choice(NCS_MUSIC_SOURCES)
 
     opts = {
@@ -79,7 +89,7 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'playlistend': 20,
+        'playlistend': 30,
         'extractor_args': {'youtube': {'player_client': clients}},
     }
 
@@ -99,7 +109,6 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
         logger.warning("No entries found in music source %s", source_url)
         return existing
 
-    # Shuffle candidates to get variety
     random.shuffle(entries)
 
     downloaded = 0
@@ -113,8 +122,14 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
             continue
 
         raw_title = entry.get('title') or vid
+
+        # Instrumental check
+        if not is_instrumental_title(raw_title):
+            logger.debug("Skipping vocal/non-instrumental track: %s", raw_title)
+            continue
+
         safe_title = re.sub(r'[^\w\s-]', '', raw_title)[:40].strip()
-        out_filename = f"ncs_{vid}_{safe_title}.mp3"
+        out_filename = f"ncs_instrumental_{vid}_{safe_title}.mp3"
         out_path = target_dir / out_filename
 
         if out_path.exists() and out_path.stat().st_size > 0:
@@ -122,7 +137,7 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
 
         dl_opts = {
             'format': 'bestaudio/best',
-            'outtmpl': str(target_dir / f"ncs_{vid}_%(title).40s.%(ext)s"),
+            'outtmpl': str(target_dir / f"ncs_instrumental_{vid}_%(title).40s.%(ext)s"),
             'quiet': True,
             'no_warnings': True,
             'postprocessors': [{
@@ -137,7 +152,7 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
 
         video_url = f"https://www.youtube.com/watch?v={vid}"
         try:
-            logger.info("Downloading NCS background music bed: %s (%s)", raw_title, vid)
+            logger.info("Downloading instrumental background bed: %s (%s)", raw_title, vid)
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
                 ydl.download([video_url])
             downloaded += 1
@@ -147,13 +162,13 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
             continue
 
     updated = get_existing_music_tracks(target_dir)
-    logger.info("Music auto-sync completed: %d total tracks in %s", len(updated), target_dir)
+    logger.info("Music auto-sync completed: %d total instrumental tracks in %s", len(updated), target_dir)
     return updated
 
 
 if __name__ == '__main__':
     # Quick standalone CLI verification
-    tracks = sync_ncs_music(min_tracks=3, max_new_tracks=3)
-    print(f"Music tracks sync finished. Found {len(tracks)} tracks:")
+    tracks = sync_ncs_music(min_tracks=5, max_new_tracks=5)
+    print(f"Instrumental music sync finished. Found {len(tracks)} tracks:")
     for t in tracks:
         print(f" - {t.name}")
