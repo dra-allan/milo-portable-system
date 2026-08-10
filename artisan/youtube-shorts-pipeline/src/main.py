@@ -1400,6 +1400,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    start_time = time.monotonic()
+    try:
+        return _main_impl(argv)
+    finally:
+        elapsed = time.monotonic() - start_time
+        m, s = divmod(int(elapsed), 60)
+        h, m = divmod(m, 60)
+        logger.info("Total run time: %02d:%02d:%02d (%.1fs)", h, m, s, elapsed)
+
+
+def _main_impl(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.mode == 'test':
@@ -1478,6 +1489,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     stats = pipeline.report()
     return 0 if stats['videos_processed'] > 0 else 1
+
 
 
 def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:

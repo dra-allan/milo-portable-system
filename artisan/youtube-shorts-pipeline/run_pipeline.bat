@@ -82,8 +82,10 @@ echo  - Respects per-niche caps and backlog-first logic
 echo.
 echo Press Ctrl+C at any time to cancel.
 echo.
+call :start_timer
 call venv\Scripts\activate
 python -m src.main --mode once
+call :stop_timer
 echo.
 echo Pipeline execution completed.
 pause
@@ -98,8 +100,10 @@ echo ================================================================
 echo.
 echo Running component checks...
 echo.
+call :start_timer
 call venv\Scripts\activate
 python -m src.main --mode test
+call :stop_timer
 echo.
 echo Test mode completed.
 pause
@@ -127,6 +131,7 @@ set "url=%url: =%"
 echo.
 set "niche="
 set /p niche="Niche (optional, press Enter for auto): "
+call :start_timer
 if "%niche%"=="" (
     call venv\Scripts\activate
     python -m src.main --mode once "%url%" %FORCE_FLAG%
@@ -134,10 +139,12 @@ if "%niche%"=="" (
     call venv\Scripts\activate
     python -m src.main --mode once "%url%" --niche "%niche%" %FORCE_FLAG%
 )
+call :stop_timer
 echo.
 echo URL processing completed.
 pause
 goto main
+
 
 :schedule
 cls
@@ -243,6 +250,7 @@ set "niche="
 set /p niche="Niche (optional, Enter for auto, 'back' to cancel): "
 set "niche=%niche: =%"
 if /i "%niche%"=="back" goto main
+call :start_timer
 if "%niche%"=="" (
     call venv\Scripts\activate
     python -m src.main --mode once "%VIDEOFIXED%"
@@ -250,6 +258,7 @@ if "%niche%"=="" (
     call venv\Scripts\activate
     python -m src.main --mode once "%VIDEOFIXED%" --niche "%niche%"
 )
+call :stop_timer
 echo.
 echo Library processing completed.
 pause
@@ -292,8 +301,10 @@ echo.
 echo Lists every rendered-but-unpublished clip grouped by niche.
 echo Pick exactly which clips to post (e.g. "1,2,4-6" or "all").
 echo.
+call :start_timer
 call venv\Scripts\activate
 python -m src.main --mode upload-existing --interactive
+call :stop_timer
 echo.
 echo Interactive upload completed.
 pause
@@ -317,8 +328,10 @@ if "%niche%"=="" (
     pause
     goto upload_by_niche
 )
+call :start_timer
 call venv\Scripts\activate
 python -m src.main --mode upload-existing --niche "%niche%"
+call :stop_timer
 echo.
 echo Niche upload completed.
 pause
@@ -342,8 +355,10 @@ if "%channel%"=="" (
     pause
     goto upload_by_channel
 )
+call :start_timer
 call venv\Scripts\activate
 python -m src.main --mode upload-existing --channel "%channel%"
+call :stop_timer
 echo.
 echo Channel upload completed.
 pause
@@ -358,8 +373,10 @@ echo ================================================================
 echo.
 echo Uploading all pending shorts (respects UPLOAD_MAX_PER_RUN limit)...
 echo.
+call :start_timer
 call venv\Scripts\activate
 python -m src.main --mode upload-existing
+call :stop_timer
 echo.
 echo All pending uploads completed.
 pause
@@ -374,8 +391,10 @@ echo ================================================================
 echo.
 echo Pulling latest YouTube metrics for all connected channels...
 echo.
+call :start_timer
 call venv\Scripts\activate
 python -m src.main --mode stats --stats-age-hours 0
+call :stop_timer
 echo.
 echo Report completed.
 pause
@@ -479,8 +498,10 @@ echo ================================================================
 echo.
 echo Resetting 24-hour upload limits and dead-channel cache...
 echo.
+call :start_timer
 call venv\Scripts\activate
 python reset_caps.py
+call :stop_timer
 echo.
 pause
 goto main
@@ -491,3 +512,14 @@ echo.
 echo Goodbye!
 timeout /t 2 > nul
 exit
+
+:start_timer
+powershell -NoProfile -Command "[DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss')" > "%TEMP%\yt_start.txt" 2>nul
+goto :eof
+
+:stop_timer
+if exist "%TEMP%\yt_start.txt" (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=[DateTime]::Parse((Get-Content '%TEMP%\yt_start.txt')); $e=[DateTime]::Now; $d=$e-$s; $ts='{0:D2}:{1:D2}:{2:D2}' -f $d.Hours, $d.Minutes, $d.Seconds; Write-Host ('================================================================') -ForegroundColor Cyan; Write-Host ('  Started: ' + $s.ToString('HH:mm:ss') + '  |  Finished: ' + $e.ToString('HH:mm:ss')) -ForegroundColor Yellow; Write-Host ('  Elapsed Time: ' + $ts + ' (' + [math]::Round($d.TotalMinutes, 2) + ' min)') -ForegroundColor Green; Write-Host ('================================================================') -ForegroundColor Cyan" 2>nul
+    del "%TEMP%\yt_start.txt" 2>nul
+)
+goto :eof
