@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786374351.7325966,
+  "updated_at": 1786375904.047422,
   "routines": [
     {
       "name": "curate-skills",
@@ -77,12 +77,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786374306.376433,
-      "last_status": "ok",
-      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     91\n  notes        8\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1786374637.4936414,
-      "runs": 511,
-      "failures": 22
+      "last_run": 1786375510.5865467,
+      "last_status": "failed (1)",
+      "last_output": "run again with -v for the full traceback\n  [x] TimeoutExpired: Command '['git', '-C', 'C:\\\\Users\\\\user\\\\Desktop\\\\milo-portable-system', 'pull', '--rebase', '--autostash']' timed out after 180 seconds",
+      "next_run": 1786376035.5638232,
+      "runs": 513,
+      "failures": 23
     },
     {
       "name": "frequent-vault-sync",
@@ -104,11 +104,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786374337.5041454,
+      "last_run": 1786375735.754894,
       "last_status": "ok",
-      "last_output": "[ok] vault clean, nothing to commit",
-      "next_run": 1786374651.7323246,
-      "runs": 506,
+      "last_output": "[ok]    a7b35e5..3111a0e  master -> master",
+      "next_run": 1786376203.9672697,
+      "runs": 508,
       "failures": 68
     },
     {
@@ -212,11 +212,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0510957,
-      "last_run": 1786353009.6947384,
-      "last_status": "failed (1)",
-      "last_output": "[x] vault clean, nothing to commit",
-      "next_run": 1786374626.3999877,
-      "runs": 17,
+      "last_run": 1786374981.2679062,
+      "last_status": "ok",
+      "last_output": "[ok] vault clean, nothing to commit",
+      "next_run": 1786396589.5906427,
+      "runs": 18,
       "failures": 3
     }
   ]
