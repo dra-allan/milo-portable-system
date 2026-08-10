@@ -817,12 +817,46 @@ class YouTubeDownloader:
         )
         started = time.time()
 
-        try:
-            with yt_dlp.YoutubeDL(self._section_opts(video_id, req_start, req_end)) as ydl:
-                ydl.extract_info(url, download=True)
-        except Exception as exc:
+        # Section fetches run several workers in parallel, each splitting its
+        # range across several fragment connections. That burst frequently gets
+        # one range throttled mid-stream, which corrupts the fragments and makes
+        # the merge ffmpeg run exit 1. A short backoff + one re-fetch almost
+        # always clears it, so retry instead of dropping the clip.
+        stem = f"{video_id}{ID_SEPARATOR}sec_{int(round(req_start))}_{int(round(req_end))}"
+        section_opts = self._section_opts(video_id, req_start, req_end)
+        retries = int(os.getenv('SECTION_FETCH_RETRIES') or 3)
+        last_exc = None
+        for attempt in range(retries):
+            # A throttled fragment leaves a .part behind; a fresh attempt must
+            # not append to it. Clean the range's partial files first.
+            if attempt > 0:
+                for partial in self.sections_dir.glob(f"{glob_escape(stem)}.*.part"):
+                    try:
+                        partial.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                # Back off before retrying, and halve the fragment fan-out so
+                # the retry no longer hammers the range it just got throttled on.
+                time.sleep(2.0 * (2 ** (attempt - 1)))
+                opts = dict(section_opts)
+                opts['concurrent_fragment_downloads'] = max(
+                    1, int(opts.get('concurrent_fragment_downloads') or 4) // 2)
+            else:
+                opts = section_opts
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.extract_info(url, download=True)
+                break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "Section download attempt %d/%d failed for %s [%.1f-%.1f]: %s",
+                    attempt + 1, retries, video_id, start, end, exc if attempt == retries - 1
+                    else f"{str(exc)[:120]} (retrying)",
+                )
+        else:
             logger.error("Section download failed for %s [%.1f-%.1f]: %s",
-                         video_id, start, end, exc)
+                         video_id, start, end, last_exc)
             return None
 
         path = self._section_path(video_id, req_start, req_end)
