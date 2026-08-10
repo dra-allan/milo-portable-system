@@ -79,7 +79,8 @@ goto main
 call :start_timer "build and upload"
 call :ensure_env
 if errorlevel 1 goto main
-if /i "%RANKING_TOPIC%"=="auto" (call :python -m src.main --mode auto) else (call :python -m src.main --mode once --topic "%RANKING_TOPIC%"){call :python cleanup_runtime.py
+if /i "%RANKING_TOPIC%"=="auto" (call :python -m src.main --mode auto) else (call :python -m src.main --mode once --topic "%RANKING_TOPIC%")
+call :python cleanup_runtime.py
 call :stop_timer "build and upload"
 pause
 goto main
@@ -87,7 +88,7 @@ goto main
 call :start_timer "source and vet"
 call :ensure_env
 if errorlevel 1 goto main
-if /i "%RANKING_TOPIC%"=="auto" (call :python -m src.main --mode source --topic fishing_moments) else (call :python -m src.main --mode source --topic "%RANKING_TOPIC%")
+if /i "%RANKING_TOPIC%"=="auto" (call :python -m src.main --mode source --topic animal_moments) else (call :python -m src.main --mode source --topic "%RANKING_TOPIC%")
 call :stop_timer "source and vet"
 pause
 goto main
