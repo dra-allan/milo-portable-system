@@ -6,13 +6,12 @@ set "SCHEDULE_MAX_VIDEOS=1"
 set "SCHEDULE_MAX_TOTAL=0"
 set "BACKGROUND_MODE=smart"
 set "CAPTION_STYLE=hormozi"
-rem YouTube is currently rate-limiting subtitle requests. Audio discovery must not depend on them.
-set "USE_YOUTUBE_SUBS=false"
 if exist .env (
  for /f "tokens=1,* delims==" %%a in ('findstr /b /i "BACKGROUND_MODE=" .env') do set "BACKGROUND_MODE=%%b"
  for /f "tokens=1,* delims==" %%a in ('findstr /b /i "CAPTION_STYLE=" .env') do set "CAPTION_STYLE=%%b"
- for /f "tokens=1,* delims==" %%a in ('findstr /b /i "USE_YOUTUBE_SUBS=" .env') do set "USE_YOUTUBE_SUBS=%%b"
 )
+rem Do not make discovery depend on YouTube subtitle endpoints. They are currently 429ing.
+set "USE_YOUTUBE_SUBS=false"
 :main
 cls
 echo ================================================================
