@@ -10,8 +10,10 @@ if exist .env (
  for /f "tokens=1,* delims==" %%a in ('findstr /b /i "BACKGROUND_MODE=" .env') do set "BACKGROUND_MODE=%%b"
  for /f "tokens=1,* delims==" %%a in ('findstr /b /i "CAPTION_STYLE=" .env') do set "CAPTION_STYLE=%%b"
 )
-rem Do not make discovery depend on YouTube subtitle endpoints. They are currently 429ing.
-set "USE_YOUTUBE_SUBS=false"
+rem Subtitles stay on for the fast path; the downloader's circuit breaker
+rem disables them automatically when YouTube 429s the subtitles endpoint and
+rem re-enables them after the cooldown. No need to force them off here.
+rem Set USE_YOUTUBE_SUBS=false in .env only for a permanent hard-off.
 :main
 cls
 echo ================================================================
