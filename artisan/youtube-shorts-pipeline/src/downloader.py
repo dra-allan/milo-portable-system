@@ -184,6 +184,15 @@ class YouTubeDownloader:
         # tab, 404 handle) get remembered here so every sweep doesn't hammer
         # YouTube and re-log the same ERROR. Re-probed after a cooldown.
         self.dead_channels_path = Path(config.data_dir) / 'dead_channels.json'
+        # Subtitle circuit breaker: YouTube rate-limits the subtitles endpoint
+        # with 429s. State survives across runs so a swept run doesn't re-open
+        # the circuit every sweep. Kept next to the dead-channel cache.
+        self.subtitle_circuit_path = Path(config.data_dir) / 'subtitle_circuit.json'
+        self.subtitle_circuit = self._load_subtitle_circuit()
+        self.subtitle_circuit_threshold = max(1, int(
+            os.getenv('SUBTITLE_CIRCUIT_THRESHOLD') or 3))
+        self.subtitle_circuit_cooldown = max(60, int(
+            os.getenv('SUBTITLE_CIRCUIT_COOLDOWN_MINUTES') or 30)) * 60
         self._dead_channels = self._load_dead_channels()
         # NOTE: the cache is now read/written from several threads (listings run
         # in parallel), so all access goes through the class-level _dead_lock
@@ -257,7 +266,7 @@ class YouTubeDownloader:
     # ------------------------------------------------------------------
     # Shared yt-dlp option builders
     # ------------------------------------------------------------------
-    def _audio_opts(self) -> Dict:
+    def _audio_opts(self, with_subs: Optional[bool] = None) -> Dict:
         """Options for the audio-only discovery fetch.
 
         No re-encode: the goal is the smallest number of bytes that Whisper can
@@ -265,11 +274,15 @@ class YouTubeDownloader:
         is used as-is -- transcoding it to wav here would add an ffmpeg pass
         over the whole file for no benefit.
 
-        Subtitles ARE requested (they were not before). A published transcript
-        costs ~200 KB and about a second, and lets the pipeline skip the
-        Whisper pass entirely -- which was ~85% of total runtime. Even when it
-        turns out to be unusable, fetching it is far cheaper than the pass it
-        might replace.
+        Subtitles ARE requested when the circuit is closed and the caller did
+        not force them off. A published transcript costs ~200 KB and about a
+        second, and lets the pipeline skip the Whisper pass entirely -- which
+        was ~85% of total runtime. Even when it turns out to be unusable,
+        fetching it is far cheaper than the pass it might replace.
+
+        ``with_subs`` is a tri-state override: None (default) follows the
+        circuit breaker, True forces subtitles, False forces them off (used by
+        the post-429 single-video fallback so that run still completes).
         """
         opts = {
             'format': 'bestaudio/best',
@@ -283,7 +296,7 @@ class YouTubeDownloader:
             'no_warnings': True,
         }
         opts.update(self._client_opts())
-        if getattr(config, 'use_youtube_subs', True):
+        if self._subtitles_requested(force=with_subs):
             opts.update({
                 'writesubtitles': True,       # uploader-provided (accurate)
                 'writeautomaticsub': True,    # YouTube ASR (fallback)
@@ -336,6 +349,84 @@ class YouTubeDownloader:
         if raw:
             return [x.strip() for x in raw.split(',') if x.strip()]
         return ['en', 'en-orig', 'en-US', 'en-GB']
+
+    def _load_subtitle_circuit(self) -> Dict:
+        """Persisted circuit state: consecutive 429s and when it reopens."""
+        try:
+            if self.subtitle_circuit_path.exists():
+                raw = json.loads(
+                    self.subtitle_circuit_path.read_text(encoding='utf-8'))
+                if isinstance(raw, dict):
+                    return raw
+        except Exception as exc:
+            logger.warning("Could not load subtitle circuit %s: %s",
+                           self.subtitle_circuit_path, exc)
+        return {}
+
+    def _save_subtitle_circuit(self) -> None:
+        try:
+            self.subtitle_circuit_path.parent.mkdir(parents=True, exist_ok=True)
+            self.subtitle_circuit_path.write_text(
+                json.dumps(self.subtitle_circuit), encoding='utf-8')
+        except Exception as exc:
+            logger.warning("Could not save subtitle circuit: %s", exc)
+
+    def _subtitles_requested(self, force: Optional[bool] = None) -> bool:
+        """Should this request ask yt-dlp to fetch subtitles?
+
+        Resolution order:
+          1. An explicit caller override (True/False) wins immediately. This is
+             the post-429 fallback path: one video retried without subtitles so
+             the sweep is not held up by a single rate-limit hit.
+          2. The config master switch (USE_YOUTUBE_SUBS) -- a hard OFF.
+          3. The circuit breaker: subs are skipped while the circuit is open
+             (after a run of 429s) and re-enabled once the cooldown passes.
+        """
+        if force is not None:
+            return bool(force)
+        if not getattr(config, 'use_youtube_subs', True):
+            return False
+        cooldown_until = float(self.subtitle_circuit.get('cooldown_until') or 0)
+        if cooldown_until and time.time() < cooldown_until:
+            minutes_left = int((cooldown_until - time.time()) / 60) + 1
+            logger.info(
+                "Subtitle circuit OPEN (cooldown %d min left) -- skipping "
+                "subtitle request, Whisper will transcribe",
+                minutes_left,
+            )
+            return False
+        return True
+
+    def _subtitle_hit_429(self) -> None:
+        """Record a 429 from the subtitles endpoint; trip the circuit when the
+        consecutive-failure threshold is crossed.
+
+        YouTube rate-limits subtitles in bursts: a single 429 recovers on its
+        own (the caller retries that video without subs), but a sustained run
+        means the endpoint is unhappy and hammering it would just keep failing.
+        The cooldown gives it time to cool off, then the circuit reopens.
+        """
+        consecutive = int(self.subtitle_circuit.get('consecutive_429s') or 0) + 1
+        self.subtitle_circuit['consecutive_429s'] = consecutive
+        if consecutive >= self.subtitle_circuit_threshold:
+            cooldown_until = time.time() + self.subtitle_circuit_cooldown
+            self.subtitle_circuit['cooldown_until'] = cooldown_until
+            self.subtitle_circuit['consecutive_429s'] = 0
+            logger.warning(
+                "Subtitle endpoint 429'd %dx consecutively -- opening circuit "
+                "for %d min (Whisper will transcribe until it reopens)",
+                consecutive, int(self.subtitle_circuit_cooldown / 60),
+            )
+        self._save_subtitle_circuit()
+
+    def _subtitle_success(self) -> None:
+        """A subtitle fetch outlived the cooldown / fewer-than-threshold errors:
+        reset the streak so occasional single 429s never trip the circuit."""
+        if self.subtitle_circuit.get('consecutive_429s') or \
+                self.subtitle_circuit.get('cooldown_until'):
+            self.subtitle_circuit['consecutive_429s'] = 0
+            self.subtitle_circuit.pop('cooldown_until', None)
+            self._save_subtitle_circuit()
 
     def find_local_subtitles(self, video_id: str) -> Optional[Path]:
         """Any subtitle sidecar already downloaded for ``video_id``.
@@ -653,16 +744,58 @@ class YouTubeDownloader:
         logger.info("Fetching audio only for %s (discovery pass)", video_id)
         started = time.time()
 
+        # Only a subtitle-attempting fetch can prove the endpoint recovered.
+        # If the circuit is already open this download skips subs entirely, so
+        # its success must NOT reset the cooldown.
+        subs_attempted = self._subtitles_requested()
+
         try:
             with yt_dlp.YoutubeDL(self._audio_opts()) as ydl:
                 info = ydl.extract_info(url, download=True)
+            # Subtitle fetch (if attempted) succeeded -- clear any 429 streak.
+            if subs_attempted:
+                self._subtitle_success()
         except Exception as exc:
-            logger.error("Audio download failed for %s: %s", video_id, exc)
-            salvaged = self.find_local_audio(video_id)
-            if salvaged:
-                logger.warning("Using a previously downloaded audio copy of %s", video_id)
-                return self._audio_metadata(video_id, salvaged)
-            return None
+            message = str(exc)
+            # YouTube rate-limits its subtitle endpoint. Regrettably the whole
+            # audio download fails when the subtitle fetch 429s, even though
+            # the audio itself is fine. Retry that one video WITHOUT subtitles
+            # so the sweep completes -- Whisper will transcribe it instead --
+            # and feed the circuit with the hit.
+            if 'subtitle' in message.lower() and '429' in message:
+                self._subtitle_hit_429()
+                logger.warning(
+                    "Subtitle fetch 429'd for %s -- retrying audio without "
+                    "subtitles (Whisper will transcribe this one)",
+                    video_id,
+                )
+                try:
+                    with yt_dlp.YoutubeDL(
+                            self._audio_opts(with_subs=False)) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                except Exception as retry_exc:
+                    logger.error(
+                        "Audio download failed for %s even without subtitles: %s",
+                        video_id, retry_exc,
+                    )
+                    salvaged = self.find_local_audio(video_id)
+                    if salvaged:
+                        logger.warning(
+                            "Using a previously downloaded audio copy of %s",
+                            video_id,
+                        )
+                        return self._audio_metadata(video_id, salvaged)
+                    return None
+            else:
+                logger.error("Audio download failed for %s: %s", video_id, exc)
+                salvaged = self.find_local_audio(video_id)
+                if salvaged:
+                    logger.warning(
+                        "Using a previously downloaded audio copy of %s",
+                        video_id,
+                    )
+                    return self._audio_metadata(video_id, salvaged)
+                return None
 
         audio_path = self.find_local_audio(video_id)
         if not audio_path:
