@@ -1,0 +1,29 @@
+# Ranking Shorts pipeline
+# Core
+yt-dlp>=2024.1.0
+python-dotenv>=1.0.0
+PyYAML>=6.0
+requests>=2.31.0
+
+# Voice-over (forked Gemini TTS)
+google-genai>=0.3.0
+pydub>=0.25.1
+tqdm>=4.66.0
+
+# Upload
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.1.0
+google-auth>=2.23.0
+
+# Optional vetting extras. The pipeline degrades gracefully without them:
+# - no faster-whisper  -> commentary detection is skipped
+# - no pytesseract     -> on-screen text is not auto-blurred
+# - no librosa         -> background-music detection is skipped
+# - no Pillow          -> perceptual-hash dedupe is skipped
+faster-whisper>=1.0.0
+pytesseract>=0.3.10
+librosa>=0.10.0
+Pillow>=10.0.0
+
+# Tests
+pytest>=7.4.0
