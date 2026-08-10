@@ -29,13 +29,18 @@ class RankingPublisher:
         except OSError:pass
         return creds
     def upload(self,video_path:str,title:str,description:str,tags:List[str],privacy_status:Optional[str]=None)->Optional[str]:
-        if not Path(video_path).exists():logger.error('UPLOAD_SKIP missing_file=%s',video_path);return None
+        path=Path(video_path)
+        if not path.exists():logger.error('UPLOAD_SKIP missing_file=%s',video_path);return None
         status=(privacy_status or self.privacy_status).lower();body={'snippet':{'title':title[:100],'description':description[:5000],'tags':[t for t in tags if t][:30],'categoryId':DEFAULT_CATEGORY_ID,'defaultLanguage':'en'},'status':{'privacyStatus':status,'selfDeclaredMadeForKids':False}}
         try:
             from googleapiclient.http import MediaFileUpload
-            media=MediaFileUpload(video_path,chunksize=10*1024*1024,resumable=True);request=self.youtube.videos().insert(part='snippet,status',body=body,media_body=media);response=None
+            media=MediaFileUpload(str(path),chunksize=10*1024*1024,resumable=True);request=self.youtube.videos().insert(part='snippet,status',body=body,media_body=media);response=None
             while response is None:_,response=request.next_chunk()
-            vid=response.get('id');logger.info('UPLOAD_DONE channel=%s video_id=%s privacy=%s',self.channel,vid,status);return vid
+            vid=response.get('id')
+            if vid:
+                try:path.unlink();logger.info('CLEANUP_DONE path=%s',path.name)
+                except OSError as exc:logger.warning('CLEANUP_WARN path=%s error=%s',path.name,exc)
+            logger.info('UPLOAD_DONE channel=%s video_id=%s privacy=%s',self.channel,vid,status);return vid
         except Exception as exc:logger.error('UPLOAD_FAIL channel=%s error=%s',self.channel,str(exc)[:240]);return None
     def channel_id(self):
         try:
