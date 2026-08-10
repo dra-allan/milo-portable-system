@@ -414,10 +414,13 @@ class PipelineDatabase:
                     """SELECT p.youtube_short_id, p.views, p.likes, p.comments,
                               p.favorites, p.retrieved_at,
                               g.source_video_id, g.segment_index,
-                              g.start_time, g.end_time, g.title, g.score
+                              g.start_time, g.end_time, g.title, g.score,
+                              COALESCE(v.niche, g.upload_channel, '') AS niche
                        FROM short_performance p
                        JOIN generated_shorts g
                          ON g.youtube_short_id = p.youtube_short_id
+                       LEFT JOIN processed_videos v
+                         ON v.youtube_video_id = g.source_video_id
                        ORDER BY p.views DESC
                        LIMIT ?""",
                     (limit,),
