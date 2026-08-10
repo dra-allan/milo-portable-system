@@ -39,7 +39,7 @@ echo  Current CaptionStyle   : %CAPTION_STYLE%
 echo.
 echo   1. Run Full Sweep Now (auto-discover ^& process all niches)
 echo   2. Process a YouTube URL/Video ID
-echo   3. Run in Scheduled Mode (9AM, 2PM, 7PM daily)
+echo   3. Run in Scheduled Mode (9AM Daily)
 echo   4. Upload Existing Local Shorts
 echo   5. Process from Library (downloaded videos)
 echo   6. Run in Test Mode (check components)
@@ -146,7 +146,7 @@ echo ================================================================
 echo           Scheduled Mode
 echo ================================================================
 echo.
-echo Running at 9AM, 2PM, and 7PM daily.
+echo Running at 9AM daily (once per day).
 echo Press Ctrl+C to stop.
 echo.
 call venv\Scripts\activate

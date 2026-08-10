@@ -2427,7 +2427,7 @@ def _run_schedule(pipeline: 'ShortsPipeline', args) -> int:
     import time
 
     run_times = [t.split('#')[0].strip()
-                 for t in os.getenv('RUN_TIMES', '0 9 * * *,0 14 * * *,0 19 * * *').split(',')]
+                 for t in os.getenv('RUN_TIMES', '0 9 * * *').split(',')]
     run_times = [t for t in run_times if t]
 
     # Anti-burst jitter: add a random minute offset to each fixed run time so
