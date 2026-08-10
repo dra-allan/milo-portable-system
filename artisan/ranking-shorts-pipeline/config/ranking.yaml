@@ -62,9 +62,6 @@ sfx_map:
 topics:
   fishing_moments:
     title: "TOP {n} FISHING MOMENTS"
-    # Same discovery shape as the Shorts pipeline: yt-dlp searches YouTube
-    # and walks configured YouTube channel video feeds. No TikTok/Instagram
-    # source is enabled in the shipped config.
     queries:
       - "funny fishing moments"
       - "fishing fails"
@@ -86,3 +83,20 @@ topics:
     negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary"]
     channel: ranking_animals
     tags: ["animals", "funnyanimals", "top5", "shorts"]
+
+  # Original narration over sourced b-roll. This is the monetisable lane.
+  gta6_countdown:
+    title: "TOP {n} GTA 6 DETAILS"
+    queries:
+      - "gta 6 trailer breakdown details"
+      - "gta 6 extended look analysis"
+      - "gta 6 map leonida breakdown"
+      - "gta 6 details you missed"
+      - "gta 6 confirmed features"
+      - "gta 6 vs gta 5 comparison"
+    channels: []
+    extra_sources: []
+    negative_keywords: ["leaked footage", "leaked gameplay", "leaked build", "fan made", "concept", "mod showcase", "reaction", "livestream", "podcast", "ai generated"]
+    # Publisher token: youtube_token_ranking_NXS.json
+    channel: NXS
+    tags: ["gta6", "gta6trailer", "leonida", "gtavi", "shorts"]
