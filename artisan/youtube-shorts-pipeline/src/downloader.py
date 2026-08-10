@@ -1142,49 +1142,53 @@ class YouTubeDownloader:
             'playlistend': max(1, int(max_results)),
         })
 
-        # Transient network faults (DNS resolution, timeouts, connection
-        # resets, rate limiting) are NOT channel failures. Marking the channel
-        # dead on one of these is how a single internet hiccup can take every
-        # source channel offline for the whole 14-day cooldown: each listing in
-        # a sweep fails with the same socket error, each one gets cached, and
-        # discovery silently returns zero candidates for weeks. Only
-        # channel-level failures (404 / no such handle / no videos tab / wrong
-        # ID) are worth remembering.
-        transient = _is_transient_error(exc)
-        if transient:
-            # yt-dlp already retries internally (extractor_retries); give the
-            # listing one more bounded attempt here, then back off, but never
-            # cache it as dead. The sweep keeps going and the next sweep
-            # retries cleanly.
-            for attempt in range(1, getattr(config, 'channel_listing_retries', 2) + 1):
-                wait = min(30.0, 2 ** attempt + random.uniform(0, 1))
-                logger.warning(
-                    "Channel listing for %s hit a transient network error: %s "
-                    "(retry %d/%d in %.1fs)",
-                    url, exc, attempt, getattr(config, 'channel_listing_retries', 2), wait,
-                )
-                time.sleep(wait)
-                try:
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        info = ydl.extract_info(url, download=False)
-                    break
-                except Exception as retry_exc:
-                    exc = retry_exc
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+        except Exception as exc:
+            # Transient network faults (DNS resolution, timeouts, connection
+            # resets, rate limiting) are NOT channel failures. Marking the
+            # channel dead on one of these is how a single internet hiccup can
+            # take every source channel offline for the whole 14-day cooldown:
+            # each listing in a sweep fails with the same socket error, each one
+            # gets cached, and discovery silently returns zero candidates for
+            # weeks. Only channel-level failures (404 / no such handle / no
+            # videos tab / wrong ID) are worth remembering.
+            transient = _is_transient_error(exc)
+            if transient:
+                # yt-dlp already retries internally (extractor_retries); give
+                # the listing one more bounded attempt here, then back off, but
+                # never cache it as dead. The sweep keeps going and the next
+                # sweep retries cleanly.
+                for attempt in range(1, getattr(config, 'channel_listing_retries', 2) + 1):
+                    wait = min(30.0, 2 ** attempt + random.uniform(0, 1))
+                    logger.warning(
+                        "Channel listing for %s hit a transient network error: %s "
+                        "(retry %d/%d in %.1fs)",
+                        url, exc, attempt, getattr(config, 'channel_listing_retries', 2), wait,
+                    )
+                    time.sleep(wait)
+                    try:
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            info = ydl.extract_info(url, download=False)
+                        break
+                    except Exception as retry_exc:
+                        exc = retry_exc
+                else:
+                    logger.warning(
+                        "Channel listing failed for %s after retries (transient "
+                        "network error, NOT cached dead): %s", url, exc,
+                    )
+                    return []
             else:
+                # Real channel-level failure: dead ID, no videos tab, 404 handle.
+                # Cache it so the next sweep is quiet; re-probed after the cooldown.
+                self._mark_channel_dead(channel_id)
                 logger.warning(
-                    "Channel listing failed for %s after retries (transient "
-                    "network error, NOT cached dead): %s", url, exc,
+                    "Channel listing failed for %s: %s (cached as dead for %d days)",
+                    url, exc, self.dead_channel_cooldown,
                 )
                 return []
-        else:
-            # Real channel-level failure: dead ID, no videos tab, 404 handle.
-            # Cache it so the next sweep is quiet; re-probed after the cooldown.
-            self._mark_channel_dead(channel_id)
-            logger.warning(
-                "Channel listing failed for %s: %s (cached as dead for %d days)",
-                url, exc, self.dead_channel_cooldown,
-            )
-            return []
 
         results: List[Dict] = []
         for entry in (info or {}).get('entries') or []:
