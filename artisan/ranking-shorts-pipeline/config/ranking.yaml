@@ -12,14 +12,14 @@ defaults:
   max_download_attempts: 6
   max_download_height: 480
   max_download_bytes: 100000000
+  shorts_download_height: 360
+  shorts_max_download_bytes: 50000000
   max_source_duration: 900
   min_source_views: 500
   max_words_per_second: 0.45
   max_music_confidence: 0.55
   max_text_coverage: 0.18
   blur_detected_text: true
-  # scene_profile is scene-change density, not optical-flow motion. 0.10 was
-  # rejecting ordinary single-shot moments and is why the run burned hours.
   min_motion_score: 0.02
   phash_distance: 6
   rank_colors:
@@ -67,61 +67,79 @@ sfx_map:
 topics:
   fishing_moments:
     title: "TOP {n} FISHING MOMENTS"
-    queries: ["single fishing fail caught on camera", "unexpected fishing catch", "funny fishing moment caught"]
+    source_kind: youtube_shorts
+    queries: ["fishing fail #shorts", "unexpected fishing catch #shorts", "funny fishing moment #shorts"]
     channels: []
     extra_sources: []
     max_download_attempts: 6
-    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "tutorial", "asmr", "music", "podcast", "commentary"]
+    min_source_duration: 3
+    max_source_duration: 90
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "tutorial", "asmr", "music", "podcast", "commentary", "full video"]
     channel: NXS
     tags: ["fishing", "fishingfails", "funnymoments", "top5", "shorts"]
 
   animal_moments:
     title: "TOP {n} ANIMAL MOMENTS"
-    queries: ["single funny animal moment caught on camera", "animal fails caught on camera", "unexpected animal moment"]
+    source_kind: youtube_shorts
+    queries: ["funny animal moment #shorts", "animal fail caught on camera #shorts", "unexpected animal moment #shorts"]
     channels: []
     extra_sources: []
     max_download_attempts: 6
-    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary"]
+    min_source_duration: 3
+    max_source_duration: 90
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "full video"]
     channel: NXS
     tags: ["animals", "funnyanimals", "top5", "shorts"]
 
   sports_moments:
     title: "TOP {n} SPORTS MOMENTS"
-    queries: ["sports moment caught on camera", "unexpected sports fail", "crazy sports moment"]
+    source_kind: youtube_shorts
+    queries: ["sports moment #shorts", "unexpected sports fail #shorts", "crazy sports moment #shorts"]
     channels: []
     extra_sources: []
     max_download_attempts: 6
-    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "full game"]
+    min_source_duration: 3
+    max_source_duration: 90
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "full game", "full video"]
     channel: NXS
     tags: ["sports", "sportsfails", "sportsmoments", "top5", "shorts"]
 
   wildlife_moments:
     title: "TOP {n} WILDLIFE MOMENTS"
-    queries: ["wildlife moment caught on camera", "unexpected animal encounter", "wild animal close call"]
+    source_kind: youtube_shorts
+    queries: ["wildlife moment #shorts", "unexpected animal encounter #shorts", "wild animal close call #shorts"]
     channels: []
     extra_sources: []
     max_download_attempts: 6
-    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "documentary full"]
+    min_source_duration: 3
+    max_source_duration: 90
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "documentary full", "full video"]
     channel: NXS
     tags: ["wildlife", "nature", "animals", "top5", "shorts"]
 
   satisfying_processes:
     title: "TOP {n} SATISFYING MOMENTS"
-    queries: ["satisfying process caught on camera", "oddly satisfying real process", "perfect machine moment"]
+    source_kind: youtube_shorts
+    queries: ["satisfying process #shorts", "oddly satisfying real process #shorts", "perfect machine moment #shorts"]
     channels: []
     extra_sources: []
     max_download_attempts: 6
-    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "asmr"]
+    min_source_duration: 3
+    max_source_duration: 90
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "asmr", "full video"]
     channel: NXS
     tags: ["satisfying", "oddlysatisfying", "process", "top5", "shorts"]
 
   street_moments:
     title: "TOP {n} STREET MOMENTS"
-    queries: ["unexpected street moment caught on camera", "funny public moment", "street performance surprise"]
+    source_kind: youtube_shorts
+    queries: ["unexpected street moment #shorts", "funny public moment #shorts", "street performance surprise #shorts"]
     channels: []
     extra_sources: []
     max_download_attempts: 6
-    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music video", "podcast", "commentary", "livestream"]
+    min_source_duration: 3
+    max_source_duration: 90
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music video", "podcast", "commentary", "livestream", "full video"]
     channel: NXS
     tags: ["street", "caughtoncamera", "funny", "top5", "shorts"]
 
