@@ -1,9 +1,10 @@
 """Fast, bounded YouTube sourcing for ranking clips.
 
-The important distinction here is discovery budget versus download budget.
-A topic may discover many candidates, but it must not download all of them
-just because vetting rejects the first batch. The default download budget is
-small and explicit; raise it only for a topic with a proven pass rate.
+Discovery is metadata-only. For moment topics we deliberately source short,
+single-event YouTube Shorts instead of long compilations. That makes a full
+candidate download cheap enough to vet, while keeping the existing vetting
+contract intact: motion, audio, OCR, and perceptual hash still inspect the
+actual pixels before a clip is accepted.
 """
 import re
 from pathlib import Path
@@ -63,16 +64,18 @@ def _candidate(entry:Dict,info:Dict,seen:set,topic_cfg:Dict,db)->Optional[Dict]:
   db.mark_rejected(url,topic_cfg['name'],'off_topic');return None
  duration=float(entry.get('duration') or 0)
  views=int(entry.get('view_count') or 0)
- max_duration=float(config.get('max_source_duration',900))
- min_views=int(config.get('min_source_views',500))
+ max_duration=float(topic_cfg.get('max_source_duration') or config.get('max_source_duration',900))
+ min_duration=float(topic_cfg.get('min_source_duration') or 0)
+ min_views=int(topic_cfg.get('min_source_views') if topic_cfg.get('min_source_views') is not None else config.get('min_source_views',500))
  if duration and duration>max_duration:
   db.mark_rejected(url,topic_cfg['name'],'too_long');return None
+ if duration and duration<min_duration:
+  db.mark_rejected(url,topic_cfg['name'],'too_short');return None
  if views and views<min_views:return None
  return {'url':url,'source_id':vid,'title':title,'duration':duration,'views':views,'uploader':entry.get('uploader') or entry.get('channel') or '','extractor':entry.get('ie_key') or info.get('extractor') or ''}
 
 def discover(topic_cfg:Dict,db,limit:Optional[int]=None)->List[Dict]:
  limit=limit or int(config.get('candidates_per_topic',40))
- # Discovery can be broad; downloading is intentionally bounded below.
  download_budget=int(topic_cfg.get('max_download_attempts') or config.get('max_download_attempts',8))
  limit=max(limit,download_budget)
  queries=topic_cfg.get('queries') or []
@@ -106,10 +109,15 @@ def download(candidate:Dict,dest_dir:Optional[Path]=None)->Optional[Path]:
  dest_dir=ensure_dir(dest_dir or config.clips_dir)
  stem=safe_slug(f"{candidate.get('source_id') or ''}_{candidate.get('title') or 'clip'}")
  template=str(dest_dir/f'{stem}.%(ext)s')
- # Vetting does not need 720p. A 480p proxy cuts disk and decode cost sharply;
- # accepted clips are still perfectly usable as vertical Shorts.
- height=int(config.get('max_download_height',480) or 480)
- max_bytes=int(config.get('max_download_bytes',100*1024*1024) or 0)
+ source_kind=str(candidate.get('source_kind') or '')
+ if source_kind == 'youtube_shorts':
+  # Shorts are already the unit we need. Keep the source tiny: 360p is enough
+  # for motion/OCR/phash vetting, and the accepted source is only 15-60s.
+  height=int(config.get('shorts_download_height',360) or 360)
+  max_bytes=int(config.get('shorts_max_download_bytes',50*1024*1024) or 0)
+ else:
+  height=int(config.get('max_download_height',480) or 480)
+  max_bytes=int(config.get('max_download_bytes',100*1024*1024) or 0)
  opts={'outtmpl':template,'format':f'bestvideo[height<={height}][vcodec!=av01]+bestaudio/bestvideo[height<={height}]+bestaudio/best[height<={height}]/best','format_sort':['res','vbr','abr'],'merge_output_format':'mp4','noplaylist':True,'max_filesize':max_bytes if max_bytes>0 else None,'continuedl':True,'keepvideo':True,'restrictfilenames':True}
  try:
   with _ydl(opts) as ydl:info=ydl.extract_info(candidate['url'],download=True)
@@ -117,5 +125,5 @@ def download(candidate:Dict,dest_dir:Optional[Path]=None)->Optional[Path]:
  if not info:return None
  for path in sorted(dest_dir.glob(f'{stem}.*')):
   if path.suffix.lower() in ('.mp4','.mkv','.webm','.mov') and path.stat().st_size>64*1024:
-   candidate['local_path']=str(path);candidate['title']=info.get('title') or candidate.get('title');logger.info('SOURCE_READY id=%s size_mb=%.1f height_cap=%d',candidate.get('source_id'),path.stat().st_size/1048576,height);return path
+   candidate['local_path']=str(path);candidate['title']=info.get('title') or candidate.get('title');logger.info('SOURCE_READY id=%s size_mb=%.1f height_cap=%d kind=%s',candidate.get('source_id'),path.stat().st_size/1048576,height,source_kind or 'longform');return path
  logger.warning('SOURCE_DOWNLOAD_EMPTY id=%s',candidate.get('source_id'));return None
