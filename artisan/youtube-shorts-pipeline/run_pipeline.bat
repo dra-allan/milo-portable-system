@@ -18,6 +18,7 @@ if not "%~1"=="" (
     if "%~1"=="5" goto library
     if "%~1"=="6" goto test
     if "%~1"=="7" goto set_background
+    if "%~1"=="8" goto stats_report
     if "%~1"=="9" goto set_caption
     if "%~1"=="10" goto exit_script
     echo Invalid option: %~1
@@ -42,6 +43,7 @@ echo   4. Upload Existing Local Shorts
 echo   5. Process from Library (downloaded videos)
 echo   6. Run in Test Mode (check components)
 echo   7. Set BackgroundMode
+echo   8. View Channel Performance Report (Live Stats)
 echo   9. Set CaptionStyle
 echo  10. Exit
 echo.
@@ -55,6 +57,7 @@ if "%choice%"=="4" goto upload_existing
 if "%choice%"=="5" goto library
 if "%choice%"=="6" goto test
 if "%choice%"=="7" goto set_background
+if "%choice%"=="8" goto stats_report
 if "%choice%"=="9" goto set_caption
 if "%choice%"=="10" goto exit_script
 echo Invalid choice! Please try again.
@@ -358,6 +361,22 @@ echo.
 echo All pending uploads completed.
 pause
 goto upload_existing
+
+:stats_report
+cls
+echo.
+echo ================================================================
+echo           Channel Performance Report (Live Stats)
+echo ================================================================
+echo.
+echo Pulling latest YouTube metrics for all connected channels...
+echo.
+call venv\Scripts\activate
+python -m src.main --mode stats --stats-age-hours 0
+echo.
+echo Report completed.
+pause
+goto main
 
 :set_background
 cls
