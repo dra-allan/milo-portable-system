@@ -1,0 +1,84 @@
+# Append this mapping to config/niches.yaml after the existing gta_hype block.
+# The live file is intentionally not rewritten here: this small patch keeps
+# the 25 existing niches untouched while replacing only GTA sources and the
+# upload binding.
+#
+# After appending, remove the old gta_hype mapping first, or YAML will use the
+# last duplicate and the file will be harder to maintain.
+
+gta_hype:
+  upload_channels:
+    - NXS
+  channel: NXS
+  max_videos: 4
+  channels:
+    # Group 1: GTA-focused talk sources
+    - "@MrBossFTW"
+    - "@ZacCoxTV"
+    - "@Saintsfan"
+    - "@TGG_"
+    - "@GTASeriesVideos"
+    # Group 2: broad gaming sources, protected by require_keywords
+    - "@IGN"
+    - "@GameSpot"
+    - "@InsideGaming"
+    - "@whatculturegaming"
+    - "@YongYea"
+    # Verified corrections from the previous list
+    - "@gameranxTV"
+    - "@DigitalFoundry"
+    - "@NoughtPointFourLIVE"
+    - "@TheGamerVideos"
+  require_keywords:
+    - "gta"
+    - "grand theft auto"
+    - "rockstar"
+    - "leonida"
+    - "vice city"
+  keywords:
+    - "gta 6"
+    - "gta vi"
+    - "grand theft auto 6"
+    - "leonida"
+    - "vice city"
+    - "trailer breakdown"
+    - "extended look"
+    - "frame by frame"
+    - "details you missed"
+    - "confirmed feature"
+    - "release date"
+    - "pre order"
+    - "map size"
+    - "open world"
+    - "rockstar confirmed"
+    - "everything we know"
+    - "hidden detail"
+  negative_keywords:
+    - "#shorts"
+    - "shorts"
+    - "clip"
+    - "clips"
+    - "compilation"
+    - "music video"
+    - "official audio"
+    - "lyrics"
+    - "fan made"
+    - "fan edit"
+    - "concept trailer"
+    - "leaked footage"
+    - "leaked gameplay"
+    - "leaked build"
+    - "mod showcase"
+    - "gta 5 gameplay"
+    - "roleplay"
+    - "rp server"
+    - "no commentary"
+    - "full playthrough"
+    - "giveaway"
+    - "modded account"
+  language: en
+  min_duration: 180
+  max_duration: 14400
+  min_score: 0.48
+  preferred_upload_days: 45
+  min_views: 8000
