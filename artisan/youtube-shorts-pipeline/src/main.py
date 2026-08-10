@@ -1148,23 +1148,33 @@ def run_stats_mode(pipeline: 'ShortsPipeline', args) -> int:
 
     # Always show the current leaderboard, even with nothing new to fetch.
     summary = pipeline.db.performance_summary()
-    print(f"\nTracked clips: {summary['tracked']} | "
-          f"with views: {summary['with_views']} | "
-          f"total views: {summary['total_views']} | "
-          f"avg views/clip: {summary['avg_views']}")
+
+    print("\n==========================================================================")
+    print("                     CHANNEL PERFORMANCE REPORT")
+    print("==========================================================================")
+    print(f" Total Tracked Shorts : {summary.get('tracked', 0)}")
+    print(f" Shorts with Views    : {summary.get('with_views', 0)}")
+    print(f" Total Views          : {summary.get('total_views', 0):,}")
+    print(f" Avg Views / Short    : {summary.get('avg_views', 0.0):.1f}")
+    print("==========================================================================\n")
 
     report = pipeline.db.performance_report(limit=args.top)
     if report:
-        print(f"\nTop {len(report)} clips by views:")
+        print(f"Top {len(report)} Performing Shorts Leaderboard:\n")
+        print(f"{'Short ID':<13} | {'Views':<7} | {'Likes':<6} | {'Niche':<16} | {'Headline / Clip Hook'}")
+        print("-" * 80)
         for r in report:
-            print(
-                f"  {r['views']:>7} views | {r['likes']:>5} likes | "
-                f"{r['comments']:>4} cmts | "
-                f"seg {r['segment_index']} ({r['start_time']:.0f}-{r['end_time']:.0f}s) | "
-                f"{str(r['title'])[:44]}"
-            )
+            short_id = r.get('youtube_short_id') or r.get('source_video_id', '')[:11]
+            views = r.get('views', 0)
+            likes = r.get('likes', 0)
+            niche = r.get('niche') or r.get('upload_channel') or 'general'
+            title = str(r.get('title') or '').strip().replace('\n', ' ')
+            if len(title) > 42:
+                title = title[:39] + "..."
+            print(f"{short_id:<13} | {views:>7,} | {likes:>6,} | {niche[:16]:<16} | {title}")
+        print("-" * 80)
     else:
-        print("\nNo performance data yet. Upload some Shorts and run this again.")
+        print("No performance data yet. Upload some Shorts and run stats again.")
 
     return 0
 
