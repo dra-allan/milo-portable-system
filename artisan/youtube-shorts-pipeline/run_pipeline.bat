@@ -20,7 +20,8 @@ if not "%~1"=="" (
     if "%~1"=="7" goto set_background
     if "%~1"=="8" goto stats_report
     if "%~1"=="9" goto set_caption
-    if "%~1"=="10" goto exit_script
+    if "%~1"=="10" goto reset_caps
+    if "%~1"=="11" goto exit_script
     echo Invalid option: %~1
     pause
     goto main
@@ -45,7 +46,8 @@ echo   6. Run in Test Mode (check components)
 echo   7. Set BackgroundMode
 echo   8. View Channel Performance Report (Live Stats)
 echo   9. Set CaptionStyle
-echo  10. Exit
+echo  10. Reset Daily Upload Caps ^& Dead Channels
+echo  11. Exit
 echo.
 set "choice="
 set /p choice="Select an option: "
@@ -59,7 +61,8 @@ if "%choice%"=="6" goto test
 if "%choice%"=="7" goto set_background
 if "%choice%"=="8" goto stats_report
 if "%choice%"=="9" goto set_caption
-if "%choice%"=="10" goto exit_script
+if "%choice%"=="10" goto reset_caps
+if "%choice%"=="11" goto exit_script
 echo Invalid choice! Please try again.
 timeout /t 2 > nul
 goto main
@@ -466,6 +469,21 @@ if exist .env (
 echo %1=%2>> .env.tmp
 move /y .env.tmp .env > nul
 goto :eof
+
+:reset_caps
+cls
+echo.
+echo ================================================================
+echo           Reset Daily Upload Caps & Dead Channels
+echo ================================================================
+echo.
+echo Resetting 24-hour upload limits and dead-channel cache...
+echo.
+call venv\Scripts\activate
+python reset_caps.py
+echo.
+pause
+goto main
 
 :exit_script
 cls
