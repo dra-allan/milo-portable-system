@@ -2,6 +2,13 @@
 # Runtime files are outside this repo; set VIDEO_FACTORY_ROOT in config/.env
 # to the same shared parent used by the other video pipelines.
 
+# NOTE ON `defaults:` -- it is GLOBAL, not per-topic.
+# RankingConfig.topic() (src/config.py) returns the raw topic dict with five
+# setdefault calls and never merges `defaults`, and config.get() reads
+# `defaults` only. So there is no such thing as a topic-level override:
+# changing max_music_confidence for gta6_countdown also changes it for
+# fishing_moments and animal_moments. Design around the values below rather
+# than loosening them for one topic.
 defaults:
   clips_per_video: 5
   min_clip_seconds: 2.5
@@ -86,3 +93,43 @@ topics:
     negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary"]
     channel: ranking_animals
     tags: ["animals", "funnyanimals", "top5", "shorts"]
+
+  # -------------------------------------------------------------------------
+  # gta6_countdown -- Lane A of the GTA plan (see
+  # artisan/youtube-shorts-pipeline/PLAN_GTA_NICHE.md).
+  #
+  # This is the lane that carries volume AND the lane that survives YPP
+  # review. Original TTS narration over sourced b-roll, assembled as a
+  # countdown, is genuinely transformed output. The shorts-pipeline clipper
+  # (Lane B) is not, and a Lane-B-only catalogue should never be submitted for
+  # monetisation.
+  #
+  # Query set deliberately asks for BREAKDOWN and ANALYSIS footage, never raw
+  # trailer footage. Rockstar trailers are wall-to-wall score and would be
+  # rejected by the global max_music_confidence: 0.55 -- and that value cannot
+  # be overridden per-topic (see the note on `defaults:` above). Breakdown
+  # footage has a person talking over it and clears the gate fine.
+  #
+  # Watch on the first run: max_text_coverage 0.18 + blur_detected_text will
+  # bin a lot of GTA news footage (on-screen text, channel watermarks). If the
+  # vet stage starves the render, raise candidates_per_topic -- but note that
+  # is global too, so the extra sourcing cost lands on fishing and animals.
+  # -------------------------------------------------------------------------
+  gta6_countdown:
+    title: "TOP {n} GTA 6 DETAILS"
+    queries:
+      - "gta 6 trailer breakdown details"
+      - "gta 6 extended look analysis"
+      - "gta 6 map leonida breakdown"
+      - "gta 6 details you missed"
+      - "gta 6 confirmed features"
+      - "gta 6 vs gta 5 comparison"
+    channels: []
+    extra_sources: []
+    # "leaked footage" / "leaked gameplay" / "leaked build" are the hard line.
+    # Rockstar tolerates coverage -- it is free marketing -- but aggressively
+    # nukes leaked-build videos. Discussing leaks is fine; hosting the footage
+    # is channel-ending.
+    negative_keywords: ["leaked footage", "leaked gameplay", "leaked build", "fan made", "concept", "mod showcase", "reaction", "livestream", "podcast", "ai generated"]
+    channel: gta6_countdown
+    tags: ["gta6", "gta6trailer", "leonida", "gtavi", "shorts"]
