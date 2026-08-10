@@ -51,10 +51,14 @@ exit /b 0
 if not exist venv\Scripts\activate.bat (echo Missing venv. Create it and install requirements.&pause&exit /b 1)
 call venv\Scripts\activate.bat
 exit /b 0
+:cleanup
+if exist cleanup_runtime.py python cleanup_runtime.py
+exit /b 0
 :full_sweep
 call :start_timer "full sweep"
 call :activate
 python -m src.main --mode once --videos 1
+call :cleanup
 call :stop_timer "full sweep"
 pause
 goto main
@@ -64,6 +68,7 @@ if "%url%"=="" goto main
 call :start_timer "process URL"
 call :activate
 python -m src.main --mode once "%url%"
+call :cleanup
 call :stop_timer "process URL"
 pause
 goto main
@@ -71,6 +76,7 @@ goto main
 call :start_timer "scheduled mode"
 call :activate
 python -m src.main --mode schedule
+call :cleanup
 call :stop_timer "scheduled mode"
 pause
 goto main
@@ -85,6 +91,7 @@ goto main
 call :start_timer "process library"
 call :activate
 python -m src.main --mode library
+call :cleanup
 call :stop_timer "process library"
 pause
 goto main
