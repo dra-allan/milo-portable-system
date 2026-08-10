@@ -68,6 +68,10 @@ def test_font_and_text_paths_are_quoted(tmp_path):
     graph = chains[0]
     assert "fontfile='" in graph
     assert "textfile='" in graph
+    # The colon is escaped AND the value is quoted: the graph parser strips
+    # quotes before drawtext's own option splitter runs, so either alone
+    # leaves the drive-letter colon a separator. Verified against FFmpeg.
+    assert r"C\:/Windows/Fonts/impact.ttf" in graph
 
 
 def test_clip_and_rank_use_separate_files(tmp_path):
