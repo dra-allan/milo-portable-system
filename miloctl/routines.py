@@ -353,7 +353,7 @@ def _builtin_specs() -> List[Dict[str, Any]]:
         {
             "name": "frequent-backup",
             "command": "milo backup -m 'routine: frequent backup'",
-            "schedule": "every 15m",
+            "schedule": "every 1h",
             "output": "log",
             "skip_missed": True,
             "tags": ["maintenance", "frequent"],
@@ -401,7 +401,7 @@ def _builtin_specs() -> List[Dict[str, Any]]:
         {
             "name": "frequent-vault-sync",
             "command": "milo vault sync",
-            "schedule": "every 15m",
+            "schedule": "every 1h",
             "output": "log",
             "skip_missed": True,
             "tags": ["maintenance", "frequent"],
