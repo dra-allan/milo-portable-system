@@ -57,12 +57,13 @@ if errorlevel 1 (
 )
 exit /b 0
 :start_timer
-set "RUN_START=%TIME%"
+rem %TIME% pads single-digit hours with a space; normalize to HH:mm:ss.ff
+set "RUN_START=%TIME: =0%"
 echo.
 echo [START] %~1 at %RUN_START%
 exit /b 0
 :stop_timer
-set "RUN_END=%TIME%"
+set "RUN_END=%TIME: =0%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=[datetime]::ParseExact('%RUN_START%','HH:mm:ss.ff',$null);$e=[datetime]::ParseExact('%RUN_END%','HH:mm:ss.ff',$null);if($e -lt $s){$e=$e.AddDays(1)};$d=$e-$s;Write-Host ('[DONE] '+('%~1')+' | elapsed '+('{0:00}:{1:00}:{2:00}' -f [int]$d.TotalHours,$d.Minutes,$d.Seconds)) -ForegroundColor Green"
 echo.
 exit /b 0
