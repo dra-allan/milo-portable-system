@@ -216,10 +216,12 @@ class Config:
         self.background_mode = (os.getenv('BACKGROUND_MODE') or 'crop').lower()
         if self.background_mode not in ('cheap', 'blur', 'black', 'crop', 'smart'):
             self.background_mode = 'crop'
-        # How many clips to keep in the persisted plan. Rendering is capped by
-        # max_clips_per_video, but keeping a deep ranked list means "give me
-        # 10 more clips" costs no download and no transcription.
-        self.max_candidates = self._int('MAX_CANDIDATES', 30, minimum=1)
+        # How many highlight clips a source video may produce. Allan's rule:
+        # render the TOP 12 detected segments per source so the queue can't
+        # explode into a 300+ clip backlog. This is the real render count:
+        # the planner (processor.py) uses max_candidates over max_clips when
+        # both are set, so keep this the smaller, intentional cap.
+        self.max_candidates = self._int('MAX_CANDIDATES', 12, minimum=1)
 
         # --- Upload behaviour --------------------------------------------
         # Default to NOT uploading: an unattended pipeline that publishes to a
