@@ -657,7 +657,7 @@ class ShortsPipeline:
                     created.append({'index': i, 'path': output_path, 'highlight': highlight})
                     self.db.record_short(
                         video_id, i, highlight['start'], highlight['end'],
-                        title=title, local_path=output_path,
+                        title=hook_text, local_path=output_path,
                         score=highlight.get('score'),
                     )
                     continue
@@ -735,9 +735,10 @@ class ShortsPipeline:
 
                 self.stats['shorts_created'] += 1
                 created.append({'index': i, 'path': output_path, 'highlight': highlight})
+                hook_text = (highlight.get('text') or '').strip()
                 self.db.record_short(
                     video_id, i, highlight['start'], highlight['end'],
-                    title=title, local_path=output_path,
+                    title=hook_text, local_path=output_path,
                     score=highlight.get('score'),
                 )
             created.sort(key=lambda c: c['index'])
@@ -1843,7 +1844,7 @@ def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
             created.append({'index': seg_index, 'path': output_path, 'highlight': highlight})
             pipeline.db.record_short(
                 video_id, seg_index, highlight['start'], highlight['end'],
-                title=title, local_path=output_path, score=highlight.get('score'),
+                title=hook_text, local_path=output_path, score=highlight.get('score'),
             )
             continue
 
@@ -1872,9 +1873,10 @@ def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
 
         pipeline.stats['shorts_created'] += 1
         created.append({'index': seg_index, 'path': output_path, 'highlight': highlight})
+        hook_text = (highlight.get('text') or '').strip()
         pipeline.db.record_short(
             video_id, seg_index, highlight['start'], highlight['end'],
-            title=title, local_path=output_path, score=highlight.get('score'),
+            title=hook_text, local_path=output_path, score=highlight.get('score'),
         )
 
     if not created:
