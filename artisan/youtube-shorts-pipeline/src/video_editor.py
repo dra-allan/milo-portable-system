@@ -866,6 +866,14 @@ class VideoEditor:
                 except OSError:
                     continue
                 tracks.append(path)
+
+        if not tracks and getattr(config, 'music_enabled', True):
+            try:
+                from .music_sources import sync_ncs_music
+                tracks = sync_ncs_music(music_dir=music_dir, min_tracks=3, max_new_tracks=3)
+            except Exception as exc:
+                logger.warning("Failed to auto-sync music tracks: %s", exc)
+
         cls._music_cache = tracks
         return tracks
 
