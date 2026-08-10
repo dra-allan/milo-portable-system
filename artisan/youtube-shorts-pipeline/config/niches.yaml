@@ -1822,3 +1822,146 @@ ranking_general_commentary:
   min_score: 0.48
   preferred_upload_days: 365
   min_views: 50000
+
+# ---------------------------------------------------------------------------
+# gta_hype
+#
+# Lane B of PLAN_GTA_NICHE.md. Fast news-beat clips on the GTA franchise,
+# bridging the 2026-08-27 "Extended Look" and the 2026-11-19 launch.
+#
+# REQUIRES the `require_keywords` gate in discovery.py. That key is the only
+# positive topic filter in the discovery path -- `keywords` below does NOT
+# filter anything, it is read solely by processor.py to score highlight
+# windows inside an already-accepted video. Delete require_keywords and the
+# Group 2 channels will publish Nintendo and Call of Duty clips here.
+#
+# THREE DELIBERATE DEPARTURES FROM THE HOUSE STYLE IN THIS FILE. Each one is
+# a considered exception, not an oversight -- do not "fix" them to match the
+# other niches:
+#
+#   1. "trailer", "teaser", "gameplay" and "news" are absent from the
+#      negatives. Every other niche blocks them. Here they name the single
+#      best source types we have: "GTA 6 Trailer Breakdown" before Aug 27,
+#      "GTA 6 Gameplay Analysis" after it. Negatives are for FORMATS
+#      ("#shorts", "fan edit", "music video"), never for topics.
+#   2. "reaction" and "livestream" are also absent. DarkViperAU's GTA news
+#      reaction VODs run 93k-276k views with excellent talk density;
+#      blocking those two words removes the best source on the list.
+#      max_duration does the bounding instead.
+#   3. min_duration 180 and min_views 8000 sit far below every other niche.
+#      Sampled Aug 2026: MrBossFTW's daily GTA 6 news runs 3:53-9:40 at
+#      13k-42k views. The usual 240-600s / 50k floors delete that entire
+#      tier -- and it is the tier that supplies the freshness edge.
+#      min_views is structurally a RECENCY TAX: a high gate means a source is
+#      only ever visible after it has aged a day or three, which is exactly
+#      backwards for a niche whose whole edge is being early.
+#
+# Sources are talk-track only, on purpose. Highlight scoring reads the
+# transcript, and these channels publish real YouTube captions -- which lets
+# USE_YOUTUBE_SUBS skip the Whisper pass entirely (~85% of runtime per
+# PIPELINE_PERFORMANCE_REPORT.md). Gameplay channels with music and engine
+# noise under the commentary do the opposite: no captions, and worse ASR.
+# Source choice here is a speed decision as much as a quality one.
+# ---------------------------------------------------------------------------
+gta_hype:
+  # Requires: python -m src.uploader auth --channel gta_hype
+  # Until that token exists, sweeps skip this niche entirely. Nothing this
+  # block does can publish on its own.
+  upload_channels:
+    - gta_hype
+  channel: gta_hype
+  max_videos: 4
+  # VERIFY EVERY HANDLE with add_channel.bat before the first real sweep. A
+  # handle that fails to list is cached dead for DEAD_CHANNEL_COOLDOWN_DAYS
+  # (14), so a typo discovered on Aug 27 cannot be fixed on Aug 27.
+  channels:
+    # --- Group 1: GTA-dedicated. Safe with or without the topic gate. ---
+    - "@MrBossFTW"          # daily GTA 6 news, desk cam, 3-10 min
+    - "@LegacyKillaHD"      # GTA 6 news + analysis, 10-20 min
+    - "@GTASeriesVideos"
+    - "@DarkViperAU"        # news + reaction VODs, best talk density here
+    - "@SernandoE"
+    # --- Group 2: broad gaming channels. These are ONLY safe because
+    #     require_keywords gates them. Remove them if that key is removed.
+    - "@gameranxTV"         # NOT "@gameranx" -- verify before first sweep
+    - "@DigitalFoundry"
+    - "@IGN"
+    - "@GameSpot"
+    - "@Nought"
+    - "@TheGamer"
+  # @RockstarGames is deliberately omitted: official trailers run 60-180s and
+  # would be rejected by min_duration on every single sweep, costing a wasted
+  # listing round-trip for nothing.
+  #
+  # THE TOPIC GATE. Title must match at least one of these or the video is
+  # dropped into DiscoveryResult.skipped_off_topic. See the header note.
+  require_keywords:
+    - "gta"
+    - "grand theft auto"
+    - "rockstar"
+    - "leonida"
+    - "vice city"
+  # Highlight scoring only. Kept short and discriminative on purpose: the
+  # keyword score caps at ~6 hits, so a 200-entry list (see PLAN_ROBLOX and
+  # PLAN_MINECRAFT) saturates the cap with junk and crowds out real signal.
+  # Do not "improve" this by adding more.
+  keywords:
+    - "gta 6"
+    - "gta vi"
+    - "grand theft auto 6"
+    - "grand theft auto vi"
+    - "leonida"
+    - "vice city"
+    - "jason and lucia"
+    - "trailer breakdown"
+    - "extended look"
+    - "frame by frame"
+    - "details you missed"
+    - "confirmed feature"
+    - "rockstar confirmed"
+    - "everything we know"
+    - "what nobody noticed"
+    - "hidden detail"
+    - "release date"
+    - "pre order"
+    - "map size"
+    - "open world"
+  negative_keywords:
+    - "#shorts"
+    - "shorts"
+    - "clip"
+    - "clips"
+    - "compilation"
+    - "music video"
+    - "official audio"
+    - "lyrics"
+    - "fan made"
+    - "fan edit"
+    - "concept trailer"
+    # The one hard line with Rockstar: discussing a leak is fine, hosting the
+    # footage is channel-ending. Take-Two nukes leaked-build uploads.
+    - "leaked footage"
+    - "leaked gameplay"
+    - "leaked build"
+    - "mod showcase"
+    - "gta 5 gameplay"
+    - "roleplay"
+    - "rp server"
+    - "no commentary"
+    - "full playthrough"
+    - "giveaway"
+    - "modded account"
+  language: en
+  # See header note 3. Do NOT raise these to match the other niches.
+  min_duration: 180
+  # 4h admits reaction VODs (dense talk tracks) while excluding marathon
+  # streams whose transcription cost exceeds their clip yield.
+  max_duration: 14400
+  min_score: 0.48
+  # DOCUMENTATION ONLY -- discovery.py never reads this key. Recency is
+  # enforced structurally instead: /videos is newest-first and playlistend
+  # truncates to DISCOVERY_LOOKBACK, so keep that low and only list channels
+  # that post GTA content near-daily. Publishing a six-month-old rumour as
+  # news is how a news channel loses its audience.
+  preferred_upload_days: 45
+  min_views: 8000
