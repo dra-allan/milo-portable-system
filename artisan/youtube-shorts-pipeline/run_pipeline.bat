@@ -1,6 +1,11 @@
 @echo off
 title YouTube Shorts Pipeline - Easy Runner
 
+:: Source cap: one source video per niche per sweep/day. Keep this explicit so
+:: niche max_videos overrides cannot create a backlog from the launcher.
+set "SCHEDULE_MAX_VIDEOS=1"
+set "SCHEDULE_MAX_TOTAL=0"
+
 :: Load persistent settings from .env file
 set "BACKGROUND_MODE=smart"
 set "CAPTION_STYLE=hormozi"
@@ -36,6 +41,7 @@ echo ================================================================
 echo.
 echo  Current BackgroundMode : %BACKGROUND_MODE%
 echo  Current CaptionStyle   : %CAPTION_STYLE%
+echo  Source cap             : 1 video per niche per sweep/day
 echo.
 echo   1. Run Full Sweep Now (auto-discover ^& process all niches)
 echo   2. Process a YouTube URL/Video ID
@@ -75,16 +81,16 @@ echo           Run Full Sweep Now
 echo ================================================================
 echo.
 echo This runs one complete automated sweep across all niches:
-echo  - Discovers new videos from each niche's source channels
+echo  - Sources at most ONE new source video per niche
 echo  - Downloads, transcribes, finds highlights, renders Shorts
-echo  - Uploads to YouTube (if enabled^)
-echo  - Respects per-niche caps and backlog-first logic
+echo  - Uploads to YouTube if enabled
+echo  - Existing backlog is handled separately by upload controls
 echo.
 echo Press Ctrl+C at any time to cancel.
 echo.
 call :start_timer
 call venv\Scripts\activate
-python -m src.main --mode once
+python -m src.main --mode once --videos 1
 call :stop_timer
 echo.
 echo Pipeline execution completed.
@@ -109,43 +115,6 @@ echo Test mode completed.
 pause
 goto main
 
-:url
-cls
-echo.
-echo ================================================================
-echo           Process YouTube URL / Video ID
-echo ================================================================
-echo.
-echo Tip: append --force to reprocess an already-done video.
-echo Type 'back' to return to the main menu.
-echo.
-set "url="
-set /p url="YouTube URL or Video ID: "
-set "url=%url: =%"
-if /i "%url%"=="back" goto main
-if "%url%"=="" goto url
-set "FORCE_FLAG="
-echo %url% | findstr /c:"--force" >nul && set "FORCE_FLAG=--force"
-set "url=%url:--force=%"
-set "url=%url: =%"
-echo.
-set "niche="
-set /p niche="Niche (optional, press Enter for auto): "
-call :start_timer
-if "%niche%"=="" (
-    call venv\Scripts\activate
-    python -m src.main --mode once "%url%" %FORCE_FLAG%
-) else (
-    call venv\Scripts\activate
-    python -m src.main --mode once "%url%" --niche "%niche%" %FORCE_FLAG%
-)
-call :stop_timer
-echo.
-echo URL processing completed.
-pause
-goto main
-
-
 :schedule
 cls
 echo.
@@ -153,114 +122,14 @@ echo ================================================================
 echo           Scheduled Mode
 echo ================================================================
 echo.
-echo Running at 9AM daily (once per day).
+echo Running at 9AM daily with a one-source-video-per-niche cap.
 echo Press Ctrl+C to stop.
 echo.
+set "SCHEDULE_MAX_VIDEOS=1"
 call venv\Scripts\activate
 python -m src.main --mode schedule
-echo.
+ echo.
 echo Scheduler stopped.
-pause
-goto main
-
-:library
-cls
-echo.
-echo ================================================================
-echo           Process from Library
-echo ================================================================
-echo.
-if not exist "%~dp0data\temp\*" (
-    echo No downloaded videos found in data\temp.
-    echo Please download a video first using option 2.
-    echo.
-    pause
-    goto main
-)
-
-:: Write the selected video ID to a temp file so batch can read it cleanly.
-:: (Parsing for/f output from an interactive PS script is unreliable.)
-set "SEL_FILE=%TEMP%\yt_pipeline_sel.txt"
-del "%SEL_FILE%" 2>nul
-
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& {
-    $dir = '%~dp0data\temp'
-    $files = Get-ChildItem -Path $dir -Filter '*.info.json' -File -ErrorAction SilentlyContinue | Sort-Object Name
-    if (-not $files -or $files.Count -eq 0) {
-        Write-Host '  No .info.json files found in library.' -ForegroundColor Yellow
-        Read-Host 'Press Enter to return'
-        exit 1
-    }
-    Write-Host '  Available videos:' -ForegroundColor Cyan
-    Write-Host ''
-    for ($i = 0; $i -lt $files.Count; $i++) {
-        try {
-            $json = Get-Content -Raw -Path $files[$i].FullName | ConvertFrom-Json
-            $t = if ($json.title) { $json.title } else { $json.id }
-        } catch {
-            $t = $files[$i].BaseName
-        }
-        Write-Host ('  ' + ($i + 1) + '. ' + $t)
-    }
-    Write-Host ''
-    Write-Host '  0. Back to Main Menu' -ForegroundColor Yellow
-    Write-Host ''
-    $sel = -1
-    while ($sel -lt 0) {
-        $raw = Read-Host 'Enter number'
-        if ($raw -eq '0' -or $raw -eq '') { exit 0 }
-        try {
-            $n = [int]$raw
-            if ($n -ge 1 -and $n -le $files.Count) { $sel = $n }
-            else { Write-Host '  Out of range, try again.' -ForegroundColor Red }
-        } catch {
-            Write-Host '  Enter a number.' -ForegroundColor Red
-        }
-    }
-    $json = Get-Content -Raw -Path $files[$sel - 1].FullName | ConvertFrom-Json
-    $videoId = $json.id
-    Write-Host ''
-    Write-Host ('  Selected: ' + $json.title) -ForegroundColor Green
-    Write-Host ''
-    Set-Content -Path $env:TEMP\yt_pipeline_sel.txt -Value $videoId -Encoding ASCII
-}"
-
-if not exist "%SEL_FILE%" (
-    echo.
-    echo Returning to main menu...
-    timeout /t 1 > nul
-    goto main
-)
-
-set "VIDEOFIXED="
-for /f "usebackq delims=" %%v in ("%SEL_FILE%") do (
-    if not defined VIDEOFIXED set "VIDEOFIXED=%%v"
-)
-del "%SEL_FILE%" 2>nul
-
-if not defined VIDEOFIXED (
-    echo Selection cancelled.
-    pause
-    goto main
-)
-
-echo Selected ID: %VIDEOFIXED%
-echo.
-set "niche="
-set /p niche="Niche (optional, Enter for auto, 'back' to cancel): "
-set "niche=%niche: =%"
-if /i "%niche%"=="back" goto main
-call :start_timer
-if "%niche%"=="" (
-    call venv\Scripts\activate
-    python -m src.main --mode once "%VIDEOFIXED%"
-) else (
-    call venv\Scripts\activate
-    python -m src.main --mode once "%VIDEOFIXED%" --niche "%niche%"
-)
-call :stop_timer
-echo.
-echo Library processing completed.
 pause
 goto main
 
@@ -493,7 +362,7 @@ goto :eof
 cls
 echo.
 echo ================================================================
-echo           Reset Daily Upload Caps & Dead Channels
+echo           Reset Daily Upload Caps ^& Dead Channels
 echo ================================================================
 echo.
 echo Resetting 24-hour upload limits and dead-channel cache...
