@@ -854,7 +854,7 @@ class ShortsPipeline:
                     return None
             return self._uploaders[channel_key]
 
-        cap = self.config.upload_max_per_run
+        cap = self.config.upload_max_per_run or float('inf')  # 0 = unlimited
         # Build the upload queue: fresh clips first (they came from this run),
         # then older rendered-but-unpublished clips to fill the remaining cap.
         queue = [{'index': item['index'], 'path': item['path'],
@@ -918,7 +918,7 @@ class ShortsPipeline:
             ', '.join(f"{ch}={b}/{per_channel_cap}" for ch, b in channel_budget.items()) or '(none)',
         )
 
-        for item in queue[:cap]:
+        for item in (queue if cap == float('inf') else queue[:cap]):
             item_niche = item.get('niche', niche)
             item_source = item.get('source_video_id', video_id)
             item_keywords = (self.config.get_niche_config(item_niche)
@@ -1284,9 +1284,10 @@ def run_test_mode() -> int:
         if config.has_upload_credentials():
             print(f"  [ok]   upload: ENABLED, privacy={config.privacy_status}")
             authed = config.authenticated_channels()
+            run_cap_str = 'unlimited' if config.upload_max_per_run == 0 else str(config.upload_max_per_run)
             print(f"  [{'ok' if authed else 'warn'}]   channels: "
                   f"{', '.join(authed) if authed else 'none authenticated yet'}"
-                  f" (cap {config.upload_max_per_run}/run, "
+                  f" (cap {run_cap_str}/run, "
                   f"backlog={'on' if config.upload_backlog else 'off'})")
             unbound = [n for n in config.niche_names()
                        if config.get_niche_channel(n) not in authed]
@@ -1495,8 +1496,10 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
     """
     upload_limit = args.upload_limit
     if upload_limit is None:
-        upload_limit = getattr(pipeline.config, 'upload_max_per_run', 5)
-    logger.info("Upload limit: %d clips", upload_limit)
+        upload_limit = getattr(pipeline.config, 'upload_max_per_run', 0)
+    if upload_limit == 0:
+        upload_limit = 999999  # unlimited
+    logger.info("Upload limit: %s clips", 'unlimited' if upload_limit >= 999999 else str(upload_limit))
 
     # Pull a larger candidate pool so interactive selection has the full
     # picture; the cap is still enforced at upload time.
@@ -2368,7 +2371,7 @@ def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
                         niche, expired, getattr(config, 'backlog_ttl_days', 7))
 
         # 2. Upload eligible backlog clips
-        backlog_cap = config.upload_max_per_run
+        backlog_cap = config.upload_max_per_run or 999999  # 0 = unlimited
         uploaded_backlog = _upload_backlog_supply(pipeline, niche, backlog_cap, channels)
 
         # 3. Compute queue health after backlog drain

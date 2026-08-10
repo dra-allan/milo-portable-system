@@ -232,7 +232,7 @@ class Config:
         # default Data API quota is ~10,000 units/day and one upload costs
         # ~1,600, so only ~6 uploads fit per day; 20+ clips from one video
         # would blow that instantly, so we throttle and let backlog drain it.
-        self.upload_max_per_run = self._int('UPLOAD_MAX_PER_RUN', 5, minimum=1)
+        self.upload_max_per_run = self._int('UPLOAD_MAX_PER_RUN', 0, minimum=0)  # 0 = unlimited (per-channel cap is the real gate)
         # Hard cap on how many Shorts the same source video may publish per day.
         # Allan's cadence rule: never post more than 3 clips from one source
         # video in 24h (the algo test-fights identical-source bursts). The
