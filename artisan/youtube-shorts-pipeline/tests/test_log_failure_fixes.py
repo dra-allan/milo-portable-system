@@ -129,6 +129,8 @@ def test_missing_music_dir_yields_no_track_instead_of_raising(monkeypatch,
     monkeypatch.setattr(ve.config, 'music_volume', 0.15, raising=False)
     monkeypatch.setattr(ve.config, 'music_dir',
                         str(tmp_path / 'nope'), raising=False)
+    import src.music_sources as ms
+    monkeypatch.setattr(ms, 'sync_ncs_music', lambda **kw: [], raising=False)
     assert ve.VideoEditor._pick_music_track() is None
 
 
