@@ -21,15 +21,15 @@ def _matches_negative(title:str,negatives:List[str])->Optional[str]:
   if needle and re.search(r'(?<!\w)'+re.escape(needle)+r'(?!\w)',low):return needle
  return None
 def _search_target(query:str,count:int)->str:
- """Use date search when supported, then fall back to normal yt-dlp search."""
- return f'ytsearchdate{count}:{query}'
+ """yt-dlp search scheme; ytsearchdate[N]: is a valid scheme."""
+ return f'ytsearch{count}:{query}'
 def _extract_search(ydl,query,count):
  target=_search_target(query,count)
  try:return ydl.extract_info(target,download=False) or {}
  except Exception as exc:
   text=str(exc)
-  if 'Unsupported url scheme' not in text and 'ytsearchdate' not in text:raise
-  logger.warning('YTDLP_SEARCH_FALLBACK query=%s reason=ytsearchdate unsupported',query)
+  if 'Unsupported url scheme' not in text:raise
+  logger.warning('YTDLP_SEARCH_FALLBACK query=%s reason=ytsearch unsupported',query)
   return ydl.extract_info(f'ytsearch{count}:{query}',download=False) or {}
 def discover(topic_cfg:Dict,db,limit:Optional[int]=None)->List[Dict]:
  limit=limit or int(config.get('candidates_per_topic',40));max_duration=float(config.get('max_source_duration',900));min_views=int(config.get('min_source_views',500));queries=topic_cfg.get('queries') or [];per_query=max(5,limit//max(1,len(queries)));found=[];seen=set()
