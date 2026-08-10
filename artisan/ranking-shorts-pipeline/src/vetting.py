@@ -325,8 +325,18 @@ def vet(candidate: Dict, known_hashes: List[str]) -> Dict:
     candidate['motion_score'] = motion
     candidate['action_at'] = action_at
     if motion < float(config.get('min_motion_score', 0.10)):
-        candidate.update(ok=False, reason='no_motion')
-        return candidate
+        # Cut density is a proxy for "something happens here", but a real
+        # moment short is one unbroken shot - the fail/catch/close-call
+        # happens mid-frame with no cut before or after. Zero cuts on a
+        # short-form source is not a montage; it is the moment itself.
+        zero_cut_short = (
+            motion == 0.0
+            and candidate.get('source_kind') == 'youtube_shorts'
+            and duration <= float(config.get('shorts_zero_cut_seconds', 120))
+        )
+        if not zero_cut_short:
+            candidate.update(ok=False, reason='no_motion')
+            return candidate
 
     # Window: centre on the action, clamped to the clip. A clip longer than
     # max_clip is trimmed rather than dropped - the good two seconds of a
