@@ -12,7 +12,9 @@ defaults:
   max_download_attempts: 6
   max_download_height: 480
   max_download_bytes: 100000000
-  shorts_download_height: 360
+  # Shorts are small by duration, so keep the source quality high. The
+  # downloader's max_filesize remains the hard 50MB ceiling for these topics.
+  shorts_download_height: 1080
   shorts_max_download_bytes: 50000000
   max_source_duration: 900
   min_source_views: 500
