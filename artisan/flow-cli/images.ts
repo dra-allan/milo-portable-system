@@ -64,7 +64,7 @@ cli({
   args: [
     { name: 'file', help: 'Prompt batch file; default: 05_IMAGES/IMAGE_PROMPTS_BATCH_FINAL.txt in the current directory' },
     { name: 'out', help: 'Output directory; default: same folder as the prompt file' },
-    { name: 'model', help: 'Model; default nano-banana-2. Aliases: nb2-lite, nb2, nb2-pro, imagen-4' },
+    { name: 'model', help: 'Model; default nano-banana-2. Aliases: nb2-lite, nb2, nb2-pro' },
     { name: 'aspect', help: 'Aspect ratio: 16:9, 9:16, 1:1 (default 16:9 — the POV standard)' },
     { name: 'profiles', help: 'Google account profiles to rotate through on rate limits, comma-separated (e.g. acc1,acc2)' },
     { name: 'force', type: 'boolean', default: false, help: 'Re-generate images that already exist (default: skip them)' },

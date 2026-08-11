@@ -21,7 +21,7 @@ cli({
   navigateBefore: false,
   args: [
     { name: 'file', required: true, help: 'Prompt file path (one prompt per line, or a JSON array)' },
-    { name: 'model', help: 'Model; default nano-banana-2. Friendly aliases: nb2-lite, nb2, nb2-pro, imagen-4' },
+    { name: 'model', help: 'Model; default nano-banana-2. Friendly aliases: nb2-lite, nb2, nb2-pro' },
     { name: 'count', type: 'int', default: 1, help: 'Samples per prompt; 1-4' },
     { name: 'refs', help: 'Reference image list (comma-separated), applied to all prompts. Example: --refs logo.png,background.jpg' },
     { name: 'seed', type: 'int', help: 'Base random seed; increments per prompt' },
