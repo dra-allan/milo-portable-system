@@ -22,6 +22,9 @@ defaults:
   max_music_confidence: 0.75
   max_text_coverage: 0.18
   blur_detected_text: true
+  # Optional path to a yt-dlp cookies.txt/Netscape export. When set, downloads
+  # use it (fixes "Sign in to confirm you're not a bot"). Empty = default.
+  yt_cookies: ""
   min_motion_score: 0.02
   phash_distance: 6
   rank_colors:
@@ -75,7 +78,8 @@ topics:
     title: "TOP {n} FISHING MOMENTS"
     source_kind: youtube_shorts
     allow_commentary: true
-    queries: ["fishing fail #shorts", "unexpected fishing catch #shorts", "funny fishing moment #shorts", "fishing underwater gopro", "pike strike underwater", "fish jumping out of water", "fishing action camera"]
+    allow_music: true
+    queries: ["fishing fail #shorts", "unexpected fishing catch #shorts", "funny fishing moment #shorts", "fishing underwater gopro", "pike strike underwater", "fish jumping out of water", "fishing action camera", "fishing fail gopro straight line", "unexpected catch slow motion fishing", "fisherman knocked off dock", "pike jumps into boat"]
     channels: []
     extra_sources: []
     max_download_attempts: 12
@@ -90,7 +94,8 @@ topics:
     title: "TOP {n} ANIMAL MOMENTS"
     source_kind: youtube_shorts
     allow_commentary: true
-    queries: ["funny animal moment #shorts", "animal fail caught on camera #shorts", "unexpected animal moment #shorts", "wild animal action raw footage", "animal close call #shorts"]
+    allow_music: true
+    queries: ["funny animal moment #shorts", "animal fail caught on camera #shorts", "unexpected animal moment #shorts", "wild animal action raw footage", "animal close call #shorts", "animal encounter camera raw", "goat charges man caught on camera", "deer charges hiker", "snake strikes gopro camera", "elephant chases safari jeep"]
     channels: []
     extra_sources: []
     max_download_attempts: 12
@@ -105,7 +110,8 @@ topics:
     title: "TOP {n} SPORTS MOMENTS"
     source_kind: youtube_shorts
     allow_commentary: true
-    queries: ["sports moment #shorts", "unexpected sports fail #shorts", "crazy sports moment #shorts", "sports highlight raw clip", "incredible sports save #shorts"]
+    allow_music: true
+    queries: ["sports moment #shorts", "unexpected sports fail #shorts", "crazy sports moment #shorts", "sports highlight raw clip", "incredible sports save #shorts", "perfect diving save camera", "cameraman hit by ball sports", "one handed catch slow motion", "footballer kicks ball into camera"]
     channels: []
     extra_sources: []
     max_download_attempts: 12
@@ -120,7 +126,8 @@ topics:
     title: "TOP {n} WILDLIFE MOMENTS"
     source_kind: youtube_shorts
     allow_commentary: true
-    queries: ["wildlife moment #shorts", "unexpected animal encounter #shorts", "wild animal close call #shorts", "wildlife camera trap footage", "predator strike raw"]
+    allow_music: true
+    queries: ["wildlife moment #shorts", "unexpected animal encounter #shorts", "wild animal close call #shorts", "wildlife camera trap footage", "predator strike raw", "bear charges camera", "lion chases camera jeep", "moose charges hiker", "eagle strike caught on camera", "crocodile jumps at camera trap"]
     channels: []
     extra_sources: []
     max_download_attempts: 12
@@ -135,7 +142,8 @@ topics:
     title: "TOP {n} SATISFYING MOMENTS"
     source_kind: youtube_shorts
     allow_commentary: true
-    queries: ["satisfying process #shorts", "oddly satisfying real process #shorts", "perfect machine moment #shorts", "satisfying factory process raw", "satisfying cutting process #shorts"]
+    allow_music: true
+    queries: ["satisfying process #shorts", "oddly satisfying real process #shorts", "perfect machine moment #shorts", "satisfying factory process raw", "satisfying cutting process #shorts", "factory machine satisfying cut raw", "hydraulic press process satisfying", "metal lathe satisfying process", "tile cutting satisfying slow motion"]
     channels: []
     extra_sources: []
     max_download_attempts: 12
@@ -150,7 +158,8 @@ topics:
     title: "TOP {n} STREET MOMENTS"
     source_kind: youtube_shorts
     allow_commentary: true
-    queries: ["unexpected street moment #shorts", "funny public moment #shorts", "street performance surprise #shorts", "street magician reaction real", "public prank caught on camera"]
+    allow_music: true
+    queries: ["unexpected street moment #shorts", "funny public moment #shorts", "street performance surprise #shorts", "street magician reaction real", "public prank caught on camera", "street performer crowd amazes #shorts", "parkour near miss street", "street prank unexpected #shorts", "skateboard fails caught on camera street"]
     channels: []
     extra_sources: []
     max_download_attempts: 12
