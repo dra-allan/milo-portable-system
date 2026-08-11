@@ -70,7 +70,9 @@ def write_text_file(work_dir: Path, name: str, text: str) -> Path:
 
 def _drawtext(font: str, textfile: Path, size: int, color: str,
               x: str, y: str, border_color: Optional[str] = None,
-              border_width: int = 0) -> str:
+              border_width: int = 0,
+              box_color: Optional[str] = None,
+              box_borderw: int = 0) -> str:
     parts = [
         f'drawtext=fontfile={_quote(font)}',
         f'textfile={_quote(textfile)}',
@@ -82,6 +84,11 @@ def _drawtext(font: str, textfile: Path, size: int, color: str,
     if border_color and border_width > 0:
         parts.append(f'bordercolor={border_color}')
         parts.append(f'borderw={border_width}')
+    if box_color:
+        parts.append('box=1')
+        parts.append(f'boxcolor={box_color}')
+        if box_borderw > 0:
+            parts.append(f'boxborderw={box_borderw}')
     parts.append(f'x={x}')
     parts.append(f'y={y}')
     return ':'.join(parts)
@@ -151,8 +158,15 @@ def mask_chain(in_label: str, out_label: str,
 def text_chain(in_label: str, out_label: str, rank: int, clip_title: str,
                video_title: str, clips_total: int,
                work_dir: Optional[Path] = None,
-               show_video_title: bool = True) -> List[str]:
-    """Rank number + clip title + video title, as one drawtext chain.
+               show_video_title: bool = True,
+               leaderboard: Optional[List[Dict]] = None) -> List[str]:
+    """Header + a compact ranked side-list, as one drawtext chain.
+
+    Layout is deliberately "list, not countdown": a small column of numbered
+    rows with the rank as a badge pill and the clip title beside it, sitting in
+    the corner so the footage stays the focus. The playing clip's row is
+    highlighted; the rest are dimmed. No giant numeral, no full-width title
+    band.
 
     ``work_dir`` holds the .txt files backing each drawtext. It defaults to a
     per-rank directory derived from the video title, which is unique within a
@@ -163,55 +177,67 @@ def text_chain(in_label: str, out_label: str, rank: int, clip_title: str,
     work_dir = Path(work_dir) if work_dir else (
         config.temp_dir / 'text' / f'{safe_slug(video_title)}_r{rank}')
 
-    stroke = config.rank_color(rank)
     fill = str(config.get('rank_fill', 'white'))
     outline = str(config.get('rank_outline', 'black'))
     accent = str(config.get('accent_color', '0x1E90FF'))
 
-    rank_size = int(config.get('rank_fontsize', 300))
-    clip_size = int(config.get('clip_title_fontsize', 68))
-    title_size = int(config.get('video_title_fontsize', 62))
-    rank_y = int(config.get('rank_y', 760))
-    clip_y = int(config.get('clip_title_y', 1180))
-    title_y = int(config.get('video_title_y', 300))
+    title_size = int(config.get('video_title_fontsize', 84))
+    title_y = int(config.get('video_title_y', 140))
+    body_size = int(config.get('video_title_body_fontsize', 54))
+
+    list_x = int(config.get('list_x', 84))
+    list_y = int(config.get('list_y', 560))
+    row_h = int(config.get('list_row_h', 92))
+    rank_size = int(config.get('list_rank_size', 46))
+    label_size = int(config.get('list_label_size', 34))
 
     filters: List[str] = []
 
     if show_video_title:
         head = str(clips_total)
         body = _strip_leading_count(video_title, head).upper()
-        top_file = write_text_file(work_dir, 'top', 'TOP')
-        num_file = write_text_file(work_dir, 'count', head)
-        body_file = write_text_file(work_dir, 'vtitle', body)
-        # "TOP" and the count are separate draws so the count can be scaled up
-        # and accented, the way the reference edit does it.
-        filters.append(_drawtext(font, top_file, int(title_size * 1.45), fill,
-                                 x='(w-text_w)/2-70', y=str(title_y - 120),
-                                 border_color=accent, border_width=8))
-        filters.append(_drawtext(font, num_file, int(title_size * 2.1), accent,
-                                 x='(w-text_w)/2+110', y=str(title_y - 150),
-                                 border_color=fill, border_width=8))
-        filters.append(_drawtext(font, body_file, title_size, fill,
+        # One string for "TOP {n}" so the word and the number share a size and
+        # sit naturally together - two separately-scaled draws was the spacing
+        # bug Allan kept hitting.
+        top_file = write_text_file(work_dir, 'top', f'TOP {head}')
+        filters.append(_drawtext(font, top_file, title_size, fill,
                                  x='(w-text_w)/2', y=str(title_y),
-                                 border_color=outline, border_width=8))
+                                 border_color=accent, border_width=10))
+        if body:
+            body_file = write_text_file(work_dir, 'vtitle', body)
+            filters.append(_drawtext(font, body_file, body_size, fill,
+                                     x='(w-text_w)/2',
+                                     y=str(title_y + int(title_size * 1.2)),
+                                     border_color=outline, border_width=8))
 
-    # The clip title is drawn before the number, so the number wins any
-    # overlap - the reference edit puts each title *behind* its rank.
-    if (clip_title or '').strip():
-        clip_file = write_text_file(work_dir, 'clip', clip_title.upper())
-        filters.append(_drawtext(font, clip_file, clip_size, fill,
-                                 x='(w-text_w)/2', y=str(clip_y),
-                                 border_color=outline, border_width=10))
-
-    rank_file = write_text_file(work_dir, 'rank', str(rank))
-    filters.append(_drawtext(font, rank_file, rank_size, outline,
-                             x='(w-text_w)/2', y=str(rank_y),
-                             border_color=outline, border_width=22))
-    filters.append(_drawtext(font, rank_file, rank_size, stroke,
-                             x='(w-text_w)/2', y=str(rank_y),
-                             border_color=stroke, border_width=12))
-    filters.append(_drawtext(font, rank_file, rank_size, fill,
-                             x='(w-text_w)/2', y=str(rank_y)))
+    # The ranked list. Rows are drawn for every clip in the build so the whole
+    # leaderboard is visible at once; the current rank is the bright one.
+    rows = list(leaderboard or [{'rank': rank, 'title': clip_title}])
+    rows = sorted(rows, key=lambda r: int(r.get('rank') or 0))
+    for i, row in enumerate(rows):
+        r = int(row.get('rank') or 0)
+        current = (r == rank)
+        row_y = list_y + i * row_h
+        num_file = write_text_file(work_dir, f'num{r}', str(r))
+        num_color = fill if current else '0x8A8A8A'
+        num_box = accent if current else '0x000000@0.45'
+        filters.append(_drawtext(font, num_file, rank_size, num_color,
+                                 x=str(list_x), y=str(row_y),
+                                 border_color=outline, border_width=4,
+                                 box_color=num_box, box_borderw=8))
+        title = (row.get('title') or clip_title or '').upper()
+        if title:
+            label_file = write_text_file(work_dir, f'lab{r}', title)
+            label_color = fill if current else '0xBFBFBF'
+            filters.append(_drawtext(font, label_file, label_size,
+                                     label_color,
+                                     x=str(list_x + rank_size + 30),
+                                     y=str(row_y + int(rank_size * 0.9)
+                                           - int(label_size * 0.5)
+                                           - int(label_size * 0.06)),
+                                     border_color=outline
+                                     if current else '0x000000@0.60',
+                                     border_width=4))
 
     return [f'[{in_label}]' + ','.join(filters) + f'[{out_label}]']
 
