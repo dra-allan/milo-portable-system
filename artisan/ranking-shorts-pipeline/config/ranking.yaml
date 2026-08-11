@@ -6,8 +6,8 @@ defaults:
   clips_per_video: 5
   min_clip_seconds: 2.5
   max_clip_seconds: 40
-  target_total_seconds: 170
-  hard_max_total_seconds: 180
+  target_total_seconds: 55
+  hard_max_total_seconds: 59
   candidates_per_topic: 60
   max_download_attempts: 6
   max_download_height: 480
@@ -21,6 +21,12 @@ defaults:
   max_words_per_second: 0.45
   max_music_confidence: 0.75
   max_text_coverage: 0.18
+  # Reject clips with no audible audio track (or one that is effectively
+  # silent) so a finished video never has a dead-quiet segment.
+  min_audio_max_db: -35
+  min_audio_mean_db: -45
+  # Voice-over / TTS off by default: the moment niches perform better silent.
+  vo_enabled: false
   blur_detected_text: true
   # Optional path to a yt-dlp cookies.txt/Netscape export. When set, downloads
   # use it (fixes "Sign in to confirm you're not a bot"). Empty = default.
@@ -94,7 +100,7 @@ topics:
     min_source_duration: 3
     max_source_duration: 90
     min_source_views: 100
-    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "tutorial", "asmr", "music", "podcast", "commentary", "full video"]
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "tutorial", "asmr", "podcast", "full video"]
     channel: NXS
     tags: ["fishing", "fishingfails", "funnymoments", "top5", "shorts"]
 
@@ -110,7 +116,7 @@ topics:
     min_source_duration: 3
     max_source_duration: 90
     min_source_views: 100
-    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "full video"]
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "podcast", "full video"]
     channel: NXS
     tags: ["animals", "funnyanimals", "top5", "shorts"]
 
@@ -126,7 +132,7 @@ topics:
     min_source_duration: 3
     max_source_duration: 90
     min_source_views: 100
-    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "full game", "full video"]
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "podcast", "full game", "full video"]
     channel: NXS
     tags: ["sports", "sportsfails", "sportsmoments", "top5", "shorts"]
 
@@ -142,7 +148,7 @@ topics:
     min_source_duration: 3
     max_source_duration: 90
     min_source_views: 100
-    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "documentary full", "full video"]
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "podcast", "documentary full", "full video"]
     channel: NXS
     tags: ["wildlife", "nature", "animals", "top5", "shorts"]
 
@@ -158,7 +164,7 @@ topics:
     min_source_duration: 3
     max_source_duration: 90
     min_source_views: 100
-    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music", "podcast", "commentary", "asmr", "full video"]
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "podcast", "asmr", "full video"]
     channel: NXS
     tags: ["satisfying", "oddlysatisfying", "process", "top5", "shorts"]
 
@@ -174,7 +180,7 @@ topics:
     min_source_duration: 3
     max_source_duration: 90
     min_source_views: 100
-    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "music video", "podcast", "commentary", "livestream", "full video"]
+    negative_keywords: ["compilation", "reaction", "top 10", "ranked", "podcast", "livestream", "full video"]
     channel: NXS
     tags: ["street", "caughtoncamera", "funny", "top5", "shorts"]
 

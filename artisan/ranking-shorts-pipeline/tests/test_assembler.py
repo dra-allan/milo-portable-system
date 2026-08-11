@@ -41,8 +41,59 @@ def test_fitting_takes_from_the_longest_clip_first():
     fitted = assembler.fit_durations([45.0, 3.0, 45.0, 45.0, 45.0])
     assert fitted[1] == pytest.approx(3.0)
     assert fitted[0] < 45.0
-    cap = float(config.get('hard_max_total_seconds', 180))
+    cap = float(config.get('hard_max_total_seconds', 59))
     assert assembler.visible_total(fitted, 0.28) <= cap
+
+
+# ---------------------------------------------------------------------------
+# Head-trim fitting (fit_windows)
+# ---------------------------------------------------------------------------
+def _window(start, duration, action_offset):
+    return {'start': start, 'duration': duration, 'action_offset': action_offset}
+
+
+def test_fit_windows_fits_every_clip_under_the_cap():
+    cap = float(config.get('hard_max_total_seconds', 59))
+    transition = float(config.get('transition_duration', 0.28))
+    clips = [_window(2.0, 40.0, 20.0) for _ in range(5)]
+    assembler.fit_windows(clips)
+    assert assembler.visible_total(
+        [c['duration'] for c in clips], transition) <= cap
+    assert len(clips) == 5  # nothing gets dropped to make room
+
+
+def test_fit_windows_trims_the_head_not_the_end():
+    """Sliding the window forward must keep the peak at the same absolute
+    time: the climax stays on screen while the lead-in is shaved off."""
+    before = _window(2.0, 40.0, 20.0)
+    clips = [dict(before) for _ in range(5)]
+    assembler.fit_windows(clips)
+    for before_c, after in zip([before] * 5, clips):
+        peak_before = before_c['start'] + before_c['action_offset']
+        peak_after = after['start'] + after['action_offset']
+        assert peak_after == pytest.approx(peak_before)
+        assert after['start'] > before_c['start']  # head moved forward
+        assert after['action_offset'] <= after['duration']
+        assert after['duration'] >= float(config.get('min_clip_seconds', 2.5))
+
+
+def test_fit_windows_leaves_a_short_build_alone():
+    clips = [_window(0.0, 4.0, 1.5), _window(0.0, 3.5, 1.0),
+             _window(0.0, 5.0, 2.0)]
+    originals = [dict(c) for c in clips]
+    assembler.fit_windows(clips)
+    for before, after in zip(originals, clips):
+        assert (after['start'], after['duration'],
+                after['action_offset']) == (
+            before['start'], before['duration'], before['action_offset'])
+
+
+def test_fit_windows_never_goes_below_the_floor():
+    floor = float(config.get('min_clip_seconds', 2.5))
+    clips = [_window(5.0, 40.0, 25.0) for _ in range(6)]
+    assembler.fit_windows(clips)
+    assert min(c['duration'] for c in clips) >= floor
+    assert all(c['action_offset'] <= c['duration'] for c in clips)
 
 
 def test_fitting_never_goes_below_the_floor():
