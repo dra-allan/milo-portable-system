@@ -166,8 +166,9 @@ never used; `channels.list` (1) + `playlistItems` (1/page) + `videos.list`
 to start when it exceeds `api.quota_budget` (default 500). Unresolvable
 `@handles` are logged and skipped, never raised.
 
-**Storage** is one sqlite file, `data/processed_videos.db` (created on first
-run). The queue is a table, not a JSON file, so nothing can half-write it:
+**Storage** is one sqlite file, `data/processed_videos.db` under the factory
+(`POV_FACTORY_DIR`, default `C:\Users\user\Desktop\Milo Video Factory\pov`).
+The queue is a table, not a JSON file, so nothing can half-write it:
 
 | Table | Purpose |
 | --- | --- |
@@ -188,14 +189,16 @@ One-time auth, on a machine with a browser:
 
 ```bash
 python -m uploader auth --channel explaination
-# -> config/youtube_token_explaination.json   (secret, gitignored)
+# -> <factory>/config/youtube_token_explaination.json   (secret, untracked)
 ```
 
 After that the upload runs on `google-api-python-client` when it is
 installed, and otherwise on the standard library alone (refresh token ->
 access token -> resumable PUT). Copy the token file to the VPS and it needs
-no Google Python packages at all. A missing thumbnail warns and uploads
-without one. Use `--dry-run-upload` before the first real post.
+no Google Python packages at all. Client secrets (`credentials.json`) resolve
+the same way: the factory `config/` dir first, then the shorts pipeline's
+copy. A missing thumbnail warns and uploads without one. Use
+`--dry-run-upload` before the first real post.
 
 ---
 
@@ -222,15 +225,30 @@ finishes, the log is flushed, exit 0. A project failure marks the item
 `make_notifier()` returns the `notify(event, message)` callable every stage is
 handed, including `agent_runner`. Missing credentials is a silent no-op;
 events still go to `pipeline.log`. Identical messages inside 60 seconds are
-dropped. Copy `config/notify.env.template` or set
-`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the environment.
+dropped. Copy `config/notify.env.template` to `<factory>/config/notify.env`
+(or set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the environment).
 
 ---
 
 ## Config and environment
 
+Everything the pipeline *produces* and everything machine-local lives in the
+factory (`POV_FACTORY_DIR`, default `C:\Users\user\Desktop\Milo Video Factory\pov`),
+never in the portable repo. The repo holds code, prompts and committed
+templates only.
+
+```
+Milo Video Factory\pov\
+├── projects\            # one folder per source video (00_SOURCE_SCRIPT.txt,
+│                        #   scripts, 06_AUDIO, 05_IMAGES, 04_THUMBNAIL, output_pro)
+├── data\                # processed_videos.db (ledger + queue + daily cap)
+├── state\               # pipeline.log, daemon heartbeats
+└── config\              # youtube_token_*.json, credentials.json, notify.env
+```
+
 `config/pov_channels.yaml` provides filters, cadence, privacy and API quota.
-`POV_PROJECTS_DIR`, `POV_DATA_DIR`, `POV_STATE_DIR`, `POV_OPENCODE_MODEL`,
+`POV_FACTORY_DIR`, `POV_PROJECTS_DIR`, `POV_DATA_DIR`, `POV_STATE_DIR`,
+`POV_SECRETS_DIR`, `POV_OPENCODE_MODEL`,
 `POV_MEMORY_PROJECT`, `YOUTUBE_API_KEY`, Gemini keys and Telegram keys are
 environment-driven. All committed templates use `{{PLACEHOLDER}}`; real
 credentials are untracked.

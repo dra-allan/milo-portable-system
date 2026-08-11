@@ -9,10 +9,18 @@ override everything with environment variables.
 
 Environment
 -----------
-``POV_PROJECTS_DIR``  where project folders live (Windows default below)
-``POV_DATA_DIR``      sqlite ledger + queue (default ``<pipeline>/data``)
-``POV_STATE_DIR``     pipeline-level state/log (default ``<pipeline>/state``)
+``POV_FACTORY_DIR``  root of all runtime material (default ``Milo Video
+                    Factory/pov``).
+``POV_PROJECTS_DIR`` project folders (default ``<factory>/projects``)
+``POV_DATA_DIR``     sqlite ledger + queue (default ``<factory>/data``)
+``POV_STATE_DIR``    pipeline-level state/log (default ``<factory>/state``)
+``POV_SECRETS_DIR``  machine-local credentials (default ``<factory>/config``)
 ``POV_CHANNELS_YAML`` explicit path to the source-curation config
+
+Everything the pipeline *produces* and everything machine-local
+(``data/``, ``state/``, secrets) lives under the factory, never inside the
+portable repo. The repo holds code, the agent prompts and the config
+**templates** only.
 
 Secrets are never read from the YAML directly: any value that still looks
 like ``{{PLACEHOLDER}}`` is resolved from the environment variable of the
@@ -31,9 +39,9 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
 
-# Windows dev default. The VPS overrides it with POV_PROJECTS_DIR - this is
+# Windows dev default. The VPS overrides it with POV_FACTORY_DIR - this is
 # the one documented absolute path in the whole pipeline.
-DEFAULT_PROJECTS_DIR = Path(r"C:\Users\user\Desktop\Milo Video Factory\pov\projects")
+DEFAULT_FACTORY_DIR = Path(r"C:\Users\user\Desktop\Milo Video Factory\pov")
 
 
 def eprint(*a: Any, **kw: Any) -> None:
@@ -45,26 +53,43 @@ def _env_path(name: str, default: Path) -> Path:
     return Path(raw).expanduser() if raw else default
 
 
+def factory_dir() -> Path:
+    """Root of all runtime material. Env-configurable for the Linux VPS."""
+    return _env_path("POV_FACTORY_DIR", DEFAULT_FACTORY_DIR)
+
+
 def projects_dir() -> Path:
-    """Where project folders live. Env-configurable for the Linux VPS."""
-    return _env_path("POV_PROJECTS_DIR", DEFAULT_PROJECTS_DIR)
+    """Where project folders live. Defaults to the factory."""
+    return _env_path("POV_PROJECTS_DIR", factory_dir() / "projects")
 
 
 def data_dir() -> Path:
     """Where the sqlite ledger + queue live. Created on demand."""
-    d = _env_path("POV_DATA_DIR", HERE / "data")
+    d = _env_path("POV_DATA_DIR", factory_dir() / "data")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def pipeline_state_dir() -> Path:
     """Pipeline-level state (discovery + daemon). Projects have their own."""
-    d = _env_path("POV_STATE_DIR", HERE / "state")
+    d = _env_path("POV_STATE_DIR", factory_dir() / "state")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def secrets_dir() -> Path:
+    """Machine-local credentials (OAuth tokens, notify.env, client secrets).
+
+    Distinct from ``config_dir()``: the repo config dir ships templates that
+    *are* committed, this dir holds real values that must never be.
+    """
+    d = _env_path("POV_SECRETS_DIR", factory_dir() / "config")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def config_dir() -> Path:
+    """Repo config: committed templates only (pov_channels.yaml, *.template)."""
     return HERE / "config"
 
 
