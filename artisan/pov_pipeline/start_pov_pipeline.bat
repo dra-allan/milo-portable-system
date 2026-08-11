@@ -89,11 +89,11 @@ call :run_pipeline --queue
 pause
 goto menu
 :once
-call :run_pipeline --once --flow-profiles "%FLOW_PROFILES%"
+call :run_pipeline --once --ignore-window --flow-profiles "%FLOW_PROFILES%"
 pause
 goto menu
 :once_skip_upload
-call :run_pipeline --once --skip-upload --flow-profiles "%FLOW_PROFILES%"
+call :run_pipeline --once --ignore-window --skip-upload --flow-profiles "%FLOW_PROFILES%"
 pause
 goto menu
 :daemon_foreground

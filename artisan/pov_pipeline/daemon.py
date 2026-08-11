@@ -330,7 +330,7 @@ def run_once(cfg: dict | None = None, *, notify: Notify | None = None,
 
         cap = int(cadence.get("videos_per_day") or DEFAULT_VIDEOS_PER_DAY)
         started = store.runs_today()
-        if started >= cap:
+        if not ignore_window and started >= cap:
             log_line("daemon.idle",
                      f"daily cap reached ({started}/{cap} videos today)")
             return PassResult(ok=True, acted=False, reason="daily cap")
