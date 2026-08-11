@@ -236,8 +236,14 @@ export async function flowFetch(
 /**
  * Fetch fresh reCAPTCHA Enterprise token for the Flow site key.
  * Runs grecaptcha.enterprise.execute() inside the page.
+ *
+ * The action must match what the Flow UI uses for that media type, or the
+ * server rejects the token with 403 PUBLIC_ERROR_UNUSUAL_ACTIVITY:
+ *   - videos:  'VIDEO_GENERATION'   (verified in _app chunk)
+ *   - images:  'IMAGE_GENERATION'   (verified in 7874 chunk)
+ *   - audio:   'AUDIO_GENERATION'
  */
-export async function getRecaptchaToken(page: IPage): Promise<string> {
+export async function getRecaptchaToken(page: IPage, action: string = 'VIDEO_GENERATION'): Promise<string> {
   const js = `
     (async () => {
       // wait up to 5s for grecaptcha to be ready
@@ -248,9 +254,9 @@ export async function getRecaptchaToken(page: IPage): Promise<string> {
       }
       // The site key was extracted from the recaptcha endpoint URL during analysis.
       const SITE_KEY = '6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV';
-      // action name must match what Flow UI uses, otherwise Google returns
-      // 403 PUBLIC_ERROR_UNUSUAL_ACTIVITY (reCAPTCHA evaluation failed).
-      return await window.grecaptcha.enterprise.execute(SITE_KEY, { action: 'VIDEO_GENERATION' });
+      // action name must match what Flow UI uses for this media type, otherwise
+      // Google returns 403 PUBLIC_ERROR_UNUSUAL_ACTIVITY (reCAPTCHA evaluation failed).
+      return await window.grecaptcha.enterprise.execute(SITE_KEY, { action: ${JSON.stringify(action)} });
     })()
   `;
   return (await page.evaluate(js)) as string;
