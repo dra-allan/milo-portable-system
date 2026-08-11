@@ -53,6 +53,8 @@ Environment overrides
 ``POV_OPENCODE_AGENT``    force a specific opencode agent for every stage
 ``POV_AGENT_TIMEOUT``     per-agent timeout override, seconds
 ``POV_GATE_MAX_RETRIES``  scriptwriter retries after a gate FAIL (default 3)
+``POV_AGENT_MAX_RETRIES`` re-dispatches when an agent exits without writing
+                          its output file (missing/empty artifact), default 2
 ``POV_MILO_BIN``          explicit path to the bundled milo CLI
 ``POV_MEMORY_PROJECT``    Milo memory project key (default ``pov-pipeline``)
 """
@@ -557,12 +559,12 @@ def build_brief(*, agent: str, prompt_text: str, project_dir: Path, outfile: str
     if attempt > 1:
         report = gate_report.strip() or "(no report captured)"
         retry_block = (
-            f"\nRETRY {attempt}. YOUR PREVIOUS OUTPUT WAS REJECTED BY THE SCRIPT GATE.\n"
-            f"Rewrite {outfile} from scratch and fix every point below. Do not\n"
+            f"\nRETRY {attempt}. YOUR PREVIOUS ATTEMPT WAS REJECTED.\n"
+            f"Produce {outfile} from scratch and fix every point below. Do not\n"
             "submit a light edit of the rejected draft.\n\n"
-            "--- GATE FAILURE REPORT ---\n"
+            "--- FAILURE REPORT ---\n"
             f"{report}\n"
-            "--- END GATE FAILURE REPORT ---\n"
+            "--- END FAILURE REPORT ---\n"
         )
 
     return (
@@ -795,6 +797,56 @@ def _previous_of(agents: Sequence[tuple[str, str]], agent: str) -> str | None:
     return prev
 
 
+def _missing_output_error(res: AgentResult) -> bool:
+    """True when an agent exited but left no usable artifact.
+
+    These are the flaky-model failures: opencode exits 0 (or 1) having only
+    read files and walked away, so the expected output file never landed.
+    Retrying helps because the model gets a fresh context with a retry note.
+    Timeouts, missing prompts or brief-write errors will not fix themselves.
+    """
+    return (res.status == "failed" and res.error
+            and ("never written" in res.error or "is empty" in res.error))
+
+
+def _dispatch_with_retry(project_dir: Path, agent: str, outfile: str, *,
+                         agents_dir: Path, previous_output: str | None,
+                         model: str | None, agent_override: str | None,
+                         timeout: int | None, use_memory: bool, dry_run: bool,
+                         notify: Notify, results: list[AgentResult],
+                         max_retries: int) -> AgentResult:
+    """Dispatch an agent, re-running it when it exits without its output file.
+
+    Mirrors the gate loop's retry behaviour but for missing output: an agent
+    that walks away after reading its brief gets up to ``max_retries`` extra
+    fresh-context attempts before the project is parked. Every attempt is
+    appended to ``results`` so the run history stays complete.
+    """
+    attempt = 1
+    res = dispatch_agent(project_dir, agent, outfile, agents_dir=agents_dir,
+                         previous_output=previous_output, model=model,
+                         agent_override=agent_override, timeout=timeout,
+                         attempt=attempt, use_memory=use_memory,
+                         dry_run=dry_run)
+    results.append(res)
+    while not res.ok and _missing_output_error(res) and attempt <= max_retries:
+        attempt += 1
+        reason = f"{agent} produced no {outfile} (attempt {attempt - 1})"
+        log_event(project_dir, "agent.retry", reason, level="error")
+        milo_remember(
+            f"POV pipeline: {project_dir.name} - {reason}. Re-dispatching "
+            f"{agent} with a retry brief.", importance=3, enabled=use_memory)
+        notify("agent.retry", f"POV {project_dir.name}: {reason}, re-dispatching")
+        res = dispatch_agent(project_dir, agent, outfile, agents_dir=agents_dir,
+                             previous_output=previous_output, model=model,
+                             agent_override=agent_override, timeout=timeout,
+                             attempt=attempt,
+                             gate_report=f"Previous run: {res.error}",
+                             use_memory=use_memory, dry_run=dry_run)
+        results.append(res)
+    return res
+
+
 def _gate_loop(project_dir: Path, agents: Sequence[tuple[str, str]], agent: str,
                outfile: str, chain: ChainResult, *, gate_fn: GateFn, retries: int,
                agents_dir: Path, model: str | None, agent_override: str | None,
@@ -999,12 +1051,16 @@ def run_agent_chain(project_dir: Path, agents: Sequence[tuple[str, str]], *,
             previous_output = outfile
         else:
             log_event(project_dir, "agent.start", f"{agent} -> {outfile}")
-            res = dispatch_agent(project_dir, agent, outfile,
-                                 agents_dir=agents_dir,
-                                 previous_output=previous_output, model=model,
-                                 agent_override=agent_override, timeout=timeout,
-                                 use_memory=use_memory, dry_run=dry_run)
-            chain.agents.append(res)
+            try:
+                max_retries = int(os.environ.get("POV_AGENT_MAX_RETRIES", "2"))
+            except ValueError:
+                max_retries = 2
+            res = _dispatch_with_retry(
+                project_dir, agent, outfile, agents_dir=agents_dir,
+                previous_output=previous_output, model=model,
+                agent_override=agent_override, timeout=timeout,
+                use_memory=use_memory, dry_run=dry_run, notify=_notify,
+                results=chain.agents, max_retries=max_retries)
 
             if not res.ok:
                 reason = f"{agent} failed ({res.status}): {res.error}"
