@@ -6,6 +6,7 @@ candidate download cheap enough to vet, while keeping the existing vetting
 contract intact: motion, audio, OCR, and perceptual hash still inspect the
 actual pixels before a clip is accepted.
 """
+import os
 import re
 from pathlib import Path
 from typing import Dict,List,Optional
@@ -15,7 +16,10 @@ logger=setup_logger(__name__)
 
 def _ydl(opts:Dict):
  from yt_dlp import YoutubeDL
- base={'quiet':True,'no_warnings':True,'noprogress':True,'ignoreerrors':True,'retries':3,'extractor_retries':3,'fragment_retries':8,'retry_sleep':lambda n:min(8,2**n),'socket_timeout':30,'concurrent_fragment_downloads':int(config.get('download_concurrency',4) or 4)};base.update(opts);return YoutubeDL(base)
+ base={'quiet':True,'no_warnings':True,'noprogress':True,'ignoreerrors':True,'retries':3,'extractor_retries':3,'fragment_retries':8,'retry_sleep':lambda n:min(8,2**n),'socket_timeout':30,'concurrent_fragment_downloads':int(config.get('download_concurrency',4) or 4)};base.update(opts)
+ cookies=config.get('yt_cookies') or os.getenv('YT_COOKIES') or ''
+ if cookies:base['cookies']=str(cookies)
+ return YoutubeDL(base)
 
 def _youtube_target(value:str)->str:
  value=str(value or '').strip()
@@ -79,7 +83,11 @@ def discover(topic_cfg:Dict,db,limit:Optional[int]=None)->List[Dict]:
  download_budget=int(topic_cfg.get('max_download_attempts') or config.get('max_download_attempts',8))
  limit=max(limit,download_budget)
  queries=topic_cfg.get('queries') or []
- per_query=max(5,limit//max(1,len(queries)))
+ # Search deeper than the scraped pool normally returns. Every run marks the
+ # found URLs used/rejected in the DB, so the same queries pull fewer new
+ # candidates each time; a wider per-query fetch reaches less-popular videos
+ # that were never seen and keeps moment topics from starving.
+ per_query=min(25,max(15,limit//max(1,len(queries))))
  found=[];seen=set()
  with _ydl({'extract_flat':'in_playlist','skip_download':True,'playlistend':per_query}) as ydl:
   for query in queries:
