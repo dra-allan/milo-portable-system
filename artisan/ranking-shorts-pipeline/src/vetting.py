@@ -72,6 +72,42 @@ def scene_profile(path: str, duration: float) -> Tuple[float, float]:
 # ---------------------------------------------------------------------------
 # Audio: commentary and music
 # ---------------------------------------------------------------------------
+def audible_reason(path: str) -> Optional[str]:
+    """Reason a clip is unusable on audio, or None if it is audible.
+
+    A finished video must never carry a dead-quiet segment, so beyond "has an
+    audio stream" we check that something is actually audible: a stream can
+    exist while being mute or clipped to silence. ``mean`` catches
+    always-quiet audio, ``max`` catches a track that is silent even at its
+    loudest instant.
+    """
+    if not probe_media(path).get('has_audio'):
+        return 'no_audio'
+    stderr = run_ffmpeg_capture([
+        '-i', str(path), '-vn', '-af', 'volumedetect', '-f', 'null', '-'])
+    max_db = mean_db = None
+    for line in stderr.splitlines():
+        for label in ('max_volume', 'mean_volume'):
+            token = f'{label}:'
+            if token in line:
+                try:
+                    value = float(line.split(token)[1].replace('dB', '')
+                                  .strip())
+                except (ValueError, IndexError):
+                    continue
+                if label == 'max_volume':
+                    max_db = value
+                else:
+                    mean_db = value
+    if max_db is None or mean_db is None:
+        return None  # ffmpeg could not analyse it; do not guess
+    if max_db < float(config.get('min_audio_max_db', -35)):
+        return 'silent_audio'
+    if mean_db < float(config.get('min_audio_mean_db', -45)):
+        return 'silent_audio'
+    return None
+
+
 def extract_audio(path: str, out_wav: Path) -> Optional[Path]:
     ensure_dir(out_wav.parent)
     ok = run_ffmpeg(['-i', str(path), '-vn', '-ac', '1', '-ar', '16000',
@@ -319,6 +355,13 @@ def vet(candidate: Dict, known_hashes: List[str]) -> Dict:
 
     if duration < min_clip:
         candidate.update(ok=False, reason='too_short')
+        return candidate
+
+    # No silent clips: a mute segment in a countdown reads as a broken upload,
+    # not as an artistic choice.
+    audio_reason = audible_reason(path)
+    if audio_reason:
+        candidate.update(ok=False, reason=audio_reason)
         return candidate
 
     motion, action_at = scene_profile(path, duration)

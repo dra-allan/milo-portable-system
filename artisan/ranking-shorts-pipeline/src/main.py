@@ -120,6 +120,11 @@ class RankingPipeline:
         if ordered:
             ordered[0]['hook_candidate'] = True
 
+        # Fit all clips into the Shorts window before any copy or sound is
+        # written: head-trimming moves the start, so the SFX cue and the plan
+        # must be computed after the trim, never before.
+        assembler.fit_windows(ordered)
+
         meta = scriptwriter.write_copy(topic_cfg, ordered)
         slug = f"{topic_name}_{int(time.time())}"
         scriptwriter.generate_voiceover(ordered, slug)
@@ -138,6 +143,7 @@ class RankingPipeline:
                     'path': clip['local_path'],
                     'start': clip.get('clip_start', 0.0),
                     'duration': clip.get('clip_duration', 4.0),
+                    'action_offset': clip.get('action_offset', 0.0),
                     'rank': clip['rank'],
                     'title': clip.get('title'),
                     'vo_path': clip.get('vo_path'),
