@@ -69,6 +69,8 @@ class RankingPipeline:
                                       'download_failed')
                 continue
 
+            candidate['allow_commentary'] = bool(
+                topic_cfg.get('allow_commentary'))
             result = vetting.vet(candidate, known)
             if not result.get('ok'):
                 rejects += 1

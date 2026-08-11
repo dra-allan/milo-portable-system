@@ -363,9 +363,17 @@ def vet(candidate: Dict, known_hashes: List[str]) -> Dict:
             wps = (transcript['words'] / duration) if duration else 0.0
             candidate['words_per_second'] = round(wps, 3)
             if wps > float(config.get('max_words_per_second', 0.45)):
-                candidate.update(ok=False, reason='has_commentary')
-                wav.unlink(missing_ok=True)
-                return candidate
+                if (candidate.get('allow_commentary')
+                        or config.get('allow_commentary')):
+                    # Narrated raw footage (a bear close-call with a cameraman
+                    # talking over it): keep it, but mark the speech so the
+                    # script writer does not lay TTS voice-over on top of the
+                    # clip's own narration.
+                    candidate['has_speech'] = True
+                else:
+                    candidate.update(ok=False, reason='has_commentary')
+                    wav.unlink(missing_ok=True)
+                    return candidate
 
         music = music_confidence(wav)
         if music is not None:
