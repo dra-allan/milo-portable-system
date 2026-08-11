@@ -26,7 +26,9 @@ echo 6. Test environment
 echo 7. Set topic
 echo 8. Open runtime folders
 echo 9. Delete already-uploaded local videos
-echo 10. Exit
+echo 10. Run one sweep (drain backlog, refill, upload 6 capped)
+echo 11. Run scheduler daemon (daily sweep, Ctrl+C to stop)
+echo 12. Exit
 echo.
 set /p choice="Select: "
 if "%choice%"=="1" goto build_private
@@ -38,7 +40,9 @@ if "%choice%"=="6" goto test
 if "%choice%"=="7" goto set_topic
 if "%choice%"=="8" goto folders
 if "%choice%"=="9" goto cleanup_uploaded
-if "%choice%"=="10" goto done
+if "%choice%"=="10" goto sweep
+if "%choice%"=="11" goto schedule
+if "%choice%"=="12" goto done
 goto main
 :ensure_env
 if not exist venv\Scripts\python.exe (
@@ -140,6 +144,23 @@ call :ensure_env
 if errorlevel 1 goto main
 call :python cleanup_uploaded.py
 call :stop_timer "delete uploaded local videos"
+pause
+goto main
+:sweep
+call :start_timer "sweep"
+call :ensure_env
+if errorlevel 1 goto main
+call :python -m src.main --mode sweep
+call :python cleanup_runtime.py
+call :stop_timer "sweep"
+pause
+goto main
+:schedule
+call :start_timer "scheduler daemon"
+call :ensure_env
+if errorlevel 1 goto main
+call :python -m src.main --mode schedule
+call :stop_timer "scheduler daemon"
 pause
 goto main
 :done
