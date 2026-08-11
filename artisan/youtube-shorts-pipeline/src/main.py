@@ -2348,6 +2348,23 @@ def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
         if total_budget:
             cap = min(cap, total_budget - started_total)
         if cap <= 0:
+            if config.sweep_guarantee_fresh:
+                # Allan's rule: a full sweep chops one fresh video for every
+                # authenticated channel, regardless of the shared sweep
+                # budget. The chop itself is cheap; UPLOAD is still capped
+                # below, so the fresh video queues instead of bursting the
+                # channel's daily cap. run_niche() itself refuses niches
+                # without an authenticated channel.
+                logger.info(
+                    "Niche '%s': sweep budget exhausted, guaranteeing one "
+                    "fresh chop (SWEEP_GUARANTEE_FRESH)", niche)
+                try:
+                    started = pipeline.run_niche(niche, max_videos=1)
+                    started_total += started or 0
+                except Exception as exc:
+                    logger.warning(
+                        "Guaranteed fresh chop failed for '%s': %s", niche, exc)
+                continue
             logger.info("Scheduled sweep total budget (%d videos) exhausted",
                         total_budget)
             break
