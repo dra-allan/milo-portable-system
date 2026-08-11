@@ -16,7 +16,7 @@ The duration arithmetic in :func:`fit_durations` is the part to be careful
 with. xfade *overlaps* its two inputs, so an n-clip build is
 ``sum(durations) - (n-1) * transition_duration`` long, not ``sum(durations)``.
 Budgeting on the sum leaves videos short of the target; ignoring the overlap in
-the other direction pushes them past the 60s Shorts limit.
+the other direction pushes them past the 180s Shorts limit.
 """
 
 import shutil

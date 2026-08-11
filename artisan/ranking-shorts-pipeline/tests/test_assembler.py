@@ -37,10 +37,12 @@ def test_overlong_build_is_fitted_under_the_cap():
 
 
 def test_fitting_takes_from_the_longest_clip_first():
-    """A 3-second clip is already at the payoff; a 20-second one has slack."""
-    fitted = assembler.fit_durations([20.0, 3.0, 20.0, 20.0, 20.0])
+    """A 3-second clip is already at the payoff; 45-second ones have slack."""
+    fitted = assembler.fit_durations([45.0, 3.0, 45.0, 45.0, 45.0])
     assert fitted[1] == pytest.approx(3.0)
-    assert fitted[0] < 20.0
+    assert fitted[0] < 45.0
+    cap = float(config.get('hard_max_total_seconds', 180))
+    assert assembler.visible_total(fitted, 0.28) <= cap
 
 
 def test_fitting_never_goes_below_the_floor():
