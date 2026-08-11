@@ -56,6 +56,7 @@ class RankingConfig:
         self.defaults.setdefault('max_download_height', self.download_height); self.defaults.setdefault('max_download_bytes', self.download_max_bytes); self.defaults.setdefault('max_source_duration', self.max_source_duration); self.defaults.setdefault('download_concurrency', self.download_concurrency); self.defaults.setdefault('render_workers', self.render_workers)
         if not os.getenv('VO_ENABLED'): self.vo_enabled = bool(self.defaults.get('vo_enabled', True))
         if os.getenv('CLIPS_PER_VIDEO'): self.defaults['clips_per_video'] = _i('CLIPS_PER_VIDEO', 5)
+        if os.getenv('RANKING_VIDEOS_PER_RUN'): self.defaults['videos_per_run'] = _i('RANKING_VIDEOS_PER_RUN', 1)
     def _path(self, env, default, create=True):
         path = Path(os.getenv(env, default)).expanduser(); path = self.runtime_root / path if not path.is_absolute() else path; return ensure_dir(path) if create else path
     def _asset_path(self, env, default):
