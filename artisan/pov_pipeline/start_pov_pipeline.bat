@@ -5,6 +5,8 @@ cd /d "%~dp0"
 title POV Pipeline Control Panel
 set "POV_DIR=%~dp0"
 set "REPO_DIR=%~dp0..\.."
+set "FACTORY_DIR=C:\Users\user\Desktop\Milo Video Factory\pov"
+if not exist "%FACTORY_DIR%" set "FACTORY_DIR=%REPO_DIR%\artisan\pov_pipeline"
 set "PY=%REPO_DIR%\.venv\Scripts\python.exe"
 if not exist "%PY%" set "PY=python"
 set "PIPELINE=run_pov_pipeline.py"
@@ -155,8 +157,8 @@ start "POV channels" notepad "%POV_DIR%config\pov_channels.yaml"
 pause
 goto menu
 :edit_env
-if not exist "%REPO_DIR%\.env" copy /y "%POV_DIR%config\notify.env.template" "%REPO_DIR%\.env" >nul
-start "POV environment" notepad "%REPO_DIR%\.env"
+if not exist "%FACTORY_DIR%\config\notify.env" copy /y "%POV_DIR%config\notify.env.template" "%FACTORY_DIR%\config\notify.env" >nul
+start "POV environment" notepad "%FACTORY_DIR%\config\notify.env"
 pause
 goto menu
 :edit_env_vars
@@ -175,7 +177,7 @@ if errorlevel 1 (echo [FAIL] Python compile check failed.) else echo [OK] Python
 pause
 goto menu
 :open_log
-if exist "%POV_DIR%state\pipeline.log" (start "POV log" notepad "%POV_DIR%state\pipeline.log") else echo No pipeline log yet.
+if exist "%FACTORY_DIR%\state\pipeline.log" (start "POV log" notepad "%FACTORY_DIR%\state\pipeline.log") else echo No pipeline log yet.
 pause
 goto menu
 :auth

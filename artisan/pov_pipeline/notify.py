@@ -93,8 +93,13 @@ PREFIX = {
 
 
 def default_config_path() -> Path:
-    """``config/notify.env`` if present, else the committed template."""
-    live = povconfig.config_dir() / "notify.env"
+    """``<factory>/config/notify.env`` if present, else the committed template.
+
+    Live credentials live in the factory (machine-local, never committed).
+    The repo's ``config/notify.env.template`` is the fallback so an unset-up
+    machine still behaves (as a no-op, since placeholders stay unresolved).
+    """
+    live = povconfig.secrets_dir() / "notify.env"
     if live.exists():
         return live
     return povconfig.config_dir() / "notify.env.template"
