@@ -4,15 +4,17 @@ POV Pipeline Orchestrator — URL to finished POV video.
 
 Usage:
   python run_pov_pipeline.py <youtube_url|transcript_file> [--name TITLE] [--skip-tts]
-  python run_pov_pipeline.py --project <NAME> --stage <gate|tts|images|thumb|assemble|video>
+  python run_pov_pipeline.py --project <NAME> --stage <agents|gate|tts|images|thumb|assemble|video>
 
 What it does:
   1. Scrapes the transcript from a YouTube URL (or reads a transcript file)
      into the project folder as 00_SOURCE_SCRIPT.txt.
-  2. Runs the 7 POV agents in order as subagents (the agent .md files are
-     the prompts). Each agent reads the project files and writes its stage
-     output. Stage outputs are checked for existence before the next agent
-     runs.
+  2. Runs the 7 POV agents in order, HEADLESS, via the opencode CLI
+     (see agent_runner.py). Each agent .md is the prompt; each stage output
+     is verified to exist and be non-empty before the next agent runs.
+     The SCRIPT GATE is wired into that chain: a FAIL re-dispatches the
+     scriptwriter with the failure report (up to 3 times), then parks the
+     project as NEEDS_REVIEW instead of crashing the batch.
   3. Runs the SCRIPT GATE (rewrite-originality + wordcount) before TTS.
   4. Auto-runs Gemini TTS (voice Fenrir) to generate 06_AUDIO/<SEG>.mp3.
   5. Stage `images` generates every image from 05_IMAGES/IMAGE_PROMPTS_BATCH_FINAL.txt
@@ -21,6 +23,12 @@ What it does:
   6. Stage `thumb` generates the thumbnail from 04_THUMBNAIL/THUMBNAIL_PROMPT.txt.
   7. Stage `assemble` runs the assembler (01_SCRIPT_RAW + 06_AUDIO + 05_IMAGES
      → output_pro/). Stage `video` = images + thumb + assemble in one shot.
+
+Config:
+  POV_PROJECTS_DIR   where projects live. Defaults to the Windows dev path
+                     below; set it on the Linux VPS.
+  See agent_runner.py for the agent-chain env overrides (opencode binary,
+  model, timeouts, gate retries, Milo memory project).
 
 Exit codes:
   0 = success
@@ -42,7 +50,21 @@ ROOT = Path(__file__).resolve().parent
 AGENTS_DIR = ROOT / "agents"
 TTS_DIR = ROOT / "tts"
 SCRIPTS_DIR = ROOT / "scripts"
-PROJECTS_DIR = Path(r"C:\Users\user\Desktop\Milo Video Factory\pov\projects")
+
+# Windows dev default. The VPS overrides it with POV_PROJECTS_DIR — this is
+# the one documented absolute path left in the codebase.
+DEFAULT_PROJECTS_DIR = Path(r"C:\Users\user\Desktop\Milo Video Factory\pov\projects")
+
+
+def projects_dir() -> Path:
+    """Where project folders live. Env-configurable for the Linux VPS."""
+    override = os.environ.get("POV_PROJECTS_DIR", "").strip()
+    return Path(override).expanduser() if override else DEFAULT_PROJECTS_DIR
+
+
+# Kept as a module constant for backwards compatibility with anything that
+# imported it. Prefer projects_dir().
+PROJECTS_DIR = projects_dir()
 
 # Agent order + output file each one must produce.
 PIPELINE_AGENTS = [
@@ -105,37 +127,59 @@ def scrape_transcript(url: str, project_dir: Path) -> Path:
         return None
 
     src.write_text(text, encoding="utf-8")
-    print(f"[scrape] OK — {len(text)} chars -> {src.relative_to(ROOT)}")
+    # Remember where this came from: the agent-runner manifest, the discovery
+    # dedupe (M2) and the uploader (M3) all want the source URL.
+    (project_dir / "00_SOURCE_URL.txt").write_text(url.strip() + "\n", encoding="utf-8")
+    print(f"[scrape] OK — {len(text)} chars -> {src.name}")
     return src
 
 
 def copy_transcript_file(path: Path, project_dir: Path) -> Path:
     src = project_dir / "00_SOURCE_SCRIPT.txt"
     shutil.copyfile(path, src)
-    print(f"[input] Transcript copied -> {src.relative_to(ROOT)}")
+    print(f"[input] Transcript copied -> {src.name}")
     return src
 
 
-def run_agents(project_dir: Path):
-    """Run the 7 agents. Each agent is dispatched by the orchestrator CLI
-    (this script prints the prompt to run); in OpenCode the caller runs each
-    agent .md as a subagent and the file lands in project_dir."""
-    print("\n" + "=" * 60)
-    print("  POV AGENT CHAIN (7 stages)")
-    print("=" * 60)
-    for i, (agent, outfile) in enumerate(PIPELINE_AGENTS, 1):
-        prompt_path = AGENTS_DIR / f"{agent}.md"
-        target = project_dir / outfile
-        print(f"\n[{i}/7] {agent} -> {outfile}")
-        if target.exists():
-            print(f"      already present ({target.stat().st_size} bytes), skipping")
-            continue
-        if not prompt_path.exists():
-            eprint(f"      [warn] agent prompt missing: {prompt_path}")
-            continue
-        print(f"      prompt: {prompt_path.name}")
-        print(f"      status: WAITING for agent run (write {outfile} into the project)")
-        print(f"      project: {project_dir}")
+def run_agents(project_dir: Path, *, model: str = None, gate_retries: int = None,
+               timeout: int = None, use_memory: bool = True,
+               dry_run: bool = False, notify=None) -> bool:
+    """Run the 7 agents HEADLESS via the opencode CLI.
+
+    The heavy lifting lives in agent_runner.run_agent_chain(): manifest
+    refresh, structured briefs, output verification, Milo memory, the gate
+    retry loop and NEEDS_REVIEW parking. The existing script_gate is passed
+    in rather than reimplemented, so the gate thresholds stay in one place.
+
+    Returns True when every expected output file is present.
+    """
+    try:
+        from agent_runner import run_agent_chain
+    except ImportError:  # running from a copy without the module next to it
+        sys.path.insert(0, str(ROOT))
+        from agent_runner import run_agent_chain
+
+    chain = run_agent_chain(
+        project_dir,
+        PIPELINE_AGENTS,
+        agents_dir=AGENTS_DIR,
+        gate_fn=script_gate,
+        gate_after="POV-scriptwriter",
+        gate_retries=gate_retries,
+        model=model,
+        timeout=timeout,
+        use_memory=use_memory,
+        notify=notify,
+        dry_run=dry_run,
+    )
+
+    print("\n" + "-" * 60)
+    print(f"  AGENT CHAIN: {chain.summary()}")
+    if not chain.ok:
+        eprint(f"[agents] {'NEEDS_REVIEW' if chain.needs_review else 'FAILED'} — {chain.reason}")
+        eprint(f"[agents] log: {project_dir / 'state' / 'pipeline.log'}")
+    print("-" * 60)
+    return chain.ok
 
 
 def script_gate(project_dir: Path) -> bool:
@@ -413,17 +457,36 @@ def main():
     ap = argparse.ArgumentParser(description="POV Pipeline Orchestrator")
     ap.add_argument("input", nargs="?", help="YouTube URL or path to a transcript file (for scrape phase)")
     ap.add_argument("--project", default=None,
-                    help="Existing project folder name (for gate/tts phase)")
-    ap.add_argument("--stage", choices=["scrape", "gate", "tts", "images", "thumb", "assemble", "video"],
-                    help="Which phase to run: scrape | gate | tts | images | thumb | assemble | video (default: scrape when input given, else gate+tts)")
+                    help="Existing project folder name (for agents/gate/tts phase)")
+    ap.add_argument("--stage", choices=["scrape", "agents", "gate", "tts", "images", "thumb", "assemble", "video"],
+                    help="Which phase to run: scrape | agents | gate | tts | images | thumb | assemble | video (default: scrape when input given, else agents+gate+tts)")
     ap.add_argument("--name", default=None, help="Project title (used as folder name)")
     ap.add_argument("--skip-tts", action="store_true", help="Run gate only, stop before TTS")
     ap.add_argument("--flow-profiles", default=None,
                     help="Google Flow account profiles to rotate through on rate limits (e.g. flow-account-1,flow-account-2)")
+    # Agent-chain controls (M1).
+    ap.add_argument("--model", default=None,
+                    help="Model for the headless agent runs, as provider/model")
+    ap.add_argument("--gate-retries", type=int, default=None,
+                    help="Scriptwriter re-dispatches after a gate FAIL (default 3)")
+    ap.add_argument("--agent-timeout", type=int, default=None,
+                    help="Per-agent timeout in seconds (default: per-agent budget)")
+    ap.add_argument("--no-memory", action="store_true",
+                    help="Do not write pipeline events to Milo's memory")
+    ap.add_argument("--dry-run-agents", action="store_true",
+                    help="Print the exact opencode invocation per agent, run nothing")
     a = ap.parse_args()
 
-    projects_dir = PROJECTS_DIR
-    projects_dir.mkdir(parents=True, exist_ok=True)
+    proj_root = projects_dir()
+    proj_root.mkdir(parents=True, exist_ok=True)
+
+    agent_opts = dict(
+        model=a.model,
+        gate_retries=a.gate_retries,
+        timeout=a.agent_timeout,
+        use_memory=not a.no_memory,
+        dry_run=a.dry_run_agents,
+    )
 
     # ── Phase: SCRAPE ──────────────────────────────────────────────────
     if a.input and (a.stage is None or a.stage == "scrape"):
@@ -438,7 +501,7 @@ def main():
                 sys.exit(f"[error] File not found: {p}")
             project_name = f"{p.stem[:40]}_{now_stamp()}"
 
-        project_dir = projects_dir / project_name
+        project_dir = proj_root / project_name
         project_dir.mkdir(parents=True, exist_ok=True)
         print(f"[init] Project: {project_dir}")
 
@@ -450,30 +513,50 @@ def main():
         else:
             source = copy_transcript_file(Path(a.input), project_dir)
 
-        print("\n" + "=" * 60)
-        print("  NEXT: run the 7 agents in order (each agent .md is the prompt)")
-        print("  Write each stage output into the project folder above.")
-        print("  Then run:")
-        print(f"    python run_pov_pipeline.py --project {project_name} --stage gate [--skip-tts]")
-        print("  to run the SCRIPT GATE + TTS.")
-        print("=" * 60)
+        if a.stage == "scrape":
+            print("\n" + "=" * 60)
+            print("  NEXT: run the headless agent chain:")
+            print(f"    python run_pov_pipeline.py --project {project_name} --stage agents")
+            print("=" * 60)
+            sys.exit(0)
+
+        # No explicit stage: keep going straight into the agent chain.
+        if not run_agents(project_dir, **agent_opts):
+            sys.exit(1)
+        if not a.skip_tts and not run_tts(project_dir):
+            eprint("[error] TTS failed (check above). Re-run to resume (it skips existing segments).")
+            sys.exit(1)
+        print_handoff(project_dir, source)
         sys.exit(0)
 
-    # ── Phase: GATE + TTS on an existing project ───────────────────────
+    # ── Phase: work on an existing project ─────────────────────────────
     if not a.project:
         ap.print_help()
         sys.exit(2)
-    project_dir = projects_dir / a.project
+    project_dir = proj_root / a.project
     if not project_dir.exists():
         sys.exit(f"[error] Project not found: {project_dir}")
 
     print(f"[init] Project: {project_dir}")
-    run_agents(project_dir)
 
-    if a.stage in ("gate", None):
+    # The agent chain is expensive, so it only runs when it was asked for.
+    # It owns the script gate internally (retry loop), so `gate` is not run
+    # a second time in the same invocation.
+    ran_chain = False
+    if a.stage in ("agents", None):
+        if not run_agents(project_dir, **agent_opts):
+            sys.exit(1)
+        ran_chain = True
+        if a.stage == "agents":
+            print_handoff(project_dir, None)
+            sys.exit(0)
+
+    if a.stage == "gate" or (a.stage is None and not ran_chain):
         if not script_gate(project_dir):
             eprint("[error] Script gate failed — fix the script, then re-run.")
             sys.exit(1)
+        if a.stage == "gate":
+            sys.exit(0)
 
     if a.stage == "tts" or (a.stage is None and not a.skip_tts):
         ok = run_tts(project_dir)
