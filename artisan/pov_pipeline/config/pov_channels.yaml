@@ -105,6 +105,8 @@ niches:
       - "@TheArmchairHistorian"
       - "@EpicHistoryTV"
       - "@TimelineChannel"
+      - "@MasterPOVs"               # second-person POV histories
+      - "@Ink-Story-2"              # "POV: You Are..." second-person histories
     require_keywords: []
     keywords:
       - "a day in the life"
@@ -148,6 +150,7 @@ niches:
       - "@Ridddle"
       - "@PursuitofWonder"
       - "@Newsthink"
+      - "@HypotheticallyHQ"         # hypothetical scenario explainers
     require_keywords:
       - "what if"
       - "what would happen"
@@ -205,6 +208,8 @@ niches:
       - "@PlainlyDifficult"
       - "@FascinatingHorror"
       - "@AtriumExplores"            # 3D mannequin true-story format - handle verified 2026-08-11
+      - "@MackExplains7"             # faceless explainers
+      - "@JoeExplainsEverything"     # faceless explainers
     require_keywords: []
     keywords:
       - "the rise and fall"
