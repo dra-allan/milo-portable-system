@@ -5,9 +5,9 @@
 defaults:
   clips_per_video: 5
   min_clip_seconds: 2.5
-  max_clip_seconds: 9.0
-  target_total_seconds: 45
-  hard_max_total_seconds: 59
+  max_clip_seconds: 40
+  target_total_seconds: 170
+  hard_max_total_seconds: 180
   candidates_per_topic: 60
   max_download_attempts: 6
   max_download_height: 480
@@ -29,23 +29,31 @@ defaults:
   phash_distance: 6
   rank_colors:
     1: "0xFFD700"
-    2: "0xC0C0C0"
-    3: "0xCD7F32"
-    4: "0x1E90FF"
-    5: "0x1E90FF"
+    2: "0xFFFFFF"
+    3: "0xFF7F00"
+    4: "0x00E676"
+    5: "0xFF3B6B"
   rank_fill: "white"
   rank_outline: "black"
   accent_color: "0x1E90FF"
-  video_title_fontsize: 84
-  video_title_body_fontsize: 54
-  video_title_y: 140
+  # Listicle overlay styling (Pillow-rendered). stroke_ratio is the black
+  # outline as a fraction of font size; shadow_x/y are the hard drop shadow.
+  highlight_color: "0xFFD700"
+  highlight_keywords: ["MOMENTS"]
+  stroke_ratio: 0.07
+  shadow_x: 6
+  shadow_y: 6
+  emoji_font: "C:/Windows/Fonts/seguiemj.ttf"
+  video_title_fontsize: 110
+  video_title_body_fontsize: 64
+  video_title_y: 200
   # Ranked side-list: a compact column of numbered rows in the corner so the
   # footage stays the focus. The playing clip's row is highlighted.
-  list_x: 84
-  list_y: 560
-  list_row_h: 92
-  list_rank_size: 46
-  list_label_size: 34
+  list_x: 60
+  list_y: 430
+  list_row_h: 130
+  list_rank_size: 84
+  list_label_size: 46
   transition: zoomin
   transition_duration: 0.28
   hook_zoom: true

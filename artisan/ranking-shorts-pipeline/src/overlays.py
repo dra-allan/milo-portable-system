@@ -1,40 +1,32 @@
 """Overlay compositing: rank numbers, titles, and blur masks.
 
-All of it is drawtext/boxblur inside a single filtergraph, so the whole clip is
-one encode pass rather than a stack of intermediate files.
+Text is rendered by Pillow into transparent PNG sheets and composited with the
+``movie=`` filter, not drawn with drawtext. Three things to know before editing
+this module.
 
-Three things to know before editing this module.
+**1. Text goes through Pillow, so nothing is escaped.**
+Clip titles come from a language model or from scraped video metadata, and the
+old drawtext ``text=`` path had *no* safe escaping recipe for ``'``, ``:``,
+``,`` and ``%`` together - an apostrophe or colon aborted the graph and a
+percent signed logged "Stray %", drew nothing, and still exited zero. A PNG has
+no syntax to break out of: the hostile string ``THAT'S 100% WILD, BUDDY: PART
+[2] 50%OFF`` renders as-is, and the regression test counts pixels. Pillow also
+lets us colour only part of a line (the highlight keyword), draw true heavy
+strokes outside the fill, and render colour emoji (Segoe UI Emoji) - none of
+which drawtext does reliably.
 
-**1. Text is passed by file, never inline.**
-``textfile=`` is used with ``expansion=none`` instead of ``text=``. Clip titles
-come from a language model or from a scraped video's own metadata, and FFmpeg
-puts filter option values through several layers of quoting and escaping. There
-is no escaping recipe that survives ``'``, ``:``, ``,`` and ``%`` together - a
-measured matrix of quoted, unquoted and backslash-escaped forms, in both ``-vf``
-and ``-filter_complex``, failed at least one of them every time. Two concrete
-failures that a title like ``THAT'S 100% WILD, BUDDY`` produced:
-
-* an apostrophe or colon aborted the graph outright
-  (*"Both text and text file provided"*), and
-* a percent sign logged *"Stray %"*, drew **nothing at all**, and still exited
-  zero - a video published with no rank numbers and no titles, and a run that
-  reported success.
-
-A file has no syntax to break out of. The only remaining escaping concern is the
-font and file *paths*, which are wrapped in single quotes so a Windows drive
-letter (``C:/Windows/Fonts/impact.ttf``) does not read as an option separator.
-
-**2. Strokes are drawn, not styled.** drawtext has exactly one
-``bordercolor``. The look the reference workflow describes - a metallic stroke
-with a black outline around it - is two strokes, so the number is drawn three
-times in the same place: fat black border, thinner coloured border, then the
-flat fill. Reversing that order buries the fill.
+**2. The one escape still left is the file path.**
+``movie=`` reads a sheet from disk, so its path gets the same single-quote +
+escaped-colon wrapping that drawtext's fontfile got (Windows drive letters).
+Only paths, never text.
 
 **3. A filter label can only be consumed once.** Anywhere the same frames are
 needed twice (backdrop plus blurred patch) there has to be an explicit
-``split``.
+``split``. The PNG sheets just become one extra input each; overlay consumes
+the running video once and the sheet once, so no split is needed for them.
 """
 
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
@@ -55,43 +47,173 @@ def _quote(path) -> str:
     return "'" + str(path).replace('\\', '/').replace(':', '\\:') + "'"
 
 
-def write_text_file(work_dir: Path, name: str, text: str) -> Path:
-    """Write one overlay string to its own UTF-8 file.
+# ---------------------------------------------------------------------------
+# Pillow text rendering
+# ---------------------------------------------------------------------------
+_EMOJI_FONT_CACHE = None
 
-    Newlines are collapsed: drawtext would render them as a multi-line block
-    that overflows the reserved band and collides with the rank number.
+
+def normalize_text(text: str) -> str:
+    """Collapse a title to one flat line; Pillow renders bare ``\\n`` as tofu."""
+    return ' '.join(str(text or '').split())
+
+
+def _emoji_font_path() -> Optional[str]:
+    """Path to an emoji font, or None (cached; the answer never moves).
+
+    The configured path wins; on machines without it we fall back to the
+    vendored Noto colour-emoji font shipped in ``assets/fonts`` so every
+    box renders the glyphs (monochrome minus RAQM, colour with it).
     """
-    ensure_dir(work_dir)
-    flat = ' '.join(str(text or '').split())
-    path = work_dir / f'{name}.txt'
-    path.write_text(flat, encoding='utf-8')
-    return path
+    global _EMOJI_FONT_CACHE
+    if _EMOJI_FONT_CACHE is not None:
+        return _EMOJI_FONT_CACHE or None
+    candidate = str(config.get('emoji_font',
+                               'C:/Windows/Fonts/seguiemj.ttf'))
+    if not Path(candidate).exists():
+        fallback = (Path(__file__).resolve().parent.parent
+                    / 'assets' / 'fonts' / 'NotoColorEmoji.ttf')
+        if fallback.exists():
+            logger.info('emoji font %s missing; using vendored fallback %s',
+                        candidate, fallback)
+            candidate = str(fallback)
+    _EMOJI_FONT_CACHE = candidate if Path(candidate).exists() else ''
+    if not _EMOJI_FONT_CACHE:
+        logger.warning('emoji font not found (%s); emoji dropped', candidate)
+    return _EMOJI_FONT_CACHE or None
 
 
-def _drawtext(font: str, textfile: Path, size: int, color: str,
-              x: str, y: str, border_color: Optional[str] = None,
-              border_width: int = 0,
-              box_color: Optional[str] = None,
-              box_borderw: int = 0) -> str:
-    parts = [
-        f'drawtext=fontfile={_quote(font)}',
-        f'textfile={_quote(textfile)}',
-        'expansion=none',   # makes % and {} literal instead of format codes
-        'reload=0',         # the file never changes mid-render
-        f'fontsize={size}',
-        f'fontcolor={color}',
-    ]
-    if border_color and border_width > 0:
-        parts.append(f'bordercolor={border_color}')
-        parts.append(f'borderw={border_width}')
-    if box_color:
-        parts.append('box=1')
-        parts.append(f'boxcolor={box_color}')
-        if box_borderw > 0:
-            parts.append(f'boxborderw={box_borderw}')
-    parts.append(f'x={x}')
-    parts.append(f'y={y}')
-    return ':'.join(parts)
+# Emoji / dingbats / misc symbols; ZWJ groups multi-codepoint emoji runs.
+_EMOJI_RE = re.compile(
+    '[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF'
+    '\u2190-\u21FF\uFE0F\u200D]')
+
+
+def _is_emoji(ch: str) -> bool:
+    return bool(_EMOJI_RE.fullmatch(ch))
+
+
+def _group_emoji(text: str) -> List[tuple]:
+    """Split ``text`` into [(substring, is_emoji)] runs.
+
+    The emoji font is a different face than the headline font, so emoji-bearing
+    substrings get drawn with it and plain words with the headline face.
+    """
+    runs: List[tuple] = []
+    current, current_is = '', None
+    for ch in text or '':
+        is_emoji = _is_emoji(ch)
+        if current_is is None:
+            current_is = is_emoji
+        if is_emoji == current_is:
+            current += ch
+        else:
+            runs.append((current, current_is))
+            current, current_is = ch, is_emoji
+    if current:
+        runs.append((current, current_is))
+    return runs
+
+
+def _pillow_color(value: str, default: str = '#FFFFFF') -> str:
+    """Map ``0xFFD700`` style config colours to Pillow's ``#FFD700``."""
+    value = str(value or '').strip()
+    if value.startswith('0x'):
+        return '#' + value[2:]
+    return value or default
+
+
+def _pillow_font(font_path: str, size: int):
+    from PIL import ImageFont
+    return ImageFont.truetype(font_path, size)
+
+
+def _highlight_runs(text: str, keywords: List[str],
+                    highlight: str) -> List[tuple]:
+    """Split ``text`` into (substring, is_highlight) runs.
+
+    Only the first occurrence of the first matching keyword is coloured; the
+    rest of the line stays the base fill, matching the "1-2 highlight words"
+    look without needing text measurement gymnastics.
+    """
+    low = (text or '').lower()
+    for keyword in keywords:
+        needle = (keyword or '').strip().lower()
+        if not needle:
+            continue
+        index = low.find(needle)
+        if index < 0:
+            continue
+        before, after = text[:index], text[index + len(keyword):]
+        return [(before, False), (text[index:index + len(keyword)], True),
+                (after, False)]
+    return [(text or '', False)]
+
+
+def _fit_size(text: str, max_width: int, start: int, font_path: str) -> int:
+    """Shrink a font size until the line fits ``max_width`` (best effort)."""
+    from PIL import ImageFont
+    size = max(10, start)
+    while size > 10:
+        font = ImageFont.truetype(font_path, size)
+        width = font.getlength(text)
+        if width <= max_width:
+            break
+        size = int(size * 0.92)
+    return size
+
+
+def _draw_line(image, x: int, y: int, runs: List[tuple], text_path: str,
+               emoji_path: Optional[str], size: int, fill: str,
+               stroke_ratio: float, shadow: Sequence[int]):
+    """Draw a multi-colour, multi-font line onto an RGBA sheet.
+
+    Each plain-text run gets a heavy black stroke and a hard black drop shadow
+    (two draws: shadow pass offset, then fill pass). Emoji runs are colour
+    bitmap glyphs and are drawn without stroke, which the CBDT/COLR formats do
+    not reliably support.
+    """
+    from PIL import ImageDraw
+    import math as _math
+    draw = ImageDraw.Draw(image)
+    stroke = max(2, int(size * stroke_ratio))
+    text_font = _pillow_font(text_path, size)
+    emoji_font = _pillow_font(emoji_path, max(12, int(size * 0.9))) \
+        if emoji_path else None
+    shadow = (shadow[0], shadow[1]) if shadow else (0, 0)
+    cursor = float(x)
+
+    for item, is_emoji in runs:
+        if not item:
+            continue
+        font = emoji_font if is_emoji else text_font
+        draw_y = y
+        if is_emoji and emoji_path:
+            draw_y = y + int(size * 0.06)  # bitmap emoji centres differently
+        if is_emoji:
+            draw.text((cursor, draw_y), item, font=font)
+        else:
+            color = _pillow_color(fill)
+            if shadow != (0, 0):
+                draw.text((cursor + shadow[0], draw_y + shadow[1]), item,
+                          font=font, fill='#000000',
+                          stroke_width=stroke, stroke_fill='#000000')
+            draw.text((cursor, draw_y), item, font=font, fill=color,
+                      stroke_width=stroke, stroke_fill='#000000')
+        cursor += font.getlength(item)
+
+
+def _line_width(runs: List[tuple], text_path: str, emoji_path: Optional[str],
+                size: int) -> float:
+    total = 0.0
+    text_font = _pillow_font(text_path, size)
+    emoji_font = _pillow_font(emoji_path, max(12, int(size * 0.9))) \
+        if emoji_path else None
+    for item, is_emoji in runs:
+        font = emoji_font if is_emoji and emoji_path else text_font
+        if item:
+            total += font.getlength(item)
+    return total
 
 
 def fill_chain(in_label: str, out_label: str) -> List[str]:
@@ -160,26 +282,37 @@ def text_chain(in_label: str, out_label: str, rank: int, clip_title: str,
                work_dir: Optional[Path] = None,
                show_video_title: bool = True,
                leaderboard: Optional[List[Dict]] = None) -> List[str]:
-    """Header + a compact ranked side-list, as one drawtext chain.
+    """Header + a persistent ranked side-list, as a Pillow/movie overlay chain.
 
-    Layout is deliberately "list, not countdown": a small column of numbered
-    rows with the rank as a badge pill and the clip title beside it, sitting in
-    the corner so the footage stays the focus. The playing clip's row is
-    highlighted; the rest are dimmed. No giant numeral, no full-width title
-    band.
+    Layout (list, not countdown): a centered header up top ("TOP N" then the
+    niche body, the first highlight keyword in colour), then a left column of
+    rank numbers that stays on screen the whole clip - one saturated colour per
+    rank, heavy black stroke, hard drop shadow. The row matching the playing
+    clip additionally shows its title + emoji beside the number; the other rows
+    show just the number. Since every clip is rendered independently with its
+    own ``rank``, that reveal/disappear state machine is implicit.
 
-    ``work_dir`` holds the .txt files backing each drawtext. It defaults to a
-    per-rank directory derived from the video title, which is unique within a
-    build - two clips in the same build must not share a text file or the last
-    one written wins for both.
+    Each element is rendered to its own transparent PNG under ``work_dir`` and
+    loaded with ``movie=``, so no extra ``-i`` inputs are needed and the
+    assembler's input indexing is untouched.
+
+    ``work_dir`` defaults to a per-rank directory derived from the video title,
+    which is unique within a build - two clips in the same build must not share
+    a sheet or the last one written wins for both.
     """
+    from PIL import Image
+
     font = config.resolve_font()
+    emoji_font = _emoji_font_path()
     work_dir = Path(work_dir) if work_dir else (
         config.temp_dir / 'text' / f'{safe_slug(video_title)}_r{rank}')
+    ensure_dir(work_dir)
 
+    w, h = config.width, config.height
     fill = str(config.get('rank_fill', 'white'))
-    outline = str(config.get('rank_outline', 'black'))
-    accent = str(config.get('accent_color', '0x1E90FF'))
+    highlight = str(config.get('highlight_color', '0xFFD700'))
+    stroke_ratio = float(config.get('stroke_ratio', 0.07))
+    shadow = (int(config.get('shadow_x', 6)), int(config.get('shadow_y', 6)))
 
     title_size = int(config.get('video_title_fontsize', 84))
     title_y = int(config.get('video_title_y', 140))
@@ -190,56 +323,122 @@ def text_chain(in_label: str, out_label: str, rank: int, clip_title: str,
     row_h = int(config.get('list_row_h', 92))
     rank_size = int(config.get('list_rank_size', 46))
     label_size = int(config.get('list_label_size', 34))
+    keywords = [str(k) for k in (config.get('highlight_keywords') or [])]
 
-    filters: List[str] = []
+    sheets: List[Path] = []
 
+    # -- header ----------------------------------------------------------
     if show_video_title:
+        header = Image.new('RGBA', (w, h), (0, 0, 0, 0))
         head = str(clips_total)
-        body = _strip_leading_count(video_title, head).upper()
-        # One string for "TOP {n}" so the word and the number share a size and
-        # sit naturally together - two separately-scaled draws was the spacing
-        # bug Allan kept hitting.
-        top_file = write_text_file(work_dir, 'top', f'TOP {head}')
-        filters.append(_drawtext(font, top_file, title_size, fill,
-                                 x='(w-text_w)/2', y=str(title_y),
-                                 border_color=accent, border_width=10))
-        if body:
-            body_file = write_text_file(work_dir, 'vtitle', body)
-            filters.append(_drawtext(font, body_file, body_size, fill,
-                                     x='(w-text_w)/2',
-                                     y=str(title_y + int(title_size * 1.2)),
-                                     border_color=outline, border_width=8))
+        top_runs = _group_emoji(normalize_text(f'TOP {head}'))
+        top_width = _line_width(top_runs, font, emoji_font, title_size)
+        _draw_line(header, (w - top_width) / 2, title_y, top_runs,
+                   font, emoji_font, title_size, fill, stroke_ratio, shadow)
 
-    # The ranked list. Rows are drawn for every clip in the build so the whole
-    # leaderboard is visible at once; the current rank is the bright one.
+        body = _strip_leading_count(video_title, head).upper()
+        if body:
+            body_runs_raw = _highlight_runs(body, keywords, highlight)
+            body_runs = []
+            for piece, is_hl in body_runs_raw:
+                grouped = _group_emoji(normalize_text(piece))
+                for text_part, is_emoji in grouped:
+                    body_runs.append(
+                        (text_part, is_emoji,
+                         highlight if is_hl else fill))
+            size = min(body_size, _fit_size(body, int(w * 0.92), body_size,
+                                            font))
+            body_width = _line_width(
+                [(t, e) for t, e, _ in body_runs], font, emoji_font, size)
+            _draw_colored_line(header, (w - body_width) / 2,
+                               title_y + int(title_size * 1.18), body_runs,
+                               font, emoji_font, size, stroke_ratio, shadow)
+        header_path = work_dir / 'header.png'
+        header.save(header_path)
+        sheets.append(header_path)
+
+    # -- persistent rank numbers ------------------------------------------
     rows = list(leaderboard or [{'rank': rank, 'title': clip_title}])
     rows = sorted(rows, key=lambda r: int(r.get('rank') or 0))
+    list_sheet = Image.new('RGBA', (w, h), (0, 0, 0, 0))
     for i, row in enumerate(rows):
         r = int(row.get('rank') or 0)
-        current = (r == rank)
         row_y = list_y + i * row_h
-        num_file = write_text_file(work_dir, f'num{r}', str(r))
-        num_color = fill if current else '0x8A8A8A'
-        num_box = accent if current else '0x000000@0.45'
-        filters.append(_drawtext(font, num_file, rank_size, num_color,
-                                 x=str(list_x), y=str(row_y),
-                                 border_color=outline, border_width=4,
-                                 box_color=num_box, box_borderw=8))
-        title = (row.get('title') or clip_title or '').upper()
-        if title:
-            label_file = write_text_file(work_dir, f'lab{r}', title)
-            label_color = fill if current else '0xBFBFBF'
-            filters.append(_drawtext(font, label_file, label_size,
-                                     label_color,
-                                     x=str(list_x + rank_size + 30),
-                                     y=str(row_y + int(rank_size * 0.9)
-                                           - int(label_size * 0.5)
-                                           - int(label_size * 0.06)),
-                                     border_color=outline
-                                     if current else '0x000000@0.60',
-                                     border_width=4))
+        num_runs = _group_emoji(normalize_text(str(r)))
+        num_color = config.rank_color(r)
+        _draw_line(list_sheet, list_x, row_y, num_runs, font, emoji_font,
+                   rank_size, num_color, stroke_ratio, shadow)
+    list_path = work_dir / 'list.png'
+    list_sheet.save(list_path)
+    sheets.append(list_path)
 
-    return [f'[{in_label}]' + ','.join(filters) + f'[{out_label}]']
+    # -- active description (only the playing row) -------------------------
+    active_row = next((row for row in rows if int(row.get('rank') or 0) == rank),
+                      None)
+    active_text = normalize_text((active_row or {}).get('title') or clip_title)
+    if active_text:
+        active = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+        max_width = max(120, w - list_x - rank_size - 90)
+        desc_size = _fit_size(active_text, max_width, label_size, font)
+        desc_runs = _group_emoji(active_text)
+        desc_width = _line_width(desc_runs, font, emoji_font, desc_size)
+        index = next(i for i, row in enumerate(rows)
+                     if int(row.get('rank') or 0) == rank)
+        row_y = list_y + index * row_h
+        desc_x = list_x + rank_size + 40
+        desc_y = row_y + max(0, (rank_size - desc_size) // 2)
+        _draw_line(active, desc_x, desc_y, desc_runs, font, emoji_font,
+                   desc_size, fill, stroke_ratio, shadow)
+        active_path = work_dir / 'active.png'
+        active.save(active_path)
+        sheets.append(active_path)
+
+    # -- chain ------------------------------------------------------------
+    chains: List[str] = []
+    src = in_label
+    for i, sheet in enumerate(sheets):
+        tag = f'mv{i}'
+        dst = out_label if i == len(sheets) - 1 else f'ovl{i}'
+        chains.append(f"movie={_quote(str(sheet))}[{tag}]")
+        chains.append(f'[{src}][{tag}]overlay=0:0:format=auto[{dst}]')
+        src = dst
+    return chains
+
+
+def _draw_colored_line(image, x: float, y: int,
+                       runs: List[tuple], text_path: str,
+                       emoji_path: Optional[str], size: int,
+                       stroke_ratio: float, shadow: Sequence[int]):
+    """Like :func:`_draw_line` but ``runs`` carry their own colour.
+
+    ``runs`` is [(substring, is_emoji, color)]; the plain-colour path cannot
+    express a highlight keyword mid-line, which is the whole point of this one.
+    """
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(image)
+    stroke = max(2, int(size * stroke_ratio))
+    text_font = _pillow_font(text_path, size)
+    emoji_font = _pillow_font(emoji_path, max(12, int(size * 0.9))) \
+        if emoji_path else None
+    shadow = (shadow[0], shadow[1]) if shadow else (0, 0)
+    cursor = float(x)
+
+    for item, is_emoji, color in runs:
+        if not item:
+            continue
+        font = emoji_font if is_emoji and emoji_path else text_font
+        draw_y = y + (int(size * 0.06) if is_emoji else 0)
+        if is_emoji:
+            draw.text((cursor, draw_y), item, font=font)
+        else:
+            if shadow != (0, 0):
+                draw.text((cursor + shadow[0], draw_y + shadow[1]), item,
+                          font=font, fill='#000000',
+                          stroke_width=stroke, stroke_fill='#000000')
+            draw.text((cursor, draw_y), item, font=font,
+                      fill=_pillow_color(color),
+                      stroke_width=stroke, stroke_fill='#000000')
+        cursor += font.getlength(item)
 
 
 def _strip_leading_count(video_title: str, head: str) -> str:

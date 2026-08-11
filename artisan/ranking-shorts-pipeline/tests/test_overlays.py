@@ -37,53 +37,64 @@ def _have_font():
 
 
 # ---------------------------------------------------------------------------
-# Text is passed by file, and passed through intact
+# Text normalising and the active-sheet contract
 # ---------------------------------------------------------------------------
-def test_text_file_holds_the_string_verbatim(tmp_path):
-    path = overlays.write_text_file(tmp_path, 'clip', HOSTILE)
-    assert path.read_text(encoding='utf-8') == HOSTILE
-
-
-def test_newlines_are_collapsed(tmp_path):
+def test_newlines_are_collapsed():
     """A multi-line title overflows its band and collides with the number."""
-    path = overlays.write_text_file(tmp_path, 'clip', 'MAN\nOVERBOARD\r\nNOW')
-    assert path.read_text(encoding='utf-8') == 'MAN OVERBOARD NOW'
+    assert overlays.normalize_text('MAN\nOVERBOARD\r\nNOW') == \
+        'MAN OVERBOARD NOW'
 
 
-def test_chain_uses_textfile_and_disables_expansion(tmp_path):
-    chains = overlays.text_chain('in', 'out', 1, HOSTILE, 'TOP 5 FISHING', 5,
-                                work_dir=tmp_path)
+def test_pillow_color_hex_mapping():
+    assert overlays._pillow_color('0xFFD700') == '#FFD700'
+    assert overlays._pillow_color('#ABCDEF') == '#ABCDEF'
+    assert overlays._pillow_color('') == '#FFFFFF'
+
+
+def test_highlight_runs_colours_only_first_match():
+    runs = overlays._highlight_runs('FISHING MOMENTS', ['MOMENTS'], 'hl')
+    assert runs == [('FISHING ', False), ('MOMENTS', True), ('', False)]
+
+
+def test_chain_overlays_sheet_files(tmp_path):
+    """The chain is now movie= + overlay; the sheets must exist on disk."""
+    chains = overlays.text_chain('in', 'out', 1, 'CATCH', 'TOP 5 FISHING', 5,
+                                 work_dir=tmp_path)
     graph = ';'.join(chains)
-    # text= would reintroduce the escaping problem this module exists to avoid.
-    assert 'textfile=' in graph
-    assert ':text=' not in graph
-    # Without expansion=none a '%' in a title draws nothing and exits 0.
-    assert graph.count('expansion=none') == graph.count('textfile=')
+    assert 'overlay=0:0' in graph
+    assert 'movie=' in graph
+    assert (tmp_path / 'header.png').exists()
+    assert (tmp_path / 'list.png').exists()
+    assert (tmp_path / 'active.png').exists()
+    from PIL import Image
+    for name in ('header.png', 'list.png', 'active.png'):
+        assert Image.open(tmp_path / name).size == (config.width,
+                                                    config.height)
 
 
-def test_font_and_text_paths_are_quoted(tmp_path):
-    """An unquoted Windows path reads as an option separator at the colon."""
+def test_font_path_embedded_in_movie_isfine(tmp_path):
+    """The movie= path keeps the single-quote + escaped-colon wrapper. An
+    unquoted Windows path reads as an option separator at the colon."""
     chains = overlays.text_chain('in', 'out', 3, 'CATCH', 'TOP 5', 5,
-                                work_dir=tmp_path)
+                                 work_dir=tmp_path)
     graph = chains[0]
-    assert "fontfile='" in graph
-    assert "textfile='" in graph
-    # The colon is escaped AND the value is quoted: the graph parser strips
-    # quotes before drawtext's own option splitter runs, so either alone
-    # leaves the drive-letter colon a separator. Verified against FFmpeg.
-    assert r"C\:/Windows/Fonts/impact.ttf" in graph
+    assert "movie='C\\:/Users" in graph or "movie='" in graph
+    assert r"\:/" in graph
 
 
-def test_clip_and_rank_use_separate_files(tmp_path):
+def test_active_sheet_only_for_the_playing_rank(tmp_path):
+    """Inactive ranks show just the number - no description sheet for them."""
     overlays.text_chain('in', 'out', 4, 'MAN OVERBOARD', 'TOP 5', 5,
-                       work_dir=tmp_path)
-    assert (tmp_path / 'rank.txt').read_text(encoding='utf-8') == '4'
-    assert (tmp_path / 'clip.txt').read_text(encoding='utf-8') == \
-        'MAN OVERBOARD'
+                        work_dir=tmp_path,
+                        leaderboard=[{'rank': 4, 'title': 'MAN OVERBOARD'},
+                                     {'rank': 2, 'title': 'ROCKET MAN'}])
+    assert (tmp_path / 'active.png').exists()
+    assert (tmp_path / 'header.png').exists()
+    assert (tmp_path / 'list.png').exists()
 
 
 def test_default_work_dir_is_per_rank():
-    """Two clips in one build must not share a text file, or the last write
+    """Two clips in one build must not share a sheet, or the last one written
     wins for both and every clip shows the same number."""
     a = overlays.text_chain('in', 'out', 5, 'A', 'TOP 5 FISHING', 5)
     b = overlays.text_chain('in', 'out', 1, 'B', 'TOP 5 FISHING', 5)
@@ -91,35 +102,39 @@ def test_default_work_dir_is_per_rank():
 
 
 # ---------------------------------------------------------------------------
-# Strokes
+# Rank colours
 # ---------------------------------------------------------------------------
-def test_rank_is_drawn_three_times_for_a_two_tone_stroke(tmp_path):
-    chains = overlays.text_chain('in', 'out', 1, '', 'TOP 5', 5,
-                                work_dir=tmp_path, show_video_title=False)
-    graph = chains[0]
-    assert graph.count("textfile='") == 3
-    # black outer, gold inner, then the flat fill on top.
-    assert graph.index('borderw=22') < graph.index('borderw=12')
-
-
 @pytest.mark.parametrize('rank, colour', [
-    (1, '0xFFD700'),   # gold
-    (2, '0xC0C0C0'),   # silver
-    (3, '0xCD7F32'),   # bronze
-    (4, '0x1E90FF'),   # blue
-    (5, '0x1E90FF'),
+    (1, '0xFFD700'),   # yellow
+    (2, '0xFFFFFF'),   # white
+    (3, '0xFF7F00'),   # orange
+    (4, '0x00E676'),   # green
+    (5, '0xFF3B6B'),   # pink
 ])
-def test_rank_colours_follow_the_medal_scheme(rank, colour, tmp_path):
-    graph = overlays.text_chain('in', 'out', rank, '', 'TOP 5', 5,
-                                work_dir=tmp_path)[0]
-    assert colour in graph
+def test_rank_colours_follow_the_scheme(rank, colour):
+    assert config.rank_color(rank) == colour
 
 
-def test_leading_top_n_is_not_drawn_twice(tmp_path):
-    overlays.text_chain('in', 'out', 1, '', 'TOP 5 FISHING MOMENTS', 5,
-                       work_dir=tmp_path)
-    assert (tmp_path / 'vtitle.txt').read_text(encoding='utf-8') == \
-        'FISHING MOMENTS'
+def test_emoji_glyph_draws_not_tofu(tmp_path):
+    """Emoji must draw as an inked face glyph, not an empty/tofu box.
+
+    Pillow builds without RAQM render CBDT/COLR colour emoji as monochrome
+    silhouettes; that is acceptable - the guard against failure is that a
+    real glyph draws real ink. A dropped glyph or hollow tofu box inks far
+    fewer pixels than a solid face.
+    """
+    emoji = '\U0001F602'
+
+    def ink(where, title):
+        overlays.text_chain('in', 'out', 1, title, 'TOP 5', 5,
+                            work_dir=tmp_path / where,
+                            leaderboard=[{'rank': 1, 'title': title}])
+        from PIL import Image
+        return sum(1 for px in Image.open(tmp_path / where / 'active.png')
+                   .convert('RGBA').getdata() if px[3] > 0)
+
+    delta = ink('with', 'BEAR ATTACK ' + emoji) - ink('without', 'BEAR ATTACK')
+    assert delta > 500, f'emoji should add ~1k inked pixels, added only {delta}'
 
 
 # ---------------------------------------------------------------------------

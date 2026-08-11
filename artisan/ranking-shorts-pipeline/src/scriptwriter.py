@@ -29,6 +29,18 @@ _STOPWORDS = {
     'shorts', 'short', 'video', 'funny', 'best', 'top', 'viral', 'part',
 }
 
+# Fallback emoji per topic when the model does not supply one. The overlay
+# renders this beside the clip title, so it doubles as the topic's accent.
+TOPIC_EMOJI = {
+    'fishing_moments': '🎣',
+    'animal_moments': '🐾',
+    'sports_moments': '⚽',
+    'wildlife_moments': '🦁',
+    'satisfying_processes': '✨',
+    'street_moments': '🎪',
+    'gta6_countdown': '🚗',
+}
+
 
 def _clean_words(text: str) -> List[str]:
     words = re.findall(r"[A-Za-z']+", text or '')
@@ -81,10 +93,12 @@ def _model_copy(topic_cfg: Dict, clips: List[Dict]) -> Optional[Dict]:
         'You write copy for short-form ranking videos. Topic: '
         f"{topic_cfg.get('name')}. For each clip below return a TITLE of 2-4 "
         'words in caps naming what happens (like "MAN OVERBOARD" or "CATCH '
-        'AND RELEASE"), and a VO line of at most 12 words: one deadpan, funny '
-        'reaction to the clip. Do not describe the clip, react to it. No '
-        'emojis, no hashtags.\n'
-        'Return JSON only: {"clips":[{"rank":5,"title":"...","line":"..."}]}\n'
+        'AND RELEASE"), a VO line of at most 12 words: one deadpan, funny '
+        'reaction to the clip, and ONE relevant emoji to show beside the '
+        'title (no flags, no complex sequences). Do not describe the clip, '
+        'react to it. No hashtags.\n'
+        'Return JSON only: {"clips":[{"rank":5,"title":"...","line":"...",'
+        '"emoji":"..."}]}\n'
         f'Clips: {json.dumps(described, ensure_ascii=False)}'
     )
     try:
@@ -107,6 +121,7 @@ def _model_copy(topic_cfg: Dict, clips: List[Dict]) -> Optional[Dict]:
             out[int(item['rank'])] = {
                 'title': str(item.get('title') or '').strip().upper()[:28],
                 'line': str(item.get('line') or '').strip()[:140],
+                'emoji': str(item.get('emoji') or '').strip(),
             }
         except (KeyError, TypeError, ValueError):
             continue
@@ -126,6 +141,10 @@ def write_copy(topic_cfg: Dict, clips: List[Dict]) -> Dict:
         skip = (config.vo_skip_first and rank == total) \
             or clip.get('has_speech')
         clip['vo_line'] = '' if skip else line
+        emoji = supplied.get('emoji') or TOPIC_EMOJI.get(topic_cfg.get('name')
+                                                         or '', '')
+        if emoji:
+            clip['title'] = f"{clip['title']} {emoji}".strip()
 
     video_title = str(topic_cfg.get('title') or 'TOP {n}').replace(
         '{n}', str(total))
