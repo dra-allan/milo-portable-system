@@ -197,3 +197,393 @@ topics:
     negative_keywords: ["leaked footage", "leaked gameplay", "leaked build", "fan made", "concept", "mod showcase", "reaction", "livestream", "podcast", "ai generated"]
     channel: NXS
     tags: ["gta6", "gta6trailer", "leonida", "gtavi", "shorts"]
+
+  dashcam_near_misses:
+    title: "TOP {n} DASHCAM NEAR MISSES"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "dashcam near miss #shorts"
+      - "dashcam close call #shorts"
+      - "dashcam accident avoided #shorts"
+      - "highway near miss dashcam #shorts"
+      - "truck dashcam close call #shorts"
+      - "red light runner dashcam #shorts"
+      - "brake check dashcam #shorts"
+      - "black ice dashcam save #shorts"
+      - "lane change near miss dashcam #shorts"
+      - "dashcam slow motion close call #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "insurance", "lawyer", "driving lesson", "beamng", "gameplay", "animation", "cgi", "fake"]
+    channel: NXS
+    tags: ["dashcam", "nearmiss", "driving", "top5", "shorts"]
+
+  train_crossing_near_misses:
+    title: "TOP {n} TRAIN NEAR MISSES"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "train crossing near miss #shorts"
+      - "train close call caught on camera #shorts"
+      - "railroad crossing close call #shorts"
+      - "train horn close call #shorts"
+      - "car stuck on tracks rescue #shorts"
+      - "train emergency brake near miss #shorts"
+      - "pedestrian train near miss #shorts"
+      - "train crossing dashcam #shorts"
+      - "freight train close call #shorts"
+      - "train near miss slow motion #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "model train", "train simulator", "thomas", "railfan compilation", "animation", "gameplay", "cgi", "fake"]
+    channel: NXS
+    tags: ["trains", "railroad", "nearmiss", "top5", "shorts"]
+
+  aviation_saves:
+    title: "TOP {n} AVIATION SAVES"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "crosswind landing #shorts"
+      - "airplane hard landing #shorts"
+      - "plane go around #shorts"
+      - "pilot pov landing #shorts"
+      - "airplane low pass close call #shorts"
+      - "helicopter landing close call #shorts"
+      - "plane runway near miss #shorts"
+      - "aircraft landing slow motion #shorts"
+      - "bush plane landing #shorts"
+      - "emergency landing caught on camera #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "flight simulator", "microsoft flight simulator", "x-plane", "rc plane", "model plane", "documentary", "animation", "cgi", "fake"]
+    channel: NXS
+    tags: ["aviation", "planes", "landings", "top5", "shorts"]
+
+  boat_ramp_fails:
+    title: "TOP {n} BOAT RAMP FAILS"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "boat ramp fail #shorts"
+      - "boat launch fail #shorts"
+      - "boat ramp recovery #shorts"
+      - "truck slips at boat ramp #shorts"
+      - "trailer backing boat ramp fail #shorts"
+      - "jet ski launch fail #shorts"
+      - "boat loading fail #shorts"
+      - "boat ramp close call #shorts"
+      - "boat launch slow motion #shorts"
+      - "pontoon boat launch fail #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "fishing tournament", "bass fishing", "boat review", "tutorial", "how to", "commercial", "rental", "animation", "cgi", "fake"]
+    channel: NXS
+    tags: ["boatramp", "boating", "fails", "top5", "shorts"]
+
+  weather_near_misses:
+    title: "TOP {n} WEATHER NEAR MISSES"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "lightning strike caught on camera #shorts"
+      - "tornado close call #shorts"
+      - "hail storm caught on camera #shorts"
+      - "flash flood close call #shorts"
+      - "dust devil caught on camera #shorts"
+      - "wind gust blows people over #shorts"
+      - "storm surge caught on camera #shorts"
+      - "tree falls during storm #shorts"
+      - "weather near miss #shorts"
+      - "lightning strike slow motion #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "weather forecast", "radar", "news report", "documentary", "movie", "simulation", "animation", "green screen", "cgi", "fake"]
+    channel: NXS
+    tags: ["weather", "storm", "nearmiss", "top5", "shorts"]
+
+  construction_near_misses:
+    title: "TOP {n} CONSTRUCTION NEAR MISSES"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "construction near miss #shorts"
+      - "construction fail caught on camera #shorts"
+      - "crane close call #shorts"
+      - "excavator near miss #shorts"
+      - "dump truck tip over #shorts"
+      - "scaffold collapse caught on camera #shorts"
+      - "concrete pump fail #shorts"
+      - "construction machine close call #shorts"
+      - "crane lift fail slow motion #shorts"
+      - "jobsite camera near miss #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "training", "safety meeting", "osha", "tutorial", "minecraft", "lego", "simulation", "animation", "cgi", "fake"]
+    channel: NXS
+    tags: ["construction", "jobsite", "nearmiss", "top5", "shorts"]
+
+  forklift_fails:
+    title: "TOP {n} FORKLIFT FAILS"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "forklift fail #shorts"
+      - "forklift accident caught on camera #shorts"
+      - "forklift near miss #shorts"
+      - "warehouse forklift fail #shorts"
+      - "pallet rack collapse forklift #shorts"
+      - "forklift close call #shorts"
+      - "forklift loading fail #shorts"
+      - "forklift operator pov #shorts"
+      - "forklift slow motion fail #shorts"
+      - "forklift drops load #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "training", "certification", "osha", "tutorial", "cartoon", "simulation", "animation", "gameplay", "fake"]
+    channel: NXS
+    tags: ["forklift", "warehouse", "fails", "top5", "shorts"]
+
+  drone_crashes:
+    title: "TOP {n} DRONE CRASHES"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "drone crash #shorts"
+      - "drone pov close call #shorts"
+      - "fpv drone crash #shorts"
+      - "drone hits tree #shorts"
+      - "drone over water fail #shorts"
+      - "drone caught by hand save #shorts"
+      - "drone near miss #shorts"
+      - "fpv drone slow motion crash #shorts"
+      - "drone propeller fail #shorts"
+      - "drone footage close call #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "drone review", "tutorial", "simulator", "liftoff", "velocidrone", "gameplay", "animation", "cgi", "fake", "commercial"]
+    channel: NXS
+    tags: ["drone", "fpv", "crashes", "top5", "shorts"]
+
+  workshop_fails:
+    title: "TOP {n} WORKSHOP FAILS"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "woodworking kickback #shorts"
+      - "table saw kickback #shorts"
+      - "lathe catch fail #shorts"
+      - "workshop fail caught on camera #shorts"
+      - "grinder wheel fail #shorts"
+      - "diy tool fail #shorts"
+      - "shop camera close call #shorts"
+      - "drill press fail #shorts"
+      - "bandsaw close call #shorts"
+      - "workshop slow motion fail #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "tutorial", "how to", "safety lesson", "training", "asmr", "restoration", "simulation", "animation", "cgi", "fake"]
+    channel: NXS
+    tags: ["workshop", "tools", "fails", "top5", "shorts"]
+
+  offroad_recovery_saves:
+    title: "TOP {n} OFFROAD SAVES"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "off road recovery #shorts"
+      - "jeep stuck recovery #shorts"
+      - "truck stuck rescue #shorts"
+      - "winch recovery fail #shorts"
+      - "mud bog recovery #shorts"
+      - "4x4 close call #shorts"
+      - "offroad rollover save #shorts"
+      - "recovery rope snap #shorts"
+      - "sand dune recovery #shorts"
+      - "offroad recovery slow motion #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "snowrunner", "forza", "beamng", "rc truck", "toy truck", "gameplay", "tutorial", "review", "simulation", "cgi", "fake"]
+    channel: NXS
+    tags: ["offroad", "recovery", "saves", "top5", "shorts"]
+
+  fire_rescue_saves:
+    title: "TOP {n} FIRE RESCUE SAVES"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "fire rescue caught on camera #shorts"
+      - "firefighter save #shorts"
+      - "fire extinguisher save #shorts"
+      - "kitchen fire close call #shorts"
+      - "car fire rescue #shorts"
+      - "house fire rescue #shorts"
+      - "emergency rescue caught on camera #shorts"
+      - "firefighter pov rescue #shorts"
+      - "fire escape close call #shorts"
+      - "fire rescue slow motion #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "training", "drill", "movie", "tv show", "news report", "simulation", "animation", "cgi", "fake"]
+    channel: NXS
+    tags: ["firerescue", "firefighter", "saves", "top5", "shorts"]
+
+  home_security_catches:
+    title: "TOP {n} HOME SECURITY CATCHES"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "security camera footage #shorts"
+      - "home security camera close call #shorts"
+      - "doorbell camera caught on camera #shorts"
+      - "driveway camera near miss #shorts"
+      - "garage door fail caught on camera #shorts"
+      - "package delivery fail #shorts"
+      - "porch camera close call #shorts"
+      - "doorbell camera save #shorts"
+      - "security cam slow motion #shorts"
+      - "ring camera caught on camera #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "paranormal", "ghost", "prank", "staged", "commercial", "tutorial", "news report", "cat", "dog", "animal", "fake"]
+    channel: NXS
+    tags: ["securitycam", "doorbellcam", "catches", "top5", "shorts"]
+
+  tree_cutting_fails:
+    title: "TOP {n} TREE CUTTING FAILS"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "tree cutting fail #shorts"
+      - "tree felling fail #shorts"
+      - "tree falls wrong way #shorts"
+      - "chainsaw close call #shorts"
+      - "logging fail caught on camera #shorts"
+      - "stump grinder fail #shorts"
+      - "tree removal near miss #shorts"
+      - "crane tree removal fail #shorts"
+      - "tree fall slow motion #shorts"
+      - "arborist pov close call #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "tutorial", "how to", "tree service ad", "commercial", "satisfying", "minecraft", "simulation", "animation", "cgi", "fake"]
+    channel: NXS
+    tags: ["treecutting", "logging", "fails", "top5", "shorts"]
+
+  mechanic_shop_fails:
+    title: "TOP {n} MECHANIC SHOP FAILS"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "mechanic fail #shorts"
+      - "car lift fail #shorts"
+      - "tire shop fail #shorts"
+      - "tire bead explosion #shorts"
+      - "wheel falls off caught on camera #shorts"
+      - "jack stand fail #shorts"
+      - "engine start fail #shorts"
+      - "garage camera close call #shorts"
+      - "mechanic shop near miss #shorts"
+      - "tire fail slow motion #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "tutorial", "how to", "repair guide", "diagnosis", "review", "commercial", "training", "simulation", "animation", "gameplay", "fake"]
+    channel: NXS
+    tags: ["mechanic", "garage", "fails", "top5", "shorts"]
+
+  elevator_escalator_saves:
+    title: "TOP {n} ELEVATOR SAVES"
+    source_kind: youtube_shorts
+    allow_commentary: true
+    allow_music: true
+    queries:
+      - "elevator close call #shorts"
+      - "escalator fail caught on camera #shorts"
+      - "elevator door close call #shorts"
+      - "escalator save #shorts"
+      - "elevator security camera #shorts"
+      - "elevator malfunction caught on camera #shorts"
+      - "escalator handrail fail #shorts"
+      - "elevator rescue caught on camera #shorts"
+      - "escalator near miss #shorts"
+      - "elevator slow motion fail #shorts"
+    channels: []
+    extra_sources: []
+    max_download_attempts: 12
+    min_source_duration: 3
+    max_source_duration: 90
+    min_source_views: 100
+    negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "movie", "prank", "staged", "training", "maintenance", "tutorial", "roblox", "minecraft", "simulation", "animation", "cgi", "fake"]
+    channel: NXS
+    tags: ["elevator", "escalator", "saves", "top5", "shorts"]
