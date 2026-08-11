@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------------------
+# POV PIPELINE - cron examples for the Linux VPS
+#
+#   crontab -e        then paste the lines you want (drop the leading #)
+#
+# Adjust REPO and PY. Everything else is env-driven; see docs/VPS_DEPLOY.md.
+# Cron runs with a nearly empty environment, so the daemon must source the
+# deployment .env itself - that is what the `set -a; . .env; set +a` does.
+# ---------------------------------------------------------------------------
+
+REPO=/opt/milo-portable-system
+POV=/opt/milo-portable-system/artisan/pov_pipeline
+PY=/opt/milo-portable-system/.venv/bin/python
+
+# --- Option A (recommended): one long-lived daemon, restarted on boot ------
+# The daemon has its own scheduler (posting window + interval + daily cap),
+# so cron only has to keep it alive.
+#
+# @reboot cd $POV && set -a && . $REPO/.env && set +a && $PY run_pov_pipeline.py --daemon >> $POV/state/daemon.out 2>&1
+
+# Restart it if it ever dies (pgrep is cheap; the daemon is idempotent).
+# */15 * * * * pgrep -f "run_pov_pipeline.py --daemon" >/dev/null || (cd $POV && set -a && . $REPO/.env && set +a && nohup $PY run_pov_pipeline.py --daemon >> $POV/state/daemon.out 2>&1 &)
+
+# --- Option B: no daemon, cron drives one pass at a time ------------------
+# Every 30 minutes, process at most one queue item. The posting window and
+# the videos_per_day cap in config/pov_channels.yaml still apply, so this is
+# safe to run often.
+#
+# */30 * * * * cd $POV && set -a && . $REPO/.env && set +a && $PY run_pov_pipeline.py --once >> $POV/state/cron.out 2>&1
+
+# --- Discovery: refill the queue overnight --------------------------------
+# Cheap (about 300 API units) and keeps the daemon fed. 04:10 local time.
+#
+# 10 4 * * * cd $POV && set -a && . $REPO/.env && set +a && $PY run_pov_pipeline.py --discover >> $POV/state/discover.out 2>&1
+
+# --- Housekeeping ---------------------------------------------------------
+# state/pipeline.log rotates itself at 5 MB (3 generations kept). These are
+# the raw cron redirect files, which do not.
+#
+# 0 5 * * 0 find $POV/state -name "*.out" -size +50M -delete
+
+# --- systemd alternative --------------------------------------------------
+# See docs/VPS_DEPLOY.md for a unit file. systemd gives you Restart=always,
+# journald and a clean SIGTERM, which the daemon already handles.

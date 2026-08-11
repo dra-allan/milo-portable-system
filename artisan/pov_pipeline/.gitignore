@@ -1,0 +1,27 @@
+# POV pipeline - never commit secrets, tokens or local state.
+
+# Telegram + API credentials (templates are tracked, real files are not)
+config/notify.env
+config/.env
+.env
+
+# YouTube OAuth
+config/youtube_token_*.json
+config/credentials.json
+client_secret*.json
+
+# sqlite ledger + queue, created on first run
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# pipeline-level state: logs, briefs, run output
+state/
+*.log
+*.log.[0-9]
+
+# python
+__pycache__/
+*.pyc
+.venv/
