@@ -281,7 +281,44 @@ def run_flow_images(project_dir: Path, profiles: str = "") -> bool:
     print(result.stdout[-3000:] if result.stdout else "")
     if result.stderr:
         print("STDERR:", result.stderr[-1500:])
-    return result.returncode == 0
+
+    missing = _missing_image_segments(project_dir, batch)
+    if missing:
+        eprint(f"[images] PARTIAL - {len(missing)} image(s) missing:")
+        eprint("    " + ", ".join(missing[:15]) + (" ..." if len(missing) > 15 else ""))
+        eprint("[images] Fix the failures above, then re-run --stage images to resume (existing images are skipped).")
+        return False
+    print(f"[images] OK - all {_expected_image_segments(batch)} segment image(s) present.")
+    return True
+
+
+_SEG_BATCH_RE = re.compile(r"^\s*\[([A-Z0-9]{2,8}-\d{3}(?:-[A-E])?)\]\s*(.*)$")
+_IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+
+
+def _expected_image_segments(batch: Path) -> list[str]:
+    """Parse every [SEG_ID] block in the batch file (mirrors flow-cli images.ts)."""
+    ids: list[str] = []
+    seen: set[str] = set()
+    for block in batch.read_text(encoding="utf-8-sig", errors="replace").split("\n\n"):
+        m = _SEG_BATCH_RE.match(block.strip())
+        if not m:
+            continue
+        body = re.sub(r"^\[[^\]]+\]\s*-\s*[^|]*\|\s*", "", block.strip()).strip()
+        if len(body) < 10 or m.group(1) in seen:
+            continue
+        seen.add(m.group(1))
+        ids.append(m.group(1))
+    return ids
+
+
+def _missing_image_segments(project_dir: Path, batch: Path) -> list[str]:
+    images_dir = project_dir / "05_IMAGES"
+    missing = []
+    for seg in _expected_image_segments(batch):
+        if not any((images_dir / f"{seg}{ext}").exists() for ext in _IMG_EXTS):
+            missing.append(seg)
+    return missing
 
 
 def run_thumbnail(project_dir: Path) -> bool:
