@@ -542,17 +542,50 @@ def assemble(plan: Dict) -> Optional[Path]:
     ]
 
     stages: List[Path] = []
-    for index, clip in enumerate(clips):
+    # Stage-1 renders are independent ffmpeg subprocesses, so threads give
+    # real parallelism (the encode happens in its own process, not in the
+    # GIL). RANKING_RENDER_WORKERS controls the pool size; the default is 2.
+    workers = max(1, int(config.render_workers))
+    jobs = [(index, clip, work / f"stage_{index:02d}_rank{clip['rank']}.mp4")
+            for index, clip in enumerate(clips)]
+    for index, clip, _ in jobs:
         clip['hook'] = index == 0
-        stage_path = work / f"stage_{index:02d}_rank{clip['rank']}.mp4"
-        rendered = render_clip(clip, title, len(clips), stage_path,
-                               leaderboard=leaderboard)
-        if not rendered:
-            # One bad clip must not lose the other four; the countdown is
-            # renumbered by the caller if it comes back short.
-            logger.warning('dropping rank %s from the build', clip.get('rank'))
-            continue
-        stages.append(rendered)
+
+    if workers > 1 and len(jobs) > 1:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results: Dict[int, Optional[Path]] = {}
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(render_clip, clip, title, len(clips),
+                            stage_path,
+                            leaderboard=leaderboard): index
+                for index, clip, stage_path in jobs
+            }
+            for future in as_completed(futures):
+                index = futures[future]
+                try:
+                    results[index] = future.result()
+                except Exception as exc:  # noqa: BLE001
+                    logger.error('clip %s render raised: %s', index, exc)
+                    results[index] = None
+        for index, clip, stage_path in jobs:
+            rendered = results.get(index)
+            if not rendered:
+                # One bad clip must not lose the other four; the countdown is
+                # renumbered by the caller if it comes back short.
+                logger.warning('dropping rank %s from the build',
+                               clip.get('rank'))
+                continue
+            stages.append(rendered)
+    else:
+        for index, clip, stage_path in jobs:
+            rendered = render_clip(clip, title, len(clips), stage_path,
+                                   leaderboard=leaderboard)
+            if not rendered:
+                logger.warning('dropping rank %s from the build',
+                               clip.get('rank'))
+                continue
+            stages.append(rendered)
 
     if len(stages) < 2:
         logger.error('only %d clip(s) rendered; not enough for a countdown',
