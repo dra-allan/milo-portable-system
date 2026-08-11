@@ -64,6 +64,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -76,6 +77,15 @@ from typing import Callable, Sequence
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]          # artisan/pov_pipeline -> artisan -> repo root
 AGENTS_DIR = HERE / "agents"
+
+# The opencode runs log UTF-8 + ANSI. Printing their tails to a cp1252
+# Windows console would crash on any non-ASCII char (→, em-dashes). Force
+# UTF-8 with replacement so log-tail echoing never takes the pipeline down.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 MANIFEST_SCHEMA = 1
 MEMORY_PROJECT = os.environ.get("POV_MEMORY_PROJECT", "").strip() or "pov-pipeline"
@@ -257,7 +267,8 @@ def milo_remember(text: str, *, category: str = "context", importance: int = 2,
     if tags:
         cmd += ["-t", *tags]
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60,
+        res = subprocess.run(cmd, capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", timeout=60,
                              cwd=str(REPO_ROOT))
     except (OSError, subprocess.SubprocessError) as exc:
         eprint(f"[memory] milo remember unavailable: {exc}")
@@ -318,10 +329,12 @@ def opencode_flags() -> set[str]:
         return _OPENCODE_FLAGS
     try:
         res = subprocess.run([exe, "run", "--help"], capture_output=True,
-                             text=True, timeout=60)
+                             text=True, encoding="utf-8", errors="replace",
+                             timeout=60)
         help_text = (res.stdout or "") + (res.stderr or "")
         for flag in ("--agent", "--model", "--session", "--continue",
-                     "--print-logs", "--log-level", "--format", "--auto"):
+                     "--print-logs", "--log-level", "--format", "--auto",
+                     "--file"):
             if flag in help_text:
                 _OPENCODE_FLAGS.add(flag)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -345,7 +358,8 @@ def opencode_agents() -> set[str]:
         return _OPENCODE_AGENTS
     for argv in ([exe, "agent", "list"], [exe, "agent", "ls"]):
         try:
-            res = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+            res = subprocess.run(argv, capture_output=True, text=True,
+                                 encoding="utf-8", errors="replace", timeout=60)
         except (OSError, subprocess.SubprocessError):
             continue
         if res.returncode != 0:
@@ -368,17 +382,25 @@ def agent_slug(prompt_path: Path, fallback: str) -> str:
 
 
 def build_opencode_command(prompt: str, *, agent: str | None = None,
-                           model: str | None = None) -> list[str]:
+                           model: str | None = None,
+                           brief_file: str | None = None) -> list[str]:
     """Build the exact non-interactive opencode invocation.
 
     THIS IS THE ONLY FUNCTION THAT KNOWS THE OPENCODE CLI SYNTAX.
 
+    The prompt is written to a file and passed with ``--file`` when the
+    installed opencode supports it. That keeps the command line short (briefs
+    are 12-20 KB, which overflows the 8191-char Windows ``CreateProcess``
+    limit when passed inline) and leaves an auditable copy of every brief on
+    disk. The inline message is then a short pointer to the file. Falls back
+    to passing the full prompt as a single argv element when ``--file`` is
+    unavailable (older versions / some Linux builds), in which case quotes,
+    newlines and Windows backslashes in project paths survive untouched.
+
     Produces::
 
-        <opencode> run [--agent <slug>] [--model <provider/model>] "<prompt>"
-
-    The prompt is passed as a single argv element (never shell-interpolated),
-    so quotes, newlines and Windows backslashes in project paths survive.
+        <opencode> run [--agent <slug>] [--model <provider/model>]
+                       [--file <brief-file>] "<short message>"
 
     Raises:
         FileNotFoundError: opencode is not installed / not on PATH.
@@ -391,11 +413,20 @@ def build_opencode_command(prompt: str, *, agent: str | None = None,
         )
     flags = opencode_flags()
     cmd: list[str] = [exe, "run"]
+    if brief_file and "--file" in flags:
+        # Positional message MUST come before --file (opencode treats a bare
+        # trailing positional as a file path when --file is present).
+        cmd.append(
+            "Follow the brief in the attached file exactly: do the work, "
+            "write the output file it specifies, and do not ask questions."
+        )
+        cmd += ["--file", brief_file]
+    else:
+        cmd.append(prompt)
     if agent and "--agent" in flags:
         cmd += ["--agent", agent]
     if model and "--model" in flags:
         cmd += ["--model", model]
-    cmd.append(prompt)
     return cmd
 
 
@@ -486,7 +517,9 @@ def mark_needs_review(project_dir: Path, reason: str) -> None:
 def read_source_url(project_dir: Path) -> str:
     path = project_dir / "00_SOURCE_URL.txt"
     if path.exists():
-        return path.read_text(encoding="utf-8", errors="replace").strip()
+        # utf-8-sig: LLM agents and editors can leave a BOM that would
+        # otherwise be printed verbatim (and crash cp1252 consoles).
+        return path.read_text(encoding="utf-8-sig", errors="replace").strip()
     return str(read_manifest(project_dir).get("source_url", "") or "")
 
 
@@ -562,6 +595,63 @@ def build_brief(*, agent: str, prompt_text: str, project_dir: Path, outfile: str
 # ---------------------------------------------------------------------------
 
 
+def _kill_process_tree(proc: subprocess.Popen) -> None:
+    """Kill the whole tree under ``proc``.
+
+    On Windows the opencode .CMD shim spawns node/git children; killing just
+    the shim orphans them (and, worse, leaves the stdout pipe open so a
+    timed-out ``communicate()`` hangs forever). ``taskkill /T`` walks the
+    tree. POSIX uses the process group.
+    """
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                           capture_output=True, timeout=20)
+        else:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (OSError, subprocess.SubprocessError):
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
+def run_cmd_timed(cmd: list[str], *, cwd: str, timeout: int,
+                  logfile: Path) -> tuple[int | None, str | None]:
+    """Run ``cmd`` with a hard wall-clock timeout, logging output to a file.
+
+    Output goes to ``logfile`` (never a pipe) so nothing can block waiting on
+    a reader thread - the opencode tree writes to the file and we poll the
+    process instead. On timeout the entire process tree is killed.
+
+    Returns:
+        (returncode, None) on completion, or (None, "timeout") if the budget
+        expired. The caller reads ``logfile`` for the tail of the output.
+    """
+    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    start_new_session = os.name != "nt"
+    with logfile.open("ab") as out:
+        proc = subprocess.Popen(
+            cmd, cwd=cwd,
+            stdout=out, stderr=subprocess.STDOUT,
+            creationflags=creationflags,
+            start_new_session=start_new_session,
+        )
+        deadline = time.time() + timeout
+        try:
+            while proc.poll() is None:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    _kill_process_tree(proc)
+                    proc.wait()
+                    return None, "timeout"
+                time.sleep(min(2.0, max(0.1, remaining)))
+        except (OSError, subprocess.SubprocessError) as exc:
+            _kill_process_tree(proc)
+            return None, f"{type(exc).__name__}: {exc}"
+    return proc.returncode, None
+
+
 def dispatch_agent(project_dir: Path, agent: str, outfile: str, *,
                    agents_dir: Path = AGENTS_DIR,
                    previous_output: str | None = None,
@@ -592,12 +682,25 @@ def dispatch_agent(project_dir: Path, agent: str, outfile: str, *,
                         previous_output=previous_output, attempt=attempt,
                         gate_report=gate_report, use_memory=use_memory)
 
+    # Persist the brief so the command line stays short and every dispatch is
+    # auditable. opencode's --file then feeds it back in via the message.
+    brief_dir = state_dir(project_dir) / "briefs"
+    brief_dir.mkdir(parents=True, exist_ok=True)
+    brief_file = brief_dir / f"{agent}.attempt{attempt}.brief.md"
+    try:
+        brief_file.write_text(brief, encoding="utf-8")
+    except OSError as exc:
+        result.status = "failed"
+        result.error = f"could not write brief: {brief_file} ({exc})"
+        return result
+
     slug: str | None = agent_override or agent_slug(prompt_path, agent)
     if not agent_override and slug not in opencode_agents():
         slug = None  # not registered - the .md in the brief carries the contract
 
     try:
-        cmd = build_opencode_command(brief, agent=slug, model=model)
+        cmd = build_opencode_command(brief, agent=slug, model=model,
+                                     brief_file=str(brief_file))
     except FileNotFoundError as exc:
         result.status = "failed"
         result.error = str(exc)
@@ -612,33 +715,35 @@ def dispatch_agent(project_dir: Path, agent: str, outfile: str, *,
         result.finished_at = _stamp()
         return result
 
-    started = time.time()
-    try:
-        proc = subprocess.run(cmd, cwd=str(project_dir), capture_output=True,
-                              text=True, timeout=budget)
-    except subprocess.TimeoutExpired:
-        result.status = "timeout"
-        result.duration_s = round(time.time() - started, 1)
-        result.error = f"no output after {budget}s"
-        result.finished_at = _stamp()
-        return result
-    except (OSError, subprocess.SubprocessError) as exc:
-        result.status = "failed"
-        result.duration_s = round(time.time() - started, 1)
-        result.error = f"{type(exc).__name__}: {exc}"
-        result.finished_at = _stamp()
-        return result
+    # Output goes to a file, not a pipe: the opencode tree is killed by PID
+    # tree on timeout, and a file handle cannot block a reader thread.
+    run_dir = state_dir(project_dir) / "runs"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    logfile = run_dir / f"{agent}.attempt{attempt}.log"
 
+    started = time.time()
+    retcode, err = run_cmd_timed(cmd, cwd=str(project_dir), timeout=budget,
+                                 logfile=logfile)
     result.duration_s = round(time.time() - started, 1)
     result.finished_at = _stamp()
-    if proc.stdout:
-        print(proc.stdout[-2000:])
-    if proc.stderr:
-        eprint(proc.stderr[-1200:])
+
+    # Surface the tail of the run log (UTF-8; opencode emits ANSI + non-ASCII).
+    if logfile.exists() and logfile.stat().st_size:
+        try:
+            tail = logfile.read_text(encoding="utf-8", errors="replace")[-2000:]
+            if tail.strip():
+                print(tail)
+        except OSError:
+            pass
+
+    if err:
+        result.status = "timeout" if err == "timeout" else "failed"
+        result.error = err
+        return result
 
     if not target.exists():
         result.status = "failed"
-        result.error = (f"agent exited {proc.returncode} but {outfile} was "
+        result.error = (f"agent exited {retcode} but {outfile} was "
                         "never written")
         return result
     size = target.stat().st_size
@@ -649,9 +754,9 @@ def dispatch_agent(project_dir: Path, agent: str, outfile: str, *,
 
     result.bytes_written = size
     result.status = "done"
-    if proc.returncode != 0:
+    if retcode != 0:
         # File landed, exit code grumbled. Trust the artifact, note the noise.
-        result.error = f"exit {proc.returncode} (output present, continuing)"
+        result.error = f"exit {retcode} (output present, continuing)"
     return result
 
 
@@ -868,6 +973,11 @@ def run_agent_chain(project_dir: Path, agents: Sequence[tuple[str, str]], *,
     _notify("project.started", f"POV {project_dir.name}: agent chain started")
 
     previous_output: str | None = None
+    # The gate judges output the scriptwriter PRODUCED this run. A skipped
+    # (pre-existing) script was already accepted in an earlier session - and
+    # the project may be fully assembled. Re-judging it could archive a
+    # completed project's script and regenerate it. Resume-safe = gated once.
+    gate_agent_ran = False
 
     for index, (agent, outfile) in enumerate(agents, 1):
         target = project_dir / outfile
@@ -919,9 +1029,11 @@ def run_agent_chain(project_dir: Path, agents: Sequence[tuple[str, str]], *,
                 f"POV pipeline: {project_dir.name} - {agent} wrote {outfile} "
                 f"({res.bytes_written} bytes in {res.duration_s}s).",
                 enabled=use_memory)
+            if agent == gate_after:
+                gate_agent_ran = True
             previous_output = outfile
 
-        if gate_fn and agent == gate_after and not dry_run:
+        if gate_fn and agent == gate_after and not dry_run and gate_agent_ran:
             if not _gate_loop(project_dir, agents, agent, outfile, chain,
                               gate_fn=gate_fn, retries=gate_retries,
                               agents_dir=agents_dir, model=model,
