@@ -56,9 +56,11 @@ class RankingPipeline:
         known = self.db.known_hashes()
         accepted: List[Dict] = []
         # Give up after this many rejects rather than grinding through every
-        # candidate: if 4x the target has failed, the topic's queries or
+        # candidate: if the budget has failed, the topic's queries or
         # thresholds are wrong and another 30 downloads will not fix it.
-        reject_budget = max(12, needed * 4)
+        # RANKING_REJECT_BUDGET now controls this; the floor is `needed` so a
+        # build can never abort before one full pass of candidates.
+        reject_budget = max(int(config.reject_budget), needed)
         rejects = 0
 
         for candidate in candidates:
