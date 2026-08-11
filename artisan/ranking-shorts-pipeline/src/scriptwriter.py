@@ -123,7 +123,8 @@ def write_copy(topic_cfg: Dict, clips: List[Dict]) -> Dict:
         supplied = (model_copy or {}).get(rank) or {}
         clip['title'] = supplied.get('title') or _template_title(clip)
         line = supplied.get('line') or _template_line(clip)
-        skip = config.vo_skip_first and rank == total
+        skip = (config.vo_skip_first and rank == total) \
+            or clip.get('has_speech')
         clip['vo_line'] = '' if skip else line
 
     video_title = str(topic_cfg.get('title') or 'TOP {n}').replace(
