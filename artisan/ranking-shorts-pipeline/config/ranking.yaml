@@ -19,7 +19,7 @@ defaults:
   max_source_duration: 900
   min_source_views: 500
   max_words_per_second: 0.45
-  max_music_confidence: 0.55
+  max_music_confidence: 0.75
   max_text_coverage: 0.18
   blur_detected_text: true
   min_motion_score: 0.02
@@ -33,12 +33,16 @@ defaults:
   rank_fill: "white"
   rank_outline: "black"
   accent_color: "0x1E90FF"
-  rank_fontsize: 300
-  clip_title_fontsize: 68
-  video_title_fontsize: 62
-  rank_y: 760
-  clip_title_y: 1180
-  video_title_y: 300
+  video_title_fontsize: 84
+  video_title_body_fontsize: 54
+  video_title_y: 140
+  # Ranked side-list: a compact column of numbered rows in the corner so the
+  # footage stays the focus. The playing clip's row is highlighted.
+  list_x: 84
+  list_y: 560
+  list_row_h: 92
+  list_rank_size: 46
+  list_label_size: 34
   transition: zoomin
   transition_duration: 0.28
   hook_zoom: true

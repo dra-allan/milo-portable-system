@@ -161,7 +161,8 @@ def fit_durations(durations: List[float]) -> List[float]:
 # Stage 1: one ranked clip
 # ---------------------------------------------------------------------------
 def render_clip(clip: Dict, video_title: str, clips_total: int,
-                out_path: Path) -> Optional[Path]:
+                out_path: Path,
+                leaderboard: Optional[List[Dict]] = None) -> Optional[Path]:
     """Render one ranked clip: fill, text-mask, overlays, hook zoom, audio.
 
     ``clip`` keys:
@@ -174,6 +175,8 @@ def render_clip(clip: Dict, video_title: str, clips_total: int,
         sfx         - optional [{path, at, gain}]
         text_boxes  - optional [{x, y, w, h}] regions to blur
         hook        - True for the opening clip
+    ``leaderboard`` - [{rank, title}] for every clip in the build, so each
+        clip's render draws the same list with itself highlighted.
     """
     source = Path(clip['path'])
     if not source.exists():
@@ -228,7 +231,8 @@ def render_clip(clip: Dict, video_title: str, clips_total: int,
     chains += fill_chain('0:v', 'filled')
     chains += mask_chain('filled', 'masked', clip.get('text_boxes') or [])
     chains += text_chain('masked', 'texted', int(clip['rank']),
-                         clip.get('title') or '', video_title, clips_total)
+                         clip.get('title') or '', video_title, clips_total,
+                         leaderboard=leaderboard)
     if clip.get('hook'):
         chains += hook_zoom_chain('texted', 'zoomed')
         last_v = 'zoomed'
@@ -440,11 +444,17 @@ def assemble(plan: Dict) -> Optional[Path]:
     title = plan.get('video_title') or 'TOP 5'
     work = ensure_dir(config.temp_dir / safe_slug(f"{plan.get('topic')}_{title}"))
 
+    leaderboard = [
+        {'rank': int(clip.get('rank') or 0), 'title': clip.get('title') or ''}
+        for clip in clips
+    ]
+
     stages: List[Path] = []
     for index, clip in enumerate(clips):
         clip['hook'] = index == 0
         stage_path = work / f"stage_{index:02d}_rank{clip['rank']}.mp4"
-        rendered = render_clip(clip, title, len(clips), stage_path)
+        rendered = render_clip(clip, title, len(clips), stage_path,
+                               leaderboard=leaderboard)
         if not rendered:
             # One bad clip must not lose the other four; the countdown is
             # renumbered by the caller if it comes back short.
