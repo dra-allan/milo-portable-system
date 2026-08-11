@@ -190,7 +190,7 @@ niches:
       - explaination
     max_videos: 2
     channels:
-      - "@fern-tv"                  # unverified handle - "armchair documentaries", 5M
+      - "@fern-tv"                  # "armchair documentaries", 5M - handle verified 2026-08-11
       - "@ColdFusion"
       - "@MagnatesMedia"
       - "@CompanyMan"
@@ -204,8 +204,7 @@ niches:
       - "@MentourPilot"
       - "@PlainlyDifficult"
       - "@FascinatingHorror"
-      - "@BlackFilesDeclassified"    # unverified handle - 3D mannequin true-story format
-      - "@AtriumDocs"                # unverified handle - same mannequin niche
+      - "@AtriumExplores"            # 3D mannequin true-story format - handle verified 2026-08-11
     require_keywords: []
     keywords:
       - "the rise and fall"
