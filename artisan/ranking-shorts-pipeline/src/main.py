@@ -268,16 +268,22 @@ class RankingPipeline:
         """Build up to ``count`` new videos, rotating topics round-robin.
 
         Returns build ids for the videos actually produced. A topic whose
-        build fails is skipped rather than retried in a tight loop.
+        build fails is skipped rather than retried in a tight loop: failed
+        topics are set aside for this round so the next candidate can run.
         """
         topics = list(config.topic_names())
         if not topics:
             return []
         built_ids: List[int] = []
+        attempted: set = set()
         tried = 0
         while len(built_ids) < count and tried < len(topics) * 3:
             tried += 1
-            topic = self.db.next_topic(topics)
+            remaining = [t for t in topics if t not in attempted]
+            topic = self.db.next_topic(remaining)
+            if topic is None:
+                break
+            attempted.add(topic)
             plan = self.build(topic, upload=False)
             if plan and plan.get('build_id'):
                 built_ids.append(int(plan['build_id']))
@@ -538,7 +544,25 @@ def main(argv=None) -> int:
 
     topic = args.topic
     if args.mode == 'auto':
-        topic = pipeline.db.next_topic(config.topic_names())
+        # Rotate like _build_fresh: a starved topic (every candidate already
+        # rejected/used) must not abort the run. Try each never-run/least
+        # recent topic once and build the first one that produces clips.
+        topics = config.topic_names()
+        if not topics:
+            print('no topics configured in config/ranking.yaml')
+            return 2
+        attempted: list = []
+        plan = None
+        while len(attempted) < len(topics):
+            remaining = [t for t in topics if t not in attempted]
+            candidate = pipeline.db.next_topic(remaining)
+            if candidate is None:
+                break
+            attempted.append(candidate)
+            plan = pipeline.build(candidate, upload=not args.no_upload)
+            if plan:
+                break
+        return 0 if plan else 1
     topic = topic or (config.topic_names() or [None])[0]
     if not topic:
         print('no topics configured in config/ranking.yaml')
