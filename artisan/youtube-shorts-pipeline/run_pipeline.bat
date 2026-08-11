@@ -11,7 +11,10 @@ set "SCHEDULE_MAX_VIDEOS=1"
 set "SCHEDULE_MAX_TOTAL=0"
 set "BACKGROUND_MODE=smart"
 set "CAPTION_STYLE=hormozi"
+set "TASK_NAME=YouTube Shorts Pipeline Daemon"
 call :load_env
+if defined VIDEO_FACTORY_ROOT set "SHORTS_RUNTIME=%VIDEO_FACTORY_ROOT%\youtube-shorts-pipeline"
+if not defined SHORTS_RUNTIME set "SHORTS_RUNTIME=%LOCALAPPDATA%\DRA\VideoFactory\youtube-shorts-pipeline"
 
 :menu
 cls
@@ -21,8 +24,9 @@ echo ===========================================================================
 echo Repo: %REPO_DIR%
 echo Python: %PY%
 echo Background: %BACKGROUND_MODE%   Captions: %CAPTION_STYLE%
-echo Source cap: %SCHEDULE_MAX_VIDEOS% video per niche per sweep
- echo.
+echo Source cap: %SCHEDULE_MAX_VIDEOS%   Runtime: %SHORTS_RUNTIME%
+echo Scheduled task: %TASK_NAME%
+echo.
 echo  1. Full sweep
  echo 2. Process YouTube URL or ID
  echo 3. Scheduled mode
@@ -34,7 +38,12 @@ echo  1. Full sweep
  echo 9. Reset caps
  echo 10. Compile Python
  echo 11. Open runtime folders
- echo 12. Exit
+ echo 12. Open log
+ echo 13. Edit environment
+ echo 14. Install or update scheduled daemon
+ echo 15. Remove scheduled daemon
+ echo 16. Stop scheduler daemon
+ echo 17. Exit
  echo.
 set "choice="
 set /p "choice=Select: "
@@ -49,7 +58,12 @@ if "%choice%"=="8" goto cleanup_uploaded
 if "%choice%"=="9" goto reset_caps
 if "%choice%"=="10" goto compile_check
 if "%choice%"=="11" goto folders
-if "%choice%"=="12" goto done
+if "%choice%"=="12" goto open_log
+if "%choice%"=="13" goto edit_env
+if "%choice%"=="14" goto install_task
+if "%choice%"=="15" goto remove_task
+if "%choice%"=="16" goto stop_daemon
+if "%choice%"=="17" goto done
 goto menu
 
 :load_env
@@ -107,7 +121,8 @@ pause
 goto menu
 :upload
 call :start_timer "upload existing"
-call :run -m src.safe_upload
+call :ensure_python
+if not errorlevel 1 "%PY%" -m src.safe_upload
 call :stop_timer "upload existing"
 pause
 goto menu
@@ -151,9 +166,44 @@ if errorlevel 1 (echo [FAIL] Python compile check failed.) else echo [OK] Python
 pause
 goto menu
 :folders
+if not exist "%SHORTS_RUNTIME%\data" mkdir "%SHORTS_RUNTIME%\data"
+if not exist "%SHORTS_RUNTIME%\logs" mkdir "%SHORTS_RUNTIME%\logs"
 if defined DATA_DIR start "Shorts data" "%DATA_DIR%"
 if defined SHORTS_DIR start "Shorts output" "%SHORTS_DIR%"
 if defined LOG_DIR start "Shorts logs" "%LOG_DIR%"
+if not defined DATA_DIR start "Shorts runtime" "%SHORTS_RUNTIME%"
+goto menu
+:open_log
+if defined LOG_DIR if exist "%LOG_DIR%\pipeline.log" (start "Shorts pipeline log" notepad "%LOG_DIR%\pipeline.log"&goto menu)
+if exist "%SHORTS_RUNTIME%\logs\pipeline.log" (start "Shorts pipeline log" notepad "%SHORTS_RUNTIME%\logs\pipeline.log") else echo No pipeline log yet.
+pause
+goto menu
+:edit_env
+if exist "%REPO_DIR%\.env" (start "Shorts environment" notepad "%REPO_DIR%\.env"&goto menu)
+if not exist ".env" copy /y ".env.example" ".env" >nul 2>&1
+start "Shorts environment" notepad "%PIPE_DIR%.env"
+pause
+goto menu
+:install_task
+call :ensure_python
+if errorlevel 1 goto menu
+echo Installing or updating %TASK_NAME%.
+choice /c YN /n /m "Continue? [Y/N] "
+if errorlevel 2 goto menu
+schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
+schtasks /create /tn "%TASK_NAME%" /tr "\"%PY%\" -m src.main --mode schedule" /sc onlogon /ru "%USERNAME%" /f
+if errorlevel 1 echo [ERROR] Could not create the scheduled task.
+if not errorlevel 1 echo [OK] Scheduled daemon installed.
+pause
+goto menu
+:remove_task
+schtasks /delete /tn "%TASK_NAME%" /f
+if errorlevel 1 echo [INFO] Task was not present.
+pause
+goto menu
+:stop_daemon
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$root=[IO.Path]::GetFullPath('%PIPE_DIR%');$ps=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ? { $_.CommandLine -and $_.CommandLine -like ('*'+$root+'*src.main*') -and $_.CommandLine -like '*--mode schedule*' };if(-not $ps){'No Shorts scheduler found.'}else{$ps|%%{ 'Stopping PID '+$_.ProcessId;Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+pause
 goto menu
 :done
 endlocal
