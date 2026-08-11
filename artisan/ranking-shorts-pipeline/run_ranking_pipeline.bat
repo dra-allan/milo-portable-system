@@ -11,7 +11,7 @@ set "RANKING_TOPIC=auto"
 set "UPLOAD_PRIVACY=private"
 set "RANKING_FAST_MODE=true"
 set "RANKING_RENDER_WORKERS=2"
-set "RANKING_REJECT_BUDGET=2"
+set "RANKING_REJECT_BUDGET=20"
 call :load_env
 if defined VIDEO_FACTORY_ROOT set "RANKING_RUNTIME=%VIDEO_FACTORY_ROOT%\ranking-shorts-pipeline"
 if not defined RANKING_RUNTIME set "RANKING_RUNTIME=%LOCALAPPDATA%\DRA\VideoFactory\ranking-shorts-pipeline"
