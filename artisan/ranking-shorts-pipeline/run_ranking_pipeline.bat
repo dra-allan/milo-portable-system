@@ -12,6 +12,7 @@ set "UPLOAD_PRIVACY=private"
 set "RANKING_FAST_MODE=true"
 set "RANKING_RENDER_WORKERS=2"
 set "RANKING_REJECT_BUDGET=20"
+set "RANKING_VIDEOS_PER_RUN=3"
 call :load_env
 if defined VIDEO_FACTORY_ROOT set "RANKING_RUNTIME=%VIDEO_FACTORY_ROOT%\ranking-shorts-pipeline"
 if not defined RANKING_RUNTIME set "RANKING_RUNTIME=%LOCALAPPDATA%\DRA\VideoFactory\ranking-shorts-pipeline"
@@ -24,10 +25,11 @@ echo Repo: %REPO_DIR%
 echo Python: %PY%
 echo Topic: %RANKING_TOPIC%   Privacy: %UPLOAD_PRIVACY%
 echo Fast vetting: %RANKING_FAST_MODE%   Render workers: %RANKING_RENDER_WORKERS%
+echo Videos per run: %RANKING_VIDEOS_PER_RUN%
 echo Runtime: %RANKING_RUNTIME%
 echo.
-echo  1. Build, no upload
- echo 2. Build and upload
+echo  1. Build %RANKING_VIDEOS_PER_RUN% video(s), no upload
+ echo 2. Build and upload %RANKING_VIDEOS_PER_RUN% video(s)
  echo 3. Source and vet clips
  echo 4. Assemble saved plan
  echo 5. Upload pending builds
@@ -36,11 +38,12 @@ echo  1. Build, no upload
  echo 8. Test environment
  echo 9. Compile Python
  echo 10. Set topic
- echo 11. Toggle fast vetting
- echo 12. Open runtime folders
- echo 13. Delete uploaded local videos
- echo 14. Stop ranking scheduler
- echo 15. Exit
+ echo 11. Set videos per run
+ echo 12. Toggle fast vetting
+ echo 13. Open runtime folders
+ echo 14. Delete uploaded local videos
+ echo 15. Stop ranking scheduler
+ echo 16. Exit
  echo.
 set "choice="
 set /p "choice=Select: "
@@ -54,11 +57,12 @@ if "%choice%"=="7" goto schedule
 if "%choice%"=="8" goto test
 if "%choice%"=="9" goto compile_check
 if "%choice%"=="10" goto set_topic
-if "%choice%"=="11" goto toggle_fast
-if "%choice%"=="12" goto folders
-if "%choice%"=="13" goto cleanup_uploaded
-if "%choice%"=="14" goto stop_daemon
-if "%choice%"=="15" goto done
+if "%choice%"=="11" goto set_videos
+if "%choice%"=="12" goto toggle_fast
+if "%choice%"=="13" goto folders
+if "%choice%"=="14" goto cleanup_uploaded
+if "%choice%"=="15" goto stop_daemon
+if "%choice%"=="16" goto done
 goto menu
 :load_env
 if exist "%REPO_DIR%\.env" for /f "usebackq tokens=1,* delims== eol=#" %%A in ("%REPO_DIR%\.env") do if not "%%A"=="" set "%%A=%%B"
@@ -87,13 +91,13 @@ echo [EXIT CODE] %RC%
 exit /b %RC%
 :build_private
 call :start_timer "build no-upload"
-if /i "%RANKING_TOPIC%"=="auto" (call :run --mode auto --no-upload) else (call :run --mode once --topic "%RANKING_TOPIC%" --no-upload)
+if /i "%RANKING_TOPIC%"=="auto" (call :run --mode auto --videos %RANKING_VIDEOS_PER_RUN% --no-upload) else (call :run --mode once --topic "%RANKING_TOPIC%" --no-upload)
 call :stop_timer "build no-upload"
 pause
 goto menu
 :build_upload
 call :start_timer "build and upload"
-if /i "%RANKING_TOPIC%"=="auto" (call :run --mode auto) else (call :run --mode once --topic "%RANKING_TOPIC%")
+if /i "%RANKING_TOPIC%"=="auto" (call :run --mode auto --videos %RANKING_VIDEOS_PER_RUN%) else (call :run --mode once --topic "%RANKING_TOPIC%")
 call :stop_timer "build and upload"
 pause
 goto menu
@@ -149,6 +153,18 @@ set /p "new_topic=Topic key, or AUTO or BACK: "
 if /i "%new_topic%"=="BACK" goto menu
 if /i "%new_topic%"=="AUTO" set "new_topic=auto"
 if defined new_topic set "RANKING_TOPIC=%new_topic%"
+goto menu
+:set_videos
+set "new_videos="
+set /p "new_videos=Videos per run (1-15), or BACK: "
+if /i "%new_videos%"=="BACK" goto menu
+set "new_videos=%new_videos: =%"
+for /f "tokens=* delims=0123456789" %%I in ("%new_videos%") do set "BAD_V=%%I"
+if defined BAD_V (echo Invalid number: %new_videos%) else if not defined new_videos (echo Invalid.) else (
+  set /a new_videos+=0 2>nul
+  if %new_videos% GEQ 1 if %new_videos% LEQ 15 set "RANKING_VIDEOS_PER_RUN=%new_videos%"
+)
+set "BAD_V="
 goto menu
 :toggle_fast
 if /i "%RANKING_FAST_MODE%"=="true" (set "RANKING_FAST_MODE=false") else (set "RANKING_FAST_MODE=true")

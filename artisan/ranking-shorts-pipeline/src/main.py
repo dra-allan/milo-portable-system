@@ -12,7 +12,7 @@ fetching forty clips up front and throwing thirty-five away.
 
 Modes:
     once      - build one video for --topic (or the first configured topic)
-    auto      - pick the least-recently-run topic, build, upload
+    auto      - build N videos (--videos, default 1), rotating topics, upload
     sweep     - one scheduled run now: drain backlog, refill pool toward
                 queue_target_total, upload (3 fresh + 3 backlog), all capped
                 by the 24h daily cap and the per-run budget. No daemon.
@@ -502,6 +502,9 @@ def main(argv=None) -> int:
                         choices=['once', 'auto', 'sweep', 'schedule',
                                  'source', 'assemble', 'upload', 'test'])
     parser.add_argument('--topic', default=None)
+    parser.add_argument('--videos', type=int, default=None,
+                        help='number of videos to build in --mode auto '
+                             '(default: RANKING_VIDEOS_PER_RUN or 1)')
     parser.add_argument('--plan', default=None,
                         help='plan JSON for --mode assemble')
     parser.add_argument('--no-upload', action='store_true')
@@ -544,25 +547,38 @@ def main(argv=None) -> int:
 
     topic = args.topic
     if args.mode == 'auto':
-        # Rotate like _build_fresh: a starved topic (every candidate already
-        # rejected/used) must not abort the run. Try each never-run/least
-        # recent topic once and build the first one that produces clips.
+        # Build N videos per run (default 1). After a build the used clips are
+        # retired, so the next iteration sources fresh material and picks the
+        # least-recently-run topic again - each video is a distinct TOP-5.
         topics = config.topic_names()
         if not topics:
             print('no topics configured in config/ranking.yaml')
             return 2
-        attempted: list = []
-        plan = None
-        while len(attempted) < len(topics):
-            remaining = [t for t in topics if t not in attempted]
-            candidate = pipeline.db.next_topic(remaining)
-            if candidate is None:
-                break
-            attempted.append(candidate)
-            plan = pipeline.build(candidate, upload=not args.no_upload)
+
+        wanted = args.videos if args.videos and args.videos > 0 else int(
+            config.get('videos_per_run', 1) or 1)
+        wanted = max(1, wanted)
+        built = 0
+        for _ in range(wanted):
+            # Try each topic at most once per video so a starved topic (every
+            # candidate already rejected/used) cannot block the rest.
+            attempted: list = []
+            plan = None
+            while len(attempted) < len(topics):
+                remaining = [t for t in topics if t not in attempted]
+                candidate = pipeline.db.next_topic(remaining)
+                if candidate is None:
+                    break
+                attempted.append(candidate)
+                plan = pipeline.build(candidate, upload=not args.no_upload)
+                if plan:
+                    break
             if plan:
-                break
-        return 0 if plan else 1
+                built += 1
+                logger.info('AUTO_BUILT %d/%d: %s', built, wanted,
+                            plan.get('upload_title', ''))
+        print(f'built {built}/{wanted} video(s)')
+        return 0 if built else 1
     topic = topic or (config.topic_names() or [None])[0]
     if not topic:
         print('no topics configured in config/ranking.yaml')
