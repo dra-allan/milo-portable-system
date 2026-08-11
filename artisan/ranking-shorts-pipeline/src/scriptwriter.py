@@ -29,6 +29,44 @@ _STOPWORDS = {
     'shorts', 'short', 'video', 'funny', 'best', 'top', 'viral', 'part',
 }
 
+# Words that add no signal to the on-screen label. Dropped by the 2-word
+# condenser so the list reads punchy instead of clipped mid-sentence.
+_LABEL_FILLER = {
+    'why', 'how', 'what', 'when', 'the', 'this', 'that', 'it', 'its',
+    'just', 'most', 'very', 'really', 'so', 'while', 'with', 'from', 'into',
+    'onto', 'over', 'under', 'was', 'were', 'will', 'would', 'could',
+    'should', 'won', 'n', 's', 'dont', 'wasnt', 'almost', 'then', 'there',
+    'here', 'vs', 'of', 'gotta', 'gonna', 'about', 'after', 'before',
+}
+
+
+def _condense_label(text: str) -> str:
+    """Reduce a clip title to at most two describing words.
+
+    The on-screen list row shows this, so the model's 2-4 word phrase or the
+    template's raw source-title words get cut to the two that carry the
+    moment. Filler (why/how/the/while...) is dropped first, then the first
+    two content words in order; consecutive repeats collapse. Falls back to
+    the original tokens, then 'TOP'.
+    """
+    tokens = re.findall(r"[A-Za-z']+", text or '')
+    low = {
+        t for t in tokens if t.lower() in _STOPWORDS
+        or t.lower() in _LABEL_FILLER
+    }
+    keep = [t for t in tokens if t not in low]
+    if not keep:
+        keep = [t for t in tokens if t] or ['TOP']
+    chosen: list[str] = []
+    for t in keep:
+        if len(chosen) >= 2:
+            break
+        if chosen and t.upper() == chosen[-1]:
+            continue
+        chosen.append(t.upper())
+    return ' '.join(chosen) if chosen else 'TOP'
+
+
 # Fallback emoji per topic when the model does not supply one. The overlay
 # renders this beside the clip title, so it doubles as the topic's accent.
 TOPIC_EMOJI = {
@@ -143,6 +181,7 @@ def write_copy(topic_cfg: Dict, clips: List[Dict]) -> Dict:
         clip['vo_line'] = '' if skip else line
         emoji = supplied.get('emoji') or TOPIC_EMOJI.get(topic_cfg.get('name')
                                                          or '', '')
+        clip['title'] = _condense_label(clip['title'])
         if emoji:
             clip['title'] = f"{clip['title']} {emoji}".strip()
 
