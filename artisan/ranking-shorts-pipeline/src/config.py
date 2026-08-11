@@ -37,6 +37,8 @@ class RankingConfig:
         self.download_height=_i('RANKING_DOWNLOAD_HEIGHT',720); self.download_max_bytes=_i('RANKING_MAX_DOWNLOAD_MB',250)*1024*1024; self.download_concurrency=_i('RANKING_DOWNLOAD_CONCURRENCY',4); self.max_source_duration=_i('RANKING_MAX_SOURCE_SECONDS',900); self.render_timeout=_i('RANKING_RENDER_TIMEOUT',900)
         raw=self._load_yaml(); self.defaults=raw.get('defaults') or {}; self.sfx_map=raw.get('sfx_map') or {}; self.topics=raw.get('topics') or {}
         self.defaults.setdefault('max_download_height',self.download_height); self.defaults.setdefault('max_download_bytes',self.download_max_bytes); self.defaults.setdefault('max_source_duration',self.max_source_duration); self.defaults.setdefault('download_concurrency',self.download_concurrency); self.defaults.setdefault('render_workers',1)
+        if not os.getenv('VO_ENABLED'):
+            self.vo_enabled = bool(self.defaults.get('vo_enabled', True))
         if os.getenv('CLIPS_PER_VIDEO'):self.defaults['clips_per_video']=_i('CLIPS_PER_VIDEO',5)
     def _path(self,env,default,create=True):
         path=Path(os.getenv(env,default)).expanduser(); path=self.runtime_root/path if not path.is_absolute() else path; return ensure_dir(path) if create else path

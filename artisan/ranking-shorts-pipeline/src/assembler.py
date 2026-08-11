@@ -143,7 +143,7 @@ def fit_durations(durations: List[float]) -> List[float]:
     out = list(durations)
 
     guard = 0
-    while visible_total(out, transition) > hard_max and guard < 200:
+    while visible_total(out, transition) > hard_max + 1e-3 and guard < 5000:
         guard += 1
         longest = max(range(len(out)), key=lambda i: out[i])
         if out[longest] <= floor:
@@ -155,6 +155,97 @@ def fit_durations(durations: List[float]) -> List[float]:
             'drop a clip or lower min_clip_seconds',
             visible_total(out, transition), hard_max, floor)
     return out
+
+
+def fit_windows(clips: List[Dict]) -> List[Dict]:
+    """Trim clip windows so every clip fits inside ``hard_max_total_seconds``.
+
+    ``fit_durations`` shortens clips from the tail, which is wrong for this
+    job: the window vetting built is centred on the detected action, so
+    trimming the tail walks the climax out of the picture. This instead trims
+    the **head** first - it slides each window forward, keeping the peak
+    pinned at the end of the clip - so a 5-clip build still shows all five
+    clips and still lands inside the Shorts window.
+
+    Mutates and returns ``clips``. Each clip reads ``start``/``clip_start``,
+    ``duration``/``clip_duration`` and ``action_offset`` and writes both key
+    spellings back, plus the corrected ``action_offset`` (the SFX cue lands
+    relative to the new start).
+    """
+    transition = float(config.get('transition_duration', 0.28))
+    hard_max = float(config.get('hard_max_total_seconds', 59))
+    floor = float(config.get('min_clip_seconds', 2.5))
+    lead_min = float(config.get('climax_lead_seconds', 0.4))
+
+    def dur(c: Dict) -> float:
+        # ``clip_duration`` wins: on vetted candidates the bare ``duration``
+        # key is the whole source length, not the clip window.
+        return float(c.get('clip_duration', c.get('duration', 4.0)) or 4.0)
+
+    def start_of(c: Dict) -> float:
+        return float(c.get('start', c.get('clip_start', 0.0)) or 0.0)
+
+    for clip in clips:
+        start = start_of(clip)
+        peak = start + float(clip.get('action_offset', 0.0) or 0.0)
+        clip['_fit'] = {'start': start, 'dur': dur(clip), 'peak': peak}
+
+    def total() -> float:
+        return visible_total([c['_fit']['dur'] for c in clips], transition)
+
+    remaining = total() - hard_max
+    if remaining > 0:
+        # 1) Trim heads: slide each window forward so the climax stays at the
+        #    end, up to the lead-in that exists before the peak.
+        for clip in clips:
+            f = clip['_fit']
+            head_room = max(0.0, f['peak'] - f['start'] - lead_min)
+            f['head'] = min(f['dur'] - floor, head_room)
+        for clip in sorted(clips, key=lambda c: -c['_fit']['head']):
+            f = clip['_fit']
+            take = min(f['head'], remaining)
+            if take <= 0:
+                continue
+            f['start'] += take
+            f['dur'] -= take
+            remaining -= take
+            if remaining <= 0:
+                break
+
+        # 2) Still over: shave the tail, longest clip first, down to the floor.
+        #    Trim until a margin under the cap so the 3-decimal rounding of
+        #    the write-back below never pushes the stitch past 60s exactly.
+        margin = float(config.get('climax_margin_seconds', 0.02))
+        guard = 0
+        while (visible_total([c['_fit']['dur'] for c in clips], transition)
+               > hard_max - margin) and guard < 5000:
+            guard += 1
+            longest = max(clips, key=lambda c: c['_fit']['dur'])
+            f = longest['_fit']
+            if f['dur'] <= floor:
+                break
+            f['dur'] = max(floor, f['dur'] - 0.25)
+
+    if visible_total([c['_fit']['dur'] for c in clips], transition) \
+            > hard_max:
+        logger.warning(
+            'clips total %.1fs, over the %.0fs cap even fully trimmed '
+            '(%.1fs floor)', total(), hard_max, floor)
+
+    for clip in clips:
+        f = clip.pop('_fit')
+        start = round(f['start'], 3)
+        plan_shape = 'clip_duration' not in clip
+        clip['clip_start'] = start
+        clip['clip_duration'] = round(f['dur'], 3)
+        if plan_shape:
+            # Plan-shaped clip: owns the bare window keys. A vetted candidate
+            # already has clip_duration, and its bare ``duration`` is the whole
+            # source length, so leave that one alone.
+            clip['start'] = start
+            clip['duration'] = round(f['dur'], 3)
+        clip['action_offset'] = round(max(0.0, f['peak'] - start), 3)
+    return clips
 
 
 # ---------------------------------------------------------------------------
@@ -437,9 +528,10 @@ def assemble(plan: Dict) -> Optional[Path]:
         logger.error('plan has no clips')
         return None
 
-    fitted = fit_durations([float(c.get('duration') or 0.0) for c in clips])
-    for clip, duration in zip(clips, fitted):
-        clip['duration'] = duration
+    # Fit every clip into the Shorts window before anything is rendered; when
+    # the five clips do not fit, each one is head-trimmed (climax stays at the
+    # end) rather than one being dropped.
+    fit_windows(clips)
 
     title = plan.get('video_title') or 'TOP 5'
     work = ensure_dir(config.temp_dir / safe_slug(f"{plan.get('topic')}_{title}"))
