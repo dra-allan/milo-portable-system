@@ -1,0 +1,287 @@
+# ---------------------------------------------------------------------------
+# POV PIPELINE - SOURCE CURATION
+# artisan/pov_pipeline/config/pov_channels.yaml
+#
+# Feeds the `discover` stage of run_pov_pipeline.py. Schema intentionally
+# mirrors artisan/youtube-shorts-pipeline/config/niches.yaml so the discovery
+# + dedupe code can be lifted with minimal changes:
+#
+#   channels / require_keywords / keywords / negative_keywords / language /
+#   min_duration / max_duration / min_score / preferred_upload_days /
+#   min_views / max_videos / channel / upload_channels
+#
+# POV additions: top-level `defaults` (inherited by every niche unless the
+# niche overrides the key), `cadence`, `privacy`, and `{{PLACEHOLDER}}` secrets.
+#
+# NOTHING SECRET LIVES HERE. Real values come from env / config/notify.env /
+# config/.env, all untracked.
+#
+# Handle resolution: `discover` resolves each @handle via YouTube Data API
+# channels.list?forHandle=. Handles that fail to resolve are logged to
+# state/pipeline.log and SKIPPED - they never abort a run. Entries flagged
+# `# unverified` below were sourced from format research and should be
+# confirmed (or dropped) after the first discovery pass.
+# ---------------------------------------------------------------------------
+
+version: 1
+
+defaults:
+  language: en
+  # Long-form POV narrative source material. Target script is 1620-2025 words,
+  # so sources shorter than ~8 min rarely carry enough transcript. Upper bound
+  # is generous on purpose - full docs get trimmed by the researcher agent.
+  min_duration: 480          # seconds (8 min)
+  max_duration: 1500         # seconds (25 min)
+  min_views: 25000
+  preferred_upload_days: 60  # recency window
+  min_score: 0.50
+  max_videos: 2              # per channel, per run
+  upload_channel: explaination
+  privacy: unlisted          # unlisted for review; set `public` + published_at for routine posting
+  published_at: null         # ISO8601 for scheduled publish, null = immediate
+
+  cadence:
+    videos_per_day: 1
+    posting_window: "09:00-21:00"
+    timezone: "{{POV_TIMEZONE}}"     # e.g. Europe/Moscow
+    daemon_interval_minutes: 30
+
+  api:
+    youtube_api_key: "{{YOUTUBE_API_KEY}}"
+    quota_guard: true
+    max_pages_per_channel: 2
+
+# Applied on top of every niche's own negative_keywords.
+global_negative_keywords:
+  - "#shorts"
+  - "shorts"
+  - "live"
+  - "livestream"
+  - "stream vod"
+  - "podcast"
+  - "reaction"
+  - "react"
+  - "tier list"
+  - "q&a"
+  - "vlog"
+  - "unboxing"
+  - "giveaway"
+  - "sponsored"
+  - "members only"
+  - "compilation"
+  - "trailer"
+  - "teaser"
+  - "music video"
+  - "official audio"
+  - "lyrics"
+  - "full album"
+  - "asmr"
+  - "part 2"
+  - "part 3"
+
+niches:
+
+  # -------------------------------------------------------------------------
+  # 1. POV / SECOND-PERSON IMMERSIVE HISTORY
+  # The closest match to the ExplaiNation format: "you wake up in X, this is
+  # your day". Highest-value replication target.
+  # -------------------------------------------------------------------------
+  pov_immersive_history:
+    channel: explaination
+    upload_channels:
+      - explaination
+    max_videos: 3
+    channels:
+      - "@Invicta"                  # "Could you survive..." full docs, textbook POV
+      - "@SurviveHistory"           # "Could you survive in a Roman fort"
+      - "@HistoryRebuilds"          # "a day in the life of..." second person narration
+      - "@AbsoluteHistory"
+      - "@VoicesofthePast"
+      - "@PartTimeExplorer"
+      - "@SimpleHistory"
+      - "@WeirdHistory"
+      - "@HistoryMarche"
+      - "@KingsandGenerals"
+      - "@TheArmchairHistorian"
+      - "@EpicHistoryTV"
+      - "@TimelineChannel"
+    require_keywords: []
+    keywords:
+      - "a day in the life"
+      - "day in the life of"
+      - "could you survive"
+      - "what was it like"
+      - "life as a"
+      - "you were"
+      - "if you lived"
+      - "daily life"
+      - "inside the"
+      - "the last days of"
+      - "final hours"
+      - "the real story"
+      - "how they lived"
+      - "survive"
+      - "pov"
+    negative_keywords:
+      - "animated battle map"
+      - "documentary series episode"
+      - "lecture"
+      - "interview"
+
+  # -------------------------------------------------------------------------
+  # 2. HYPOTHETICAL / "WHAT IF" SCENARIOS
+  # Speculative second-person framing - converts to POV narration almost 1:1.
+  # -------------------------------------------------------------------------
+  hypothetical_what_if:
+    channel: explaination
+    upload_channels:
+      - explaination
+    max_videos: 2
+    channels:
+      - "@whatifscienceshow"        # What If - 8.9M, the category leader
+      - "@xkcd_whatif"
+      - "@RealLifeLore"
+      - "@kurzgesagt"
+      - "@TheInfographicsShow"
+      - "@AlternateHistoryHub"
+      - "@WhatifAltHist"
+      - "@Ridddle"
+      - "@PursuitofWonder"
+      - "@Newsthink"
+    require_keywords:
+      - "what if"
+      - "what would happen"
+      - "could you"
+      - "would you"
+      - "imagine"
+      - "scenario"
+      - "hypothetical"
+      - "alternate"
+    keywords:
+      - "what if"
+      - "what would happen if"
+      - "what happens when"
+      - "could you survive"
+      - "how to survive"
+      - "worst case scenario"
+      - "alternate timeline"
+      - "alternate history"
+      - "simulation"
+      - "the day everything changed"
+      - "if this happened"
+    negative_keywords:
+      - "anime"
+      - "dragon ball"
+      - "naruto"
+      - "marvel"
+      - "dc"
+      - "star wars theory"
+      - "fan theory"
+      - "game theory"
+
+  # -------------------------------------------------------------------------
+  # 3. FACELESS NARRATIVE DOCUMENTARY
+  # Single-narrator, archive + motion graphics, rise-and-fall arcs. Same
+  # production shape as our pipeline output.
+  # -------------------------------------------------------------------------
+  faceless_documentary:
+    channel: explaination
+    upload_channels:
+      - explaination
+    max_videos: 2
+    channels:
+      - "@fern-tv"                  # unverified handle - "armchair documentaries", 5M
+      - "@ColdFusion"
+      - "@MagnatesMedia"
+      - "@CompanyMan"
+      - "@Wendoverproductions"
+      - "@PolyMatter"
+      - "@EconomicsExplained"
+      - "@Sideprojects"
+      - "@Megaprojects"
+      - "@Warographics"
+      - "@Biographics"
+      - "@MentourPilot"
+      - "@PlainlyDifficult"
+      - "@FascinatingHorror"
+      - "@BlackFilesDeclassified"    # unverified handle - 3D mannequin true-story format
+      - "@AtriumDocs"                # unverified handle - same mannequin niche
+    require_keywords: []
+    keywords:
+      - "the rise and fall"
+      - "how it collapsed"
+      - "the collapse of"
+      - "the disaster"
+      - "the untold story"
+      - "what really happened"
+      - "the true story"
+      - "inside the"
+      - "the man who"
+      - "the woman who"
+      - "how one"
+      - "the day"
+      - "the night"
+      - "the mistake that"
+      - "the crash of"
+      - "investigation"
+    negative_keywords:
+      - "stock market update"
+      - "crypto"
+      - "news roundup"
+      - "this week in"
+      - "earnings call"
+
+  # -------------------------------------------------------------------------
+  # 4. DARK / MYSTERY / TRUE-CRIME NARRATIVE
+  # Matches pov.json: "narrative thrillers - true stories, crime, second-person
+  # visceral". Highest retention, tightest content-policy risk - keep min_score
+  # high and negative keywords aggressive.
+  # -------------------------------------------------------------------------
+  dark_mystery_narrative:
+    channel: explaination
+    upload_channels:
+      - explaination
+    max_videos: 2
+    min_score: 0.58
+    channels:
+      - "@LEMMiNO"
+      - "@BarelySociable"
+      - "@Nexpo"
+      - "@ScaryInteresting"
+      - "@DarkDocs"
+      - "@DarkSeas"
+      - "@IntoTheShadows"
+      - "@CoffeehouseCrime"
+      - "@JCSCriminalPsychology"
+      - "@InternetHistorian"
+      - "@MrNightmare"
+      - "@Chills"
+    require_keywords: []
+    keywords:
+      - "the disappearance of"
+      - "the mystery of"
+      - "unsolved"
+      - "the case of"
+      - "the last transmission"
+      - "found footage"
+      - "cold case"
+      - "the survivor"
+      - "trapped"
+      - "lost at sea"
+      - "the expedition"
+      - "went wrong"
+      - "never came back"
+    negative_keywords:
+      - "creepypasta"
+      - "fiction"
+      - "story time"
+      - "scary stories to"
+      - "reddit"
+      - "r/"
+      - "nosleep"
+      - "ranking"
+      - "top 10"
+      - "top 5"
+      - "gore"
+      - "execution"
+      - "graphic footage"
