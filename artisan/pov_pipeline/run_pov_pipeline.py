@@ -67,10 +67,6 @@ SCRIPTS_DIR = ROOT / "scripts"
 
 import povconfig  # noqa: E402  (the sys.path setup above must run first)
 
-# Every path resolves through povconfig, which holds the single documented
-# Windows default and the POV_* environment overrides for the Linux VPS.
-DEFAULT_PROJECTS_DIR = povconfig.DEFAULT_PROJECTS_DIR
-
 
 def projects_dir() -> Path:
     """Where project folders live. Env-configurable for the Linux VPS."""
