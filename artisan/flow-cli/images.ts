@@ -19,6 +19,27 @@ import { execSync } from 'child_process';
 /** Match a segment ID block start, e.g. [NAR-042] or [NAR-042-B]. */
 const SEG_ID_RE = /^\s*\[([A-Z0-9]{2,8}-\d{3}(?:-[A-E])?)\]\s*(.*)$/;
 
+/** Errors that a different account / retry will never fix. */
+const HARD_FAILURES = ['CONTENT_POLICY', 'CELEBRITY_POLICY', 'INVALID_ARGUMENT', 'CLIENT_ERROR'];
+/** Errors where the whole run should stop — no profile has credits / the bridge is down. */
+const ABORT_FAILURES = ['INSUFFICIENT_CREDITS', 'BROWSER_CONNECT', 'BROWSER'];
+/** Auth-ish failures: the active profile isn't (or stopped being) logged in. Rotate to the next one. */
+const AUTH_FAILURES = ['AUTH', 'STUB_WORKFLOW', 'PUBLIC_ERROR_UNUSUAL_ACTIVITY'];
+/** Transient failures — wait, then try the next profile. */
+const RETRYABLE_FAILURES = ['RATE_LIMIT', 'SERVER_ERROR', 'NETWORK'];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Pull a Flow error code out of the captured command output, best-effort. */
+function parseFailure(combined: string): string {
+  for (const k of [...ABORT_FAILURES, ...HARD_FAILURES, ...AUTH_FAILURES, ...RETRYABLE_FAILURES]) {
+    if (combined.includes(k)) return k;
+  }
+  return 'UNKNOWN';
+}
+
 /**
  * Parse a POV batch prompt file into [{ id, prompt }].
  *
@@ -130,63 +151,106 @@ cli({
       return [{ done: `all ${prompts.length} images already exist`, id: '-', status: 'nothing to do', note: `Use --force to re-generate` }];
     }
 
-    let currentProfileIdx = 0;
     let ok = 0;
     let failed = 0;
+    let currentProfileIdx = 0;
     const rows: any[] = [];
     const results: any[] = [];
+    const failedIds: string[] = [];
+    let aborted: string | null = null;
+    let attemptsMade = 0;
 
-    for (let i = 0; i < todo.length && ok + failed < max; i++) {
-      const { id, prompt } = todo[i];
+    /**
+     * Generate one image, rotating through profiles on retryable / auth errors.
+     * Returns { status: 'done' } on success or { status: 'FAILED', note, abort? }.
+     */
+    const generateOne = async (id: string, prompt: string): Promise<{ status: string; note: string; abort?: boolean }> => {
       const outFile = path.join(outDir, `${id}.jpeg`);
-      console.log(`\n[${ok + failed + 1}/${Math.min(todo.length, max)}] ${id}`);
-
-      let success = false;
+      const maxAttempts = Math.max(1, profileList.length) + 1; // +1 slot for a --reload retry
       let attempts = 0;
-      const maxAttempts = Math.max(1, profileList.length);
+      let reloadUsed = false;
 
-      while (!success && attempts < maxAttempts) {
+      while (attempts < maxAttempts) {
         const activeProfile = profileList.length ? profileList[currentProfileIdx] : null;
         const profileFlag = activeProfile ? `--profile ${activeProfile}` : '';
-        try {
-          const cmd = [
-            'opencli', profileFlag, 'flow', 'image-gen',
-            `--prompt "${prompt.replace(/"/g, '\\"')}"`,
-            `--model ${model}`,
-            `--count 1`,
-            `--aspect ${aspect}`,
-            `--out "${outFile}"`,
-            '--yes',
-          ].filter(Boolean).join(' ');
-          execSync(cmd, { stdio: 'inherit' });
-          success = fs.existsSync(outFile);
-          if (!success) throw new Error('command finished but no file was saved');
-          ok++;
-          results.push({ id, status: 'done', note: `saved ${path.basename(outFile)}` });
-        } catch (err: any) {
-          if (profileList.length > 1) {
-            currentProfileIdx = (currentProfileIdx + 1) % profileList.length;
-            attempts++;
-            console.log(`[rotate] ${id} failed on [${activeProfile}], trying [${profileList[currentProfileIdx]}]`);
-          } else {
-            failed++;
-            results.push({ id, status: 'FAILED', note: err.message });
-            attempts = maxAttempts;
-          }
-        }
-      }
+        const reloadFlag = reloadUsed ? '--reload' : '';
+        const cmd = [
+          'opencli', profileFlag, 'flow', 'image-gen',
+          `--prompt "${prompt.replace(/"/g, '\\"')}"`,
+          `--model ${model}`,
+          `--count 1`,
+          `--aspect ${aspect}`,
+          `--out "${outFile}"`,
+          '--yes',
+          reloadFlag,
+        ].filter(Boolean).join(' ');
 
-      if (success === false && results[results.length - 1]?.id !== id) {
-        failed++;
-        results.push({ id, status: 'FAILED', note: 'all profiles exhausted' });
+        let combined = '';
+        try {
+          combined = execSync(cmd, { stdio: ['inherit', 'pipe', 'pipe'], encoding: 'utf8' });
+        } catch (err: any) {
+          combined = String(err?.stdout ?? '') + String(err?.stderr ?? '') + String(err?.message ?? '');
+        }
+
+        if (fs.existsSync(outFile) && fs.statSync(outFile).size > 0) {
+          return { status: 'done', note: `saved ${path.basename(outFile)}${activeProfile ? ` via [${activeProfile}]` : ''}` };
+        }
+
+        const code = parseFailure(combined);
+        attempts++;
+
+        if (ABORT_FAILURES.includes(code)) {
+          aborted = code;
+          return { status: 'FAILED', note: `${code} — stopping the whole run`, abort: true };
+        }
+        if (HARD_FAILURES.includes(code)) {
+          return { status: 'FAILED', note: `${code} — won't retry (bad prompt or policy), skip this image` };
+        }
+        // Single profile, auth problem → one page-reload retry before giving up.
+        if (AUTH_FAILURES.includes(code) && profileList.length === 0 && !reloadUsed) {
+          reloadUsed = true;
+          attempts--;
+          console.log(`[reload] ${id} ${code}, reloading page and retrying`);
+          continue;
+        }
+        if (profileList.length > 0) {
+          currentProfileIdx = (currentProfileIdx + 1) % profileList.length;
+          console.log(`[rotate] ${id} ${code} on [${activeProfile ?? '-'}], trying [${profileList[currentProfileIdx]}]`);
+          await sleep(code === 'RATE_LIMIT' ? 30000 : 3000);
+          continue;
+        }
+        return { status: 'FAILED', note: `${code} after ${attempts} attempt(s)` };
+      }
+      return { status: 'FAILED', note: 'exhausted attempts' };
+    };
+
+    // Main pass + one completion sweep for anything that failed transiently.
+    for (let sweep = 0; sweep < 2 && !aborted; sweep++) {
+      const list = sweep === 0 ? todo : todo.filter((t) => failedIds.includes(t.id));
+      if (list.length === 0) break;
+      for (const { id, prompt } of list) {
+        if (aborted || attemptsMade >= max) break;
+        attemptsMade++;
+        console.log(`\n[${ok + failed + 1}/${Math.min(todo.length, max)}] ${id}${sweep > 0 ? ' (sweep 2 — retry)' : ''}`);
+
+        const r = await generateOne(id, prompt);
+        if (r.status === 'done') {
+          ok++;
+          results.push({ id, status: 'done', note: r.note });
+        } else {
+          failed++;
+          results.push({ id, status: 'FAILED', note: r.note });
+          if (!failedIds.includes(id)) failedIds.push(id);
+          if (r.abort) aborted = r.note;
+        }
       }
     }
 
     rows.push({
-      done: `generated ${ok}, failed ${failed}, skipped ${prompts.length - todo.length}`,
+      done: `generated ${ok}, failed ${failed}, skipped ${prompts.length - todo.length}${aborted ? `, aborted: ${aborted}` : ''}`,
       id: results.length ? results[0].id : '-',
       status: failed > 0 ? 'partial' : 'done',
-      note: `images in: ${outDir}`,
+      note: `images in: ${outDir}${failed > 0 ? ' — fix the failures, then re-run to resume (existing images are skipped)' : ''}`,
     });
     for (const r of results) {
       rows.push({ done: '', ...r });
