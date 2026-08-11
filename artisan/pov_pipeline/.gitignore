@@ -21,6 +21,9 @@ state/
 *.log
 *.log.[0-9]
 
+# scraped source transcripts (runtime artifacts, never committed)
+scripts/transcripts/
+
 # python
 __pycache__/
 *.pyc
