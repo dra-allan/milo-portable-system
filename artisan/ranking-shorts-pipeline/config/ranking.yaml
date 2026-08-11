@@ -74,6 +74,7 @@ topics:
   fishing_moments:
     title: "TOP {n} FISHING MOMENTS"
     source_kind: youtube_shorts
+    allow_commentary: true
     queries: ["fishing fail #shorts", "unexpected fishing catch #shorts", "funny fishing moment #shorts", "fishing underwater gopro", "pike strike underwater", "fish jumping out of water", "fishing action camera"]
     channels: []
     extra_sources: []
@@ -88,6 +89,7 @@ topics:
   animal_moments:
     title: "TOP {n} ANIMAL MOMENTS"
     source_kind: youtube_shorts
+    allow_commentary: true
     queries: ["funny animal moment #shorts", "animal fail caught on camera #shorts", "unexpected animal moment #shorts", "wild animal action raw footage", "animal close call #shorts"]
     channels: []
     extra_sources: []
@@ -102,6 +104,7 @@ topics:
   sports_moments:
     title: "TOP {n} SPORTS MOMENTS"
     source_kind: youtube_shorts
+    allow_commentary: true
     queries: ["sports moment #shorts", "unexpected sports fail #shorts", "crazy sports moment #shorts", "sports highlight raw clip", "incredible sports save #shorts"]
     channels: []
     extra_sources: []
@@ -116,6 +119,7 @@ topics:
   wildlife_moments:
     title: "TOP {n} WILDLIFE MOMENTS"
     source_kind: youtube_shorts
+    allow_commentary: true
     queries: ["wildlife moment #shorts", "unexpected animal encounter #shorts", "wild animal close call #shorts", "wildlife camera trap footage", "predator strike raw"]
     channels: []
     extra_sources: []
@@ -130,6 +134,7 @@ topics:
   satisfying_processes:
     title: "TOP {n} SATISFYING MOMENTS"
     source_kind: youtube_shorts
+    allow_commentary: true
     queries: ["satisfying process #shorts", "oddly satisfying real process #shorts", "perfect machine moment #shorts", "satisfying factory process raw", "satisfying cutting process #shorts"]
     channels: []
     extra_sources: []
@@ -144,6 +149,7 @@ topics:
   street_moments:
     title: "TOP {n} STREET MOMENTS"
     source_kind: youtube_shorts
+    allow_commentary: true
     queries: ["unexpected street moment #shorts", "funny public moment #shorts", "street performance surprise #shorts", "street magician reaction real", "public prank caught on camera"]
     channels: []
     extra_sources: []
