@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """
-POV Pipeline Orchestrator — URL to finished POV video.
+POV Pipeline Orchestrator - curated channel or URL to a published video.
 
 Usage:
   python run_pov_pipeline.py <youtube_url|transcript_file> [--name TITLE] [--skip-tts]
-  python run_pov_pipeline.py --project <NAME> --stage <agents|gate|tts|images|thumb|assemble|video>
+  python run_pov_pipeline.py --project <NAME> --stage <agents|gate|tts|images|thumb|assemble|video|upload>
+  python run_pov_pipeline.py --discover [--niche <name>] [--channels a,b]
+  python run_pov_pipeline.py --once
+  python run_pov_pipeline.py --daemon
+  python run_pov_pipeline.py --check-profiles
 
 What it does:
+  0. `--discover` pulls fresh candidates from the curated channels in
+     config/pov_channels.yaml, filters + dedupes them and appends them to the
+     work queue (see discovery.py). Nothing is processed.
   1. Scrapes the transcript from a YouTube URL (or reads a transcript file)
      into the project folder as 00_SOURCE_SCRIPT.txt.
   2. Runs the 7 POV agents in order, HEADLESS, via the opencode CLI
@@ -18,15 +25,20 @@ What it does:
   3. Runs the SCRIPT GATE (rewrite-originality + wordcount) before TTS.
   4. Auto-runs Gemini TTS (voice Fenrir) to generate 06_AUDIO/<SEG>.mp3.
   5. Stage `images` generates every image from 05_IMAGES/IMAGE_PROMPTS_BATCH_FINAL.txt
-     via Google Flow (opencli flow images) into 05_IMAGES/<SEG_ID>.jpeg —
+     via Google Flow (opencli flow images) into 05_IMAGES/<SEG_ID>.jpeg -
      resume-safe, skips images that already exist.
   6. Stage `thumb` generates the thumbnail from 04_THUMBNAIL/THUMBNAIL_PROMPT.txt.
   7. Stage `assemble` runs the assembler (01_SCRIPT_RAW + 06_AUDIO + 05_IMAGES
-     → output_pro/). Stage `video` = images + thumb + assemble in one shot.
+     -> output_pro/). Stage `video` = images + thumb + assemble in one shot.
+  8. Stage `upload` posts the assembled MP4 + thumbnail + 07_METADATA.txt to
+     YouTube (see uploader.py). `--dry-run-upload` prints the payload only.
+  9. `--once` / `--daemon` run the whole thing off the queue (see daemon.py).
 
 Config:
   POV_PROJECTS_DIR   where projects live. Defaults to the Windows dev path
-                     below; set it on the Linux VPS.
+                     in povconfig.py; set it on the Linux VPS.
+  config/pov_channels.yaml   curated sources, filters, cadence, privacy.
+  config/notify.env          Telegram credentials (placeholders by default).
   See agent_runner.py for the agent-chain env overrides (opencode binary,
   model, timeouts, gate retries, Milo memory project).
 
@@ -37,7 +49,6 @@ Exit codes:
 """
 
 import argparse
-import json
 import os
 import re
 import shutil
@@ -47,19 +58,23 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 AGENTS_DIR = ROOT / "agents"
 TTS_DIR = ROOT / "tts"
 SCRIPTS_DIR = ROOT / "scripts"
 
-# Windows dev default. The VPS overrides it with POV_PROJECTS_DIR — this is
-# the one documented absolute path left in the codebase.
-DEFAULT_PROJECTS_DIR = Path(r"C:\Users\user\Desktop\Milo Video Factory\pov\projects")
+import povconfig  # noqa: E402  (the sys.path setup above must run first)
+
+# Every path resolves through povconfig, which holds the single documented
+# Windows default and the POV_* environment overrides for the Linux VPS.
+DEFAULT_PROJECTS_DIR = povconfig.DEFAULT_PROJECTS_DIR
 
 
 def projects_dir() -> Path:
     """Where project folders live. Env-configurable for the Linux VPS."""
-    override = os.environ.get("POV_PROJECTS_DIR", "").strip()
-    return Path(override).expanduser() if override else DEFAULT_PROJECTS_DIR
+    return povconfig.projects_dir()
 
 
 # Kept as a module constant for backwards compatibility with anything that
@@ -111,13 +126,14 @@ def scrape_transcript(url: str, project_dir: Path) -> Path:
     print(f"[scrape] {url}")
     result = subprocess.run(
         [node, str(scraper), url, "en"],
-        capture_output=True, text=True, timeout=180,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=180,
     )
     # The scraper writes the transcript to stdout and a save note to stderr.
-    text = result.stdout.strip()
+    text = (result.stdout or "").strip()
     if not text and result.returncode == 0:
         # Some node installs echo everything to stderr; fall back to it.
-        text = result.stderr.strip()
+        text = (result.stderr or "").strip()
     # Strip the "[saved] ..." preamble if it leaked into stdout capture.
     text = re.sub(r"^\[saved\][^\n]*\n?", "", text).strip()
 
@@ -130,7 +146,7 @@ def scrape_transcript(url: str, project_dir: Path) -> Path:
     # Remember where this came from: the agent-runner manifest, the discovery
     # dedupe (M2) and the uploader (M3) all want the source URL.
     (project_dir / "00_SOURCE_URL.txt").write_text(url.strip() + "\n", encoding="utf-8")
-    print(f"[scrape] OK — {len(text)} chars -> {src.name}")
+    print(f"[scrape] OK - {len(text)} chars -> {src.name}")
     return src
 
 
@@ -143,7 +159,8 @@ def copy_transcript_file(path: Path, project_dir: Path) -> Path:
 
 def run_agents(project_dir: Path, *, model: str = None, gate_retries: int = None,
                timeout: int = None, use_memory: bool = True,
-               dry_run: bool = False, notify=None) -> bool:
+               dry_run: bool = False, notify=None,
+               flow_profiles: str = None) -> bool:
     """Run the 7 agents HEADLESS via the opencode CLI.
 
     The heavy lifting lives in agent_runner.run_agent_chain(): manifest
@@ -151,13 +168,12 @@ def run_agents(project_dir: Path, *, model: str = None, gate_retries: int = None
     retry loop and NEEDS_REVIEW parking. The existing script_gate is passed
     in rather than reimplemented, so the gate thresholds stay in one place.
 
+    ``flow_profiles`` is accepted and ignored here: the daemon carries every
+    pipeline option in one bag and the images stage reads that key later.
+
     Returns True when every expected output file is present.
     """
-    try:
-        from agent_runner import run_agent_chain
-    except ImportError:  # running from a copy without the module next to it
-        sys.path.insert(0, str(ROOT))
-        from agent_runner import run_agent_chain
+    from agent_runner import run_agent_chain
 
     chain = run_agent_chain(
         project_dir,
@@ -176,7 +192,7 @@ def run_agents(project_dir: Path, *, model: str = None, gate_retries: int = None
     print("\n" + "-" * 60)
     print(f"  AGENT CHAIN: {chain.summary()}")
     if not chain.ok:
-        eprint(f"[agents] {'NEEDS_REVIEW' if chain.needs_review else 'FAILED'} — {chain.reason}")
+        eprint(f"[agents] {'NEEDS_REVIEW' if chain.needs_review else 'FAILED'} - {chain.reason}")
         eprint(f"[agents] log: {project_dir / 'state' / 'pipeline.log'}")
     print("-" * 60)
     return chain.ok
@@ -191,9 +207,9 @@ def script_gate(project_dir: Path) -> bool:
     source_path = project_dir / "00_SOURCE_SCRIPT.txt"
     ok = True
 
-    # 1. Wordcount (body segments only — narration text, not manifest or segment headers)
+    # 1. Wordcount (body segments only - narration text, not manifest or segment headers)
     if not script_path.exists():
-        eprint("[gate] FAIL — 01_SCRIPT_RAW.txt missing")
+        eprint("[gate] FAIL - 01_SCRIPT_RAW.txt missing")
         return False
     raw = script_path.read_text(encoding="utf-8")
     body = raw.split("=== END MANIFEST ===")[-1]
@@ -216,7 +232,7 @@ def script_gate(project_dir: Path) -> bool:
     lo, hi = WORD_BUDGET
     print(f"[gate] wordcount (narration only): {words} (target {lo}-{hi})")
     if not (lo <= words <= hi):
-        eprint(f"[gate] FAIL — outside budget. Expand/cut then re-run.")
+        eprint("[gate] FAIL - outside budget. Expand/cut then re-run.")
         ok = False
 
     # 2. Rewrite-originality (only if a source exists).
@@ -239,16 +255,16 @@ def script_gate(project_dir: Path) -> bool:
         hits = list(dict.fromkeys(hits))  # dedupe, keep order
         print(f"[gate] rewrite overlap: {len(hits)} matching {n}-word runs")
         if len(hits) >= 4:
-            eprint(f"[gate] FAIL — script too close to source ({len(hits)} runs):")
+            eprint(f"[gate] FAIL - script too close to source ({len(hits)} runs):")
             for h in hits[:10]:
                 eprint(f"       \"...{h}...\"")
             ok = False
         elif hits:
-            print(f"[gate] WARN — {len(hits)} runs to eyeball:")
+            print(f"[gate] WARN - {len(hits)} runs to eyeball:")
             for h in hits[:10]:
                 print(f"       \"...{h}...\"")
     else:
-        print("[gate] no source file — originality check skipped")
+        print("[gate] no source file - originality check skipped")
 
     print(f"[gate] {'PASS' if ok else 'FAIL'}")
     return ok
@@ -261,7 +277,7 @@ def run_tts(project_dir: Path) -> bool:
     print("=" * 60)
     voice_script = project_dir / "02_SCRIPT_ELEVENLABS.txt"
     if not voice_script.exists():
-        eprint("[tts] FAIL — 02_SCRIPT_ELEVENLABS.txt missing")
+        eprint("[tts] FAIL - 02_SCRIPT_ELEVENLABS.txt missing")
         return False
 
     tts_py = TTS_DIR / "gemini_tts.py"
@@ -269,7 +285,7 @@ def run_tts(project_dir: Path) -> bool:
     if not py.exists():
         py = shutil.which("python")
     if not py:
-        eprint("[tts] FAIL — no python (tried .venv then PATH)")
+        eprint("[tts] FAIL - no python (tried .venv then PATH)")
         return False
 
     audio_dir = project_dir / "06_AUDIO"
@@ -294,7 +310,8 @@ def run_tts(project_dir: Path) -> bool:
     ]
     print("[tts] " + " ".join(str(c) for c in cmd[:4]) + " ...")
     result = subprocess.run(cmd, cwd=str(TTS_DIR), env=env,
-                            capture_output=True, text=True, timeout=3600)
+                            capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=3600)
     print(result.stdout[-3000:] if result.stdout else "")
     if result.stderr:
         print("STDERR:", result.stderr[-1500:])
@@ -321,7 +338,8 @@ def run_flow_images(project_dir: Path, profiles: str = "") -> bool:
         cmd += ["--profiles", profiles]
 
     print("[images] " + " ".join(str(c) for c in cmd[:4]) + " ...")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+    result = subprocess.run(cmd, capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=7200)
     print(result.stdout[-3000:] if result.stdout else "")
     if result.stderr:
         print("STDERR:", result.stderr[-1500:])
@@ -365,6 +383,53 @@ def _missing_image_segments(project_dir: Path, batch: Path) -> list[str]:
     return missing
 
 
+def check_flow_profiles(expected: str = "") -> bool:
+    """Preflight: are the Chrome Browser Bridge profiles connected?
+
+    Google Flow only generates images while its Chrome profiles are OPEN; a
+    closed profile fails with BROWSER_CONNECT deep inside the images stage,
+    after the pipeline has already spent an agent chain and a TTS run. This
+    asks `opencli profile list` up front so the failure is cheap and legible.
+
+    Never launches or logs in to anything: that stays a human, one-time step.
+    """
+    print("\n" + "=" * 60)
+    print("  CHROME BRIDGE PREFLIGHT")
+    print("=" * 60)
+    opencli = shutil.which("opencli")
+    if not opencli:
+        eprint("[profiles] FAIL - 'opencli' not on PATH")
+        return False
+    try:
+        result = subprocess.run([opencli, "profile", "list"], capture_output=True,
+                                text=True, encoding="utf-8", errors="replace",
+                                timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        eprint(f"[profiles] FAIL - could not run 'opencli profile list': {exc}")
+        return False
+
+    output = (result.stdout or "") + (result.stderr or "")
+    print(output.strip()[:2000] or "(no output)")
+    if result.returncode != 0:
+        eprint(f"[profiles] FAIL - 'opencli profile list' exited {result.returncode}")
+        return False
+
+    wanted = [p.strip() for p in (expected or "").split(",") if p.strip()]
+    if not wanted:
+        print("[profiles] no --flow-profiles given; listing only.")
+        return True
+
+    low = output.lower()
+    missing = [p for p in wanted if p.lower() not in low]
+    if missing:
+        eprint(f"[profiles] FAIL - not connected: {', '.join(missing)}")
+        eprint("[profiles] Open them first: scripts/flow_profiles_up.ps1 "
+               "(Windows) or scripts/flow_profiles_up.sh (VPS).")
+        return False
+    print(f"[profiles] OK - {len(wanted)} profile(s) connected.")
+    return True
+
+
 def run_thumbnail(project_dir: Path) -> bool:
     """Generate the thumbnail via Google Flow (opencli flow image-gen)."""
     print("\n" + "=" * 60)
@@ -394,7 +459,8 @@ def run_thumbnail(project_dir: Path) -> bool:
         "--yes",
     ]
     print("[thumb] " + " ".join(str(c) for c in cmd[:3]) + " ...")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    result = subprocess.run(cmd, capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=600)
     print(result.stdout[-2000:] if result.stdout else "")
     if result.stderr:
         print("STDERR:", result.stderr[-1500:])
@@ -432,11 +498,46 @@ def run_assembler(project_dir: Path) -> bool:
         "--cpu-preset", "light",
     ]
     print("[assemble] " + " ".join(str(c) for c in cmd[:5]) + " ...")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10800)
+    result = subprocess.run(cmd, capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=10800)
     print(result.stdout[-4000:] if result.stdout else "")
     if result.stderr:
         print("STDERR:", result.stderr[-2000:])
     return result.returncode == 0
+
+
+def run_upload(project_dir: Path, *, channel: str = "explaination",
+               privacy: str = None, published_at: str = None,
+               dry_run: bool = False, notify=None) -> bool:
+    """Stage `upload`: push the assembled video to YouTube (M3)."""
+    import uploader
+
+    cfg = povconfig.load_config()
+    defaults = cfg.get("defaults") or {}
+    result = uploader.upload_project(
+        project_dir,
+        channel=channel or defaults.get("upload_channel") or "explaination",
+        privacy=privacy or defaults.get("privacy") or "unlisted",
+        published_at=(published_at if published_at is not None
+                      else defaults.get("published_at")),
+        dry_run=dry_run,
+        notify=notify,
+    )
+    if result.ok and result.video_id:
+        # Close the loop on the queue so discovery never re-offers this source.
+        try:
+            from discovery import PovDB, extract_video_id
+
+            url_file = project_dir / "00_SOURCE_URL.txt"
+            source_url = (url_file.read_text(encoding="utf-8-sig", errors="replace").strip()
+                          if url_file.exists() else "")
+            vid = extract_video_id(source_url)
+            if vid:
+                with PovDB() as db:
+                    db.mark(vid, "done", project=project_dir.name, reason=result.url)
+        except Exception as exc:
+            eprint(f"[upload] queue bookkeeping skipped: {type(exc).__name__}: {exc}")
+    return result.ok
 
 
 def print_handoff(project_dir: Path, source: Path | None):
@@ -444,12 +545,13 @@ def print_handoff(project_dir: Path, source: Path | None):
     print("  POV PIPELINE HANDOFF")
     print("=" * 60)
     print(f"  Project:  {project_dir}")
-    print(f"  Status:   agents + TTS done (if run with TTS)")
-    print(f"\n  NEXT:")
-    print(f"  1. Generate images + thumbnail + assemble in one shot:")
+    print("  Status:   agents + TTS done (if run with TTS)")
+    print("\n  NEXT:")
+    print("  1. Generate images + thumbnail + assemble in one shot:")
     print(f"     python run_pov_pipeline.py --project {project_dir.name} --stage video")
-    print(f"     (or run the stages separately: images | thumb | assemble)")
-    print(f"  2. Post with metadata from 07_METADATA.txt")
+    print("     (or run the stages separately: images | thumb | assemble)")
+    print("  2. Upload with the metadata from 07_METADATA.txt:")
+    print(f"     python run_pov_pipeline.py --project {project_dir.name} --stage upload")
     print("=" * 60)
 
 
@@ -458,12 +560,13 @@ def main():
     ap.add_argument("input", nargs="?", help="YouTube URL or path to a transcript file (for scrape phase)")
     ap.add_argument("--project", default=None,
                     help="Existing project folder name (for agents/gate/tts phase)")
-    ap.add_argument("--stage", choices=["scrape", "agents", "gate", "tts", "images", "thumb", "assemble", "video"],
-                    help="Which phase to run: scrape | agents | gate | tts | images | thumb | assemble | video (default: scrape when input given, else agents+gate+tts)")
+    ap.add_argument("--stage", choices=["scrape", "agents", "gate", "tts", "images",
+                                        "thumb", "assemble", "video", "upload"],
+                    help="Which phase to run (default: scrape when input given, else agents+gate+tts)")
     ap.add_argument("--name", default=None, help="Project title (used as folder name)")
     ap.add_argument("--skip-tts", action="store_true", help="Run gate only, stop before TTS")
     ap.add_argument("--flow-profiles", default=None,
-                    help="Google Flow account profiles to rotate through on rate limits (e.g. flow-account-1,flow-account-2)")
+                    help="Google Flow profiles to rotate through on rate limits (e.g. flow-1,flow-2)")
     # Agent-chain controls (M1).
     ap.add_argument("--model", default=None,
                     help="Model for the headless agent runs, as provider/model")
@@ -475,7 +578,52 @@ def main():
                     help="Do not write pipeline events to Milo's memory")
     ap.add_argument("--dry-run-agents", action="store_true",
                     help="Print the exact opencode invocation per agent, run nothing")
+    # Discovery (M2).
+    ap.add_argument("--discover", action="store_true",
+                    help="Find new source videos from config/pov_channels.yaml and queue them")
+    ap.add_argument("--niche", action="append", default=None,
+                    help="Limit discovery to this niche (repeatable)")
+    ap.add_argument("--channels", default=None,
+                    help="Limit discovery to these @handles (comma separated)")
+    ap.add_argument("--max-channels", type=int, default=None,
+                    help="Channels to touch in one discovery run (default 5)")
+    ap.add_argument("--queue", action="store_true",
+                    help="Print the current work queue and exit")
+    # Upload (M3).
+    ap.add_argument("--privacy", default=None,
+                    choices=["private", "unlisted", "public"],
+                    help="Upload privacy (default: config, unlisted)")
+    ap.add_argument("--published-at", default=None,
+                    help="ISO8601 scheduled publish time (stays private until then)")
+    ap.add_argument("--upload-channel", default=None,
+                    help="Channel key for the OAuth token (default: explaination)")
+    ap.add_argument("--dry-run-upload", action="store_true",
+                    help="Print the upload payload without calling the API")
+    # Daemon (M4).
+    ap.add_argument("--once", action="store_true",
+                    help="Process the next queue item end to end, then exit")
+    ap.add_argument("--daemon", action="store_true",
+                    help="Loop: process the queue on a schedule (VPS mode)")
+    ap.add_argument("--interval", type=int, default=None,
+                    help="Daemon minutes between ticks (default: config)")
+    ap.add_argument("--ignore-window", action="store_true",
+                    help="--once only: run even outside the posting window")
+    ap.add_argument("--skip-upload", action="store_true",
+                    help="--once/--daemon: stop after assembly")
+    # Notifications (M5) + preflight.
+    ap.add_argument("--no-notify", action="store_true",
+                    help="Disable Telegram notifications for this run")
+    ap.add_argument("--check-profiles", action="store_true",
+                    help="Chrome Browser Bridge preflight, then exit")
     a = ap.parse_args()
+
+    from notify import make_notifier, null_notifier
+
+    notifier = null_notifier() if a.no_notify else make_notifier()
+
+    # -- Preflight: Chrome bridge --------------------------------------
+    if a.check_profiles:
+        sys.exit(0 if check_flow_profiles(a.flow_profiles or "") else 1)
 
     proj_root = projects_dir()
     proj_root.mkdir(parents=True, exist_ok=True)
@@ -488,7 +636,54 @@ def main():
         dry_run=a.dry_run_agents,
     )
 
-    # ── Phase: SCRAPE ──────────────────────────────────────────────────
+    # -- Queue inspection ----------------------------------------------
+    if a.queue:
+        from discovery import PovDB
+
+        with PovDB() as db:
+            rows = db.queue(limit=50)
+            counts = db.counts()
+            print(f"  db: {db.path}")
+            for row in rows:
+                print(f"  {row['score']:.2f}  {row['status']:<11} "
+                      f"{row['video_id']}  {(row['title'] or '')[:60]}")
+            print("  " + (", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+                          or "queue empty"))
+        sys.exit(0)
+
+    # -- M2: discovery ---------------------------------------------------
+    if a.discover:
+        import discovery
+
+        cfg = povconfig.load_config()
+        channels = [c for c in (a.channels or "").split(",") if c.strip()]
+        found = discovery.discover(cfg, niches=a.niche, channels=channels,
+                                   max_channels=a.max_channels, notify=notifier)
+        discovery.print_summary(found)
+        sys.exit(0)
+
+    # -- M4: queue-driven modes ------------------------------------------
+    if a.once or a.daemon:
+        import daemon as pov_daemon
+
+        cfg = povconfig.load_config()
+        opts = dict(
+            skip_upload=a.skip_upload,
+            dry_run_upload=a.dry_run_upload,
+            agent_opts={**agent_opts, "flow_profiles": a.flow_profiles or ""},
+        )
+        if a.privacy:
+            opts["privacy"] = a.privacy
+        if a.upload_channel:
+            opts["channel"] = a.upload_channel
+        if a.daemon:
+            sys.exit(pov_daemon.run_daemon(cfg, notify=notifier,
+                                           interval_minutes=a.interval, **opts))
+        result = pov_daemon.run_once(cfg, notify=notifier,
+                                     ignore_window=a.ignore_window, **opts)
+        sys.exit(0 if result.ok else 1)
+
+    # -- Phase: SCRAPE ---------------------------------------------------
     if a.input and (a.stage is None or a.stage == "scrape"):
         is_url = bool(re.match(r"https?://|youtu\.be/|(?:www\.)?youtube\.com", a.input))
         if is_url:
@@ -510,6 +705,15 @@ def main():
             source = scrape_transcript(a.input, project_dir)
             if source is None:
                 sys.exit(1)
+            # Manual ingestion still goes through the ledger, so discovery
+            # never re-queues a URL a human already fed in.
+            try:
+                from discovery import PovDB
+
+                with PovDB() as db:
+                    db.mark_url_processed(a.input, project_name)
+            except Exception as exc:
+                eprint(f"[queue] bookkeeping skipped: {type(exc).__name__}: {exc}")
         else:
             source = copy_transcript_file(Path(a.input), project_dir)
 
@@ -521,7 +725,7 @@ def main():
             sys.exit(0)
 
         # No explicit stage: keep going straight into the agent chain.
-        if not run_agents(project_dir, **agent_opts):
+        if not run_agents(project_dir, notify=notifier, **agent_opts):
             sys.exit(1)
         if not a.skip_tts and not run_tts(project_dir):
             eprint("[error] TTS failed (check above). Re-run to resume (it skips existing segments).")
@@ -529,7 +733,7 @@ def main():
         print_handoff(project_dir, source)
         sys.exit(0)
 
-    # ── Phase: work on an existing project ─────────────────────────────
+    # -- Phase: work on an existing project -------------------------------
     if not a.project:
         ap.print_help()
         sys.exit(2)
@@ -544,7 +748,7 @@ def main():
     # a second time in the same invocation.
     ran_chain = False
     if a.stage in ("agents", None):
-        if not run_agents(project_dir, **agent_opts):
+        if not run_agents(project_dir, notify=notifier, **agent_opts):
             sys.exit(1)
         ran_chain = True
         if a.stage == "agents":
@@ -553,7 +757,7 @@ def main():
 
     if a.stage == "gate" or (a.stage is None and not ran_chain):
         if not script_gate(project_dir):
-            eprint("[error] Script gate failed — fix the script, then re-run.")
+            eprint("[error] Script gate failed - fix the script, then re-run.")
             sys.exit(1)
         if a.stage == "gate":
             sys.exit(0)
@@ -567,8 +771,12 @@ def main():
     if a.stage in ("images", "video"):
         ok = run_flow_images(project_dir, profiles=a.flow_profiles or "")
         if not ok:
+            notifier("images.failed",
+                     f"POV {project_dir.name}: image generation incomplete "
+                     "(check the Chrome Browser Bridge)")
             eprint("[error] Image generation failed (check above). Re-run to resume (it skips existing images).")
             sys.exit(1)
+        notifier("images.done", f"POV {project_dir.name}: all segment images generated")
 
     if a.stage in ("thumb", "video"):
         ok = run_thumbnail(project_dir)
@@ -581,8 +789,20 @@ def main():
         if not ok:
             eprint("[error] Assembly failed (check above).")
             sys.exit(1)
+        notifier("video.assembled", f"POV {project_dir.name}: video assembled")
 
-    print_handoff(project_dir, project_dir / "00_SOURCE_SCRIPT.txt" if (project_dir / "00_SOURCE_SCRIPT.txt").exists() else None)
+    if a.stage == "upload":
+        ok = run_upload(project_dir, channel=a.upload_channel or "explaination",
+                        privacy=a.privacy, published_at=a.published_at,
+                        dry_run=a.dry_run_upload, notify=notifier)
+        if not ok:
+            eprint("[error] Upload failed (check above).")
+            sys.exit(1)
+        sys.exit(0)
+
+    print_handoff(project_dir,
+                  project_dir / "00_SOURCE_SCRIPT.txt"
+                  if (project_dir / "00_SOURCE_SCRIPT.txt").exists() else None)
     sys.exit(0)
 
 
