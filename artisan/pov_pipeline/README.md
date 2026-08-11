@@ -3,7 +3,7 @@
 Curated channel (or a single URL) to a finished POV narrative documentary on
 the **ExplaiNation** YouTube channel, unattended.
 
-```
+```text
 curated channels -> discover -> scrape transcript
   -> headless agent chain (7 agents, Milo-aware, gate loop)
   -> TTS -> images -> thumb -> assemble -> upload -> notify
@@ -12,6 +12,43 @@ curated channels -> discover -> scrape transcript
 All six milestones are in: **M1** headless agent-runner, **M2** discovery +
 queue, **M3** upload, **M4** daemon, **M5** Telegram notifications, **M6**
 [VPS deploy guide](../../docs/VPS_DEPLOY.md).
+
+---
+
+## Windows control panel
+
+Use [`start_pov_pipeline.bat`](start_pov_pipeline.bat) as the main Windows
+launcher. It is an interactive control panel, not just a one-shot script:
+
+```bat
+start_pov_pipeline.bat
+```
+
+It can discover sources, inspect the queue, process one item, run the daemon,
+install or remove a Windows Scheduled Task, stop daemon processes, dry-run or
+perform an unlisted upload, check Flow profiles, edit config, run `py_compile`,
+open logs, and start the one-time YouTube auth flow.
+
+The scheduled task is named `POV Pipeline Daemon`, starts at Windows logon, and
+runs the daemon in the foreground under the repo `.venv`. The daemon itself
+controls the real cadence from `config/pov_channels.yaml`:
+
+```yaml
+cadence:
+  videos_per_day: 1
+  posting_window: "09:00-21:00"
+  timezone: "{{POV_TIMEZONE}}"
+  daemon_interval_minutes: 30
+```
+
+Use menu 6 to install/update the task, menu 7 to remove it, and menu 8 to
+stop a currently running daemon. Menu 10 always asks before making a real
+YouTube upload and uses `unlisted` by default. Menu 9 is the safe payload-only
+upload test.
+
+The launcher looks for `%REPO%\\.venv\\Scripts\\python.exe` first, then falls
+back to `python` on `PATH`. Keep real secrets in the repo `.env` or untracked
+config files. Do not paste API keys into the batch file.
 
 ---
 
@@ -115,7 +152,7 @@ Sources live in [`config/pov_channels.yaml`](config/pov_channels.yaml):
 
 **Score** (deterministic, 0.35-1.00):
 
-```
+```text
 0.35 base
 + 0.35 * min(keyword_hits, 3) / 3
 + 0.15 * max(0, 1 - age_days / preferred_upload_days)
@@ -157,17 +194,8 @@ python -m uploader auth --channel explaination
 After that the upload runs on `google-api-python-client` when it is
 installed, and otherwise on the standard library alone (refresh token ->
 access token -> resumable PUT). Copy the token file to the VPS and it needs
-no Google Python packages at all.
-
-Behaviour: privacy defaults to `unlisted` for review; `--published-at`
-schedules (the video stays private until then); a missing thumbnail warns and
-uploads without one rather than failing the batch; on success
-`youtube_video_id` and `uploaded_video_url` are written into
-`state/manifest.json`, the queue row is marked `done`, and the URL is sent to
-Telegram.
-
-**Test with `--dry-run-upload` first.** It prints the exact payload and calls
-nothing.
+no Google Python packages at all. A missing thumbnail warns and uploads
+without one. Use `--dry-run-upload` before the first real post.
 
 ---
 
@@ -176,167 +204,48 @@ nothing.
 `--once` takes the highest-scoring queued item (running discovery first if
 the queue is empty) and drives it through agents, TTS, images, thumbnail,
 assembly and upload, notifying at every boundary. `--daemon` does that on a
-loop.
+loop. It respects `cadence.posting_window`, `cadence.timezone`,
+`cadence.videos_per_day`, and `cadence.daemon_interval_minutes`.
 
-Bounds, all from `cadence` in `pov_channels.yaml`:
-
-* `posting_window` (`"09:00-21:00"`, may wrap midnight) + `timezone`
-* `videos_per_day` - counted in `pipeline_runs`, so a restart cannot reset it
-* `daemon_interval_minutes`
-* one project at a time. No parallelism anywhere.
+Windows: use the control panel's menu 6 to install the `POV Pipeline Daemon`
+Scheduled Task. Linux: see [`cron/pov-daemon.example`](../../cron/pov-daemon.example)
+and the [VPS guide](../../docs/VPS_DEPLOY.md).
 
 SIGTERM/SIGINT set a stop flag checked between stages: the current step
 finishes, the log is flushed, exit 0. A project failure marks the item
-`failed` with a reason and the loop continues; an unexpected exception fires
-`daemon.fatal` and the loop **still** continues.
-
-Scheduling examples: [`cron/pov-daemon.example`](../../cron/pov-daemon.example)
-and a systemd unit in the [VPS guide](../../docs/VPS_DEPLOY.md).
-
-### Windows Task Scheduler (dev)
-
-```powershell
-$py     = "C:\Users\user\Desktop\milo-portable-system\.venv\Scripts\pythonw.exe"
-$script = "C:\Users\user\Desktop\milo-portable-system\artisan\pov_pipeline\run_pov_pipeline.py"
-$action  = New-ScheduledTaskAction -Execute $py -Argument "`"$script`" --daemon" `
-                                   -WorkingDirectory (Split-Path $script)
-$trigger = New-ScheduledTaskTrigger -AtLogOn
-$set     = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5)
-Register-ScheduledTask -TaskName "POV Pipeline Daemon" -Action $action `
-                       -Trigger $trigger -Settings $set
-```
-
-`pythonw.exe` keeps it windowless. For a cron-style single pass instead, swap
-`--daemon` for `--once` and use a repeating time trigger.
+`failed`; unexpected exceptions fire `daemon.fatal` and the loop continues.
 
 ---
 
 ## M5 - notifications (`notify.py`)
 
-`make_notifier()` returns the `notify(event, message)` callable every stage
-is handed, including `agent_runner`. Copy
-`config/notify.env.template` to `config/notify.env`, or just set
-`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the environment - a
-`{{PLACEHOLDER}}` resolves from the env var of the same name.
-
-**Missing config is a silent no-op.** Events still go to the pipeline log, and
-no stage can ever fail because notifications are not set up. Identical
-messages inside 60 seconds are dropped so a retry loop cannot flood the chat.
-
-Events: `project.started`, `agents.done`, `gate.fail`, `gate.needs_review`,
-`agent.failed`, `chain.abort`, `images.done`, `images.failed`,
-`video.assembled`, `upload.success` (carries the URL), `upload.failed`,
-`discover.done`, `queue.empty`, `daemon.started`, `daemon.stopped`,
-`daemon.fatal`.
+`make_notifier()` returns the `notify(event, message)` callable every stage is
+handed, including `agent_runner`. Missing credentials is a silent no-op;
+events still go to `pipeline.log`. Identical messages inside 60 seconds are
+dropped. Copy `config/notify.env.template` or set
+`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the environment.
 
 ---
 
-## Config keys
+## Config and environment
 
-`config/pov_channels.yaml`. `defaults` is inherited by every niche unless the
-niche overrides the key.
-
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `min_duration` / `max_duration` | 480 / 1500 | source length bounds, seconds |
-| `min_views` | 25000 | hard floor |
-| `preferred_upload_days` | 60 | recency window (also feeds the score) |
-| `min_score` | 0.50 | reject below this |
-| `max_videos` | 2 | per channel, per run |
-| `upload_channel` | `explaination` | OAuth token key |
-| `privacy` | `unlisted` | upload visibility |
-| `published_at` | `null` | ISO8601 scheduled publish |
-| `cadence.videos_per_day` | 1 | daily cap on NEW pipelines |
-| `cadence.posting_window` | `09:00-21:00` | when the daemon may start work |
-| `cadence.timezone` | `{{POV_TIMEZONE}}` | window timezone; unset = local |
-| `cadence.daemon_interval_minutes` | 30 | loop tick |
-| `api.youtube_api_key` | `{{YOUTUBE_API_KEY}}` | discovery key |
-| `api.quota_guard` | `true` | refuse runs over budget |
-| `api.quota_budget` | 500 | units per discovery run |
-| `api.max_pages_per_channel` | 2 | 50 videos per page |
-| `api.max_channels_per_run` | 5 | channels touched per run |
-
-## Environment variables
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `POV_PROJECTS_DIR` | `C:\Users\user\Desktop\Milo Video Factory\pov\projects` | project folders. **Set this on the VPS.** |
-| `POV_DATA_DIR` | `<pipeline>/data` | sqlite ledger + queue |
-| `POV_STATE_DIR` | `<pipeline>/state` | pipeline-level log |
-| `POV_CHANNELS_YAML` | `config/pov_channels.yaml` | source config |
-| `POV_OPENCODE_BIN` | from PATH | opencode executable |
-| `POV_OPENCODE_MODEL` | unset | `--model` for every agent run |
-| `POV_AGENT_TIMEOUT` | per-agent (15-40 min) | timeout override |
-| `POV_GATE_MAX_RETRIES` | 3 | scriptwriter retries |
-| `POV_MILO_BIN` | `milo` / `mylo` / vendored | Milo CLI |
-| `POV_MEMORY_PROJECT` | `pov-pipeline` | Milo memory project |
-| `YOUTUBE_API_KEY` | unset | discovery |
-| `POV_YOUTUBE_TOKEN` | `config/youtube_token_<channel>.json` | upload token |
-| `POV_OAUTH_CLIENT_SECRETS` | shorts `credentials.json` | one-time auth |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | unset | notifications |
-
-The Windows path above is the **only** hardcoded absolute path in the
-pipeline, it lives in `povconfig.py`, and it is a default, not a requirement.
-All secrets come from env or untracked files; every committed template uses
-`{{PLACEHOLDER}}`.
-
----
-
-## Project layout
-
-```
-<POV_PROJECTS_DIR>/<PROJECT>/
-  00_SOURCE_URL.txt                     where it came from
-  00_SOURCE_SCRIPT.txt                  scraped transcript
-  00_RESEARCH_NOTES.txt                 POV-researcher
-  01_SCRIPT_RAW.txt                     POV-scriptwriter   <- gated
-  02_SCRIPT_ELEVENLABS.txt              POV-voice-engineer
-  04_THUMBNAIL/THUMBNAIL_PROMPT.txt     POV-thumbnail-artist
-  04_THUMBNAIL/thumbnail.png            thumb stage
-  05_IMAGES/IMAGE_PROMPTS_BATCH_FINAL.txt   POV-image-director
-  05_IMAGES/<SEG_ID>.jpeg               images stage  (naming contract: do not change)
-  06_AUDIO/                             TTS
-  07_METADATA.txt                       POV-seo-specialist
-  COMPLETENESS_REPORT.txt               POV-archive-manager
-  output_pro/*.mp4                      assembler
-  NEEDS_REVIEW.txt                      present only when parked
-  state/manifest.json                   pipeline state the agents read
-  state/pipeline.log                    lifecycle log (rotates at 5 MB, 3 kept)
-  state/briefs/                         every brief, as dispatched
-  state/runs/                           raw opencode output per attempt
-  state/rejected/                       gate-rejected drafts
-```
+`config/pov_channels.yaml` provides filters, cadence, privacy and API quota.
+`POV_PROJECTS_DIR`, `POV_DATA_DIR`, `POV_STATE_DIR`, `POV_OPENCODE_MODEL`,
+`POV_MEMORY_PROJECT`, `YOUTUBE_API_KEY`, Gemini keys and Telegram keys are
+environment-driven. All committed templates use `{{PLACEHOLDER}}`; real
+credentials are untracked.
 
 ---
 
 ## Known risks
 
-**Chrome Browser Bridge on a headless VPS (the big one).** Google Flow image
-generation needs the Chrome Browser Bridge profiles to be OPEN; a closed
-profile produces `BROWSER_CONNECT`. Flow is a browser-bound Google Labs
-product, and **whether the bridge and reCAPTCHA survive on a headless VPS is
-UNKNOWN and must be tested before declaring VPS readiness.** If the bridge
-cannot run there, everything except `images` and `thumb` still works, and
-both of those fail loudly (missing-segment report, `images.failed`
-notification, daemon marks the item failed) rather than silently. Login is a
-one-time human step and is never automated. Run `--check-profiles` before
-every batch.
+**Chrome Browser Bridge on a headless VPS:** Google Flow is browser-bound;
+whether the bridge plus reCAPTCHA survive on a VPS is **UNKNOWN**. Run
+`--check-profiles` before batches. If it is down, images and thumb fail
+loudly, notify, and block only those stages. Login is a one-time human step,
+never automated.
 
-**API quota.** Discovery is cheap by design, but an aggressive
-`max_channels_per_run` plus `max_pages_per_channel` will burn the daily 10k.
-The guard refuses to start a run it estimates as too expensive; raise
-`api.quota_budget` deliberately, not reflexively.
+**Upload safety:** default privacy is `unlisted`. Use the dry-run first.
 
-**opencode CLI drift.** The non-interactive surface has changed before. Flag
-support is probed at runtime rather than hardcoded, but a breaking change to
-`opencode run` itself would stop the chain. `--dry-run-agents` prints the
-exact invocation, which is the fastest way to confirm.
-
-**Agent output is verified by existence, not quality.** Only the scriptwriter
-is quality-gated (wordcount + rewrite-originality). The other six are checked
-for "file exists and is non-empty"; `COMPLETENESS_REPORT.txt` from
-`POV-archive-manager` is the backstop.
-
-**Upload is irreversible-ish.** Default privacy is `unlisted` for exactly
-that reason. Watch one all the way through before switching
-`defaults.privacy` to `public`.
+For full Debian setup, auth, cron, systemd, log rotation and rollback, see
+[docs/VPS_DEPLOY.md](../../docs/VPS_DEPLOY.md).
