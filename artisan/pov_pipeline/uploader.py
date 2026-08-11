@@ -209,14 +209,14 @@ def token_path(channel: str) -> Path:
     override = os.environ.get("POV_YOUTUBE_TOKEN", "").strip()
     if override:
         return Path(override).expanduser()
-    return povconfig.config_dir() / f"youtube_token_{channel}.json"
+    return povconfig.secrets_dir() / f"youtube_token_{channel}.json"
 
 
 def client_secrets_path() -> Path:
     override = os.environ.get("POV_OAUTH_CLIENT_SECRETS", "").strip()
     if override:
         return Path(override).expanduser()
-    local = povconfig.config_dir() / "credentials.json"
+    local = povconfig.secrets_dir() / "credentials.json"
     if local.exists():
         return local
     # The shorts pipeline already holds a client-secrets file; reuse it
@@ -279,7 +279,7 @@ def authorize(channel: str) -> str | None:
     if not secrets.exists():
         eprint(f"[auth] OAuth client secrets not found: {secrets}")
         eprint("[auth] set POV_OAUTH_CLIENT_SECRETS or drop credentials.json "
-               "into artisan/pov_pipeline/config/")
+                f"into {povconfig.secrets_dir()}")
         return None
 
     creds = InstalledAppFlow.from_client_secrets_file(

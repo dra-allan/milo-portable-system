@@ -99,9 +99,11 @@ One file, `/opt/milo-portable-system/.env`, sourced by cron and systemd.
 ```bash
 cat > /opt/milo-portable-system/.env <<'EOF'
 # --- paths -----------------------------------------------------------
+POV_FACTORY_DIR=/srv/pov
 POV_PROJECTS_DIR=/srv/pov/projects
-POV_DATA_DIR=/opt/milo-portable-system/artisan/pov_pipeline/data
-POV_STATE_DIR=/opt/milo-portable-system/artisan/pov_pipeline/state
+POV_DATA_DIR=/srv/pov/data
+POV_STATE_DIR=/srv/pov/state
+POV_SECRETS_DIR=/srv/pov/config
 
 # --- agent chain ------------------------------------------------------
 POV_OPENCODE_MODEL=anthropic/claude-sonnet-4-5
@@ -123,8 +125,13 @@ TELEGRAM_CHAT_ID=
 DISPLAY=:99
 EOF
 chmod 600 /opt/milo-portable-system/.env
-mkdir -p /srv/pov/projects
+mkdir -p /srv/pov/projects /srv/pov/data /srv/pov/state /srv/pov/config
 ```
+
+Everything the pipeline produces or needs that is machine-local (projects,
+the sqlite ledger, logs, OAuth tokens, Telegram credentials) lives under
+`/srv/pov` — never inside the portable repo, which carries code and config
+templates only. Repo upgrades are then a clean `git pull`.
 
 Every config template in the repo uses `{{PLACEHOLDER}}`, and a placeholder
 whose environment variable is unset is treated as **absent** rather than
@@ -137,8 +144,8 @@ Config files:
 | --- | --- | --- |
 | `artisan/pov_pipeline/config/pov_channels.yaml` | yes | curated sources, filters, cadence, privacy |
 | `artisan/pov_pipeline/config/notify.env.template` | yes | Telegram placeholders |
-| `artisan/pov_pipeline/config/notify.env` | **no** | your real values (optional) |
-| `artisan/pov_pipeline/config/youtube_token_*.json` | **no** | OAuth tokens |
+| `/srv/pov/config/notify.env` | **no** | your real Telegram values (optional) |
+| `/srv/pov/config/youtube_token_*.json` | **no** | OAuth tokens |
 | `artisan/pov_pipeline/tts/.env` | **no** | Gemini keys |
 
 ---
@@ -153,21 +160,21 @@ On the dev machine:
 ```bash
 cd artisan/pov_pipeline
 python -m uploader auth --channel explaination
-# -> config/youtube_token_explaination.json
+# -> C:\Users\user\Desktop\Milo Video Factory\pov\config\youtube_token_explaination.json
 ```
 
 That needs `google-auth-oauthlib` and an OAuth client-secrets file. The
 uploader looks for, in order: `POV_OAUTH_CLIENT_SECRETS`,
-`artisan/pov_pipeline/config/credentials.json`, then the shorts pipeline's
+`<factory>/config/credentials.json`, then the shorts pipeline's
 `credentials.json`. Reuse the existing OAuth client rather than registering
 a second one.
 
 Copy the token over:
 
 ```bash
-scp config/youtube_token_explaination.json \
-    vps:/opt/milo-portable-system/artisan/pov_pipeline/config/
-ssh vps chmod 600 /opt/milo-portable-system/artisan/pov_pipeline/config/youtube_token_explaination.json
+scp "C:/Users/user/Desktop/Milo Video Factory/pov/config/youtube_token_explaination.json" \
+    vps:/srv/pov/config/
+ssh vps chmod 600 /srv/pov/config/youtube_token_explaination.json
 ```
 
 With that file present the VPS uploads using the standard library alone: the
