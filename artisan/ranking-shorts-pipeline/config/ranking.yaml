@@ -61,9 +61,9 @@ defaults:
   # footage stays the focus. The playing clip's row is highlighted.
   list_x: 60
   list_y: 430
-  list_row_h: 130
-  list_rank_size: 84
-  list_label_size: 46
+  list_row_h: 170
+  list_rank_size: 66
+  list_label_size: 34
   transition: zoomin
   transition_duration: 0.28
   hook_zoom: true

@@ -385,7 +385,7 @@ def text_chain(in_label: str, out_label: str, rank: int, clip_title: str,
         index = next(i for i, row in enumerate(rows)
                      if int(row.get('rank') or 0) == rank)
         row_y = list_y + index * row_h
-        desc_x = list_x + rank_size + 40
+        desc_x = list_x + rank_size + 24
         desc_y = row_y + max(0, (rank_size - desc_size) // 2)
         _draw_line(active, desc_x, desc_y, desc_runs, font, emoji_font,
                    desc_size, fill, stroke_ratio, shadow)
