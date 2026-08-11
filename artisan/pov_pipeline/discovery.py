@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import sqlite3
 import urllib.error
@@ -525,34 +526,8 @@ def estimate_units(channel_count: int, pages: int) -> int:
     return channel_count * (1 + pages) + channel_count * pages
 
 
-def discover(cfg: dict | None = None, *, niches: Iterable[str] | None = None,
-             channels: Iterable[str] | None = None,
-             max_channels: int | None = None,
-             db: PovDB | None = None,
-             notify: Notify | None = None,
-             dry_run: bool = False) -> list[Candidate]:
-    """Run discovery and append everything that survives to the queue.
-
-    Returns the accepted candidates (already enqueued unless ``dry_run``).
-    Never raises for a bad channel: unresolvable handles are logged and
-    skipped. A quota-guard refusal or a missing API key returns an empty
-    list after logging.
-    """
-    cfg = cfg or povconfig.load_config()
-    api_key = povconfig.youtube_api_key(cfg)
-    if not api_key:
-        log_line("discover.abort",
-                 "no YouTube API key (set YOUTUBE_API_KEY or api.youtube_api_key)",
-                 level="error")
-        return []
-
-    api_cfg = cfg.get("api") or {}
-    pages = int(api_cfg.get("max_pages_per_channel") or 2)
-    budget = int(api_cfg.get("quota_budget") or DEFAULT_QUOTA_BUDGET)
-    guard = bool(api_cfg.get("quota_guard", True))
-    per_run = int(max_channels or api_cfg.get("max_channels_per_run")
-                  or DEFAULT_MAX_CHANNELS_PER_RUN)
-
+def _select_niches(cfg: dict, niches: Iterable[str] | None) -> dict:
+    """Filter the configured niches to the requested subset (all when none)."""
     selected = cfg.get("niches") or {}
     if niches:
         wanted = {n.strip() for n in niches if n.strip()}
@@ -562,10 +537,12 @@ def discover(cfg: dict | None = None, *, niches: Iterable[str] | None = None,
         selected = {k: v for k, v in selected.items() if k in wanted}
     if not selected:
         log_line("discover.abort", "no niches to process", level="error")
-        return []
+    return selected
 
-    # Build the channel worklist: round-robin across niches so one big niche
-    # cannot starve the others when max_channels_per_run bites.
+
+def _worklist(selected: dict, channels: Iterable[str] | None,
+              per_run: int) -> list[tuple[str, dict, str]]:
+    """Round-robin channels across niches so one niche cannot starve others."""
     handle_filter = {c.strip().lstrip("@").lower() for c in (channels or []) if c.strip()}
     worklist: list[tuple[str, dict, str]] = []
     pools = {name: list(n.get("channels") or []) for name, n in selected.items()}
@@ -577,7 +554,44 @@ def discover(cfg: dict | None = None, *, niches: Iterable[str] | None = None,
             if handle_filter and handle.lstrip("@").lower() not in handle_filter:
                 continue
             worklist.append((name, selected[name], handle))
-    worklist = worklist[:per_run]
+    return worklist[:per_run]
+
+
+def discover(cfg: dict | None = None, *, niches: Iterable[str] | None = None,
+             channels: Iterable[str] | None = None,
+             max_channels: int | None = None,
+             db: PovDB | None = None,
+             notify: Notify | None = None,
+             dry_run: bool = False) -> list[Candidate]:
+    """Run discovery and append everything that survives to the queue.
+
+    Returns the accepted candidates (already enqueued unless ``dry_run``).
+    Never raises for a bad channel: unresolvable handles are logged and
+    skipped. A quota-guard refusal returns an empty list after logging,
+    and a missing YouTube API key falls back to the yt-dlp backend
+    (``discover_ytdlp``) - no key required, same filters and scoring.
+    """
+    cfg = cfg or povconfig.load_config()
+    api_key = povconfig.youtube_api_key(cfg)
+    if not api_key:
+        return discover_ytdlp(cfg, niches=niches, channels=channels,
+                              max_channels=max_channels, db=db,
+                              notify=notify, dry_run=dry_run)
+
+    api_cfg = cfg.get("api") or {}
+    pages = int(api_cfg.get("max_pages_per_channel") or 2)
+    budget = int(api_cfg.get("quota_budget") or DEFAULT_QUOTA_BUDGET)
+    guard = bool(api_cfg.get("quota_guard", True))
+    per_run = int(max_channels or api_cfg.get("max_channels_per_run")
+                  or DEFAULT_MAX_CHANNELS_PER_RUN)
+
+    selected = _select_niches(cfg, niches)
+    if not selected:
+        return []
+
+    # Build the channel worklist: round-robin across niches so one big niche
+    # cannot starve the others when max_channels_per_run bites.
+    worklist = _worklist(selected, channels, per_run)
 
     if not worklist:
         log_line("discover.abort", "no channels matched the filters", level="error")
@@ -736,6 +750,325 @@ def discover(cfg: dict | None = None, *, niches: Iterable[str] | None = None,
             store.close()
 
     return accepted
+
+
+# ---------------------------------------------------------------------------
+# yt-dlp discovery (no API key needed)
+# ---------------------------------------------------------------------------
+
+_YTDLP_MISSING = False
+
+
+def _try_import_ytdlp():
+    """Import yt-dlp once. Sets the module flag on failure."""
+    global _YTDLP_MISSING
+    if _YTDLP_MISSING:
+        return True
+    try:
+        import yt_dlp  # noqa: F401
+        return True
+    except ImportError:
+        _YTDLP_MISSING = True
+        return False
+
+
+def discover_ytdlp(cfg: dict | None = None, *, niches: Iterable[str] | None = None,
+                   channels: Iterable[str] | None = None,
+                   max_channels: int | None = None,
+                   db: PovDB | None = None,
+                   notify: Notify | None = None,
+                   dry_run: bool = False) -> list[Candidate]:
+    """Discovery without a YouTube API key, mirroring the shorts pipeline.
+
+    Sources candidates with yt-dlp the same way ``artisan/ranking-shorts-pipeline
+    /src/sourcing.py`` does - ``ytsearchN:<query>`` plus the curated channel
+    pages - then runs the identical title gate, duration/views/recency filters
+    and deterministic score as the API backend. Returns enqueued candidates
+    (unless ``dry_run``), never raises for a bad channel.
+    """
+    try:
+        import yt_dlp
+    except ImportError:
+        log_line("discover.abort",
+                 "no YouTube API key and yt-dlp is not installed "
+                 "(pip install yt-dlp)",
+                 level="error")
+        return []
+
+    cfg = cfg or povconfig.load_config()
+    selected = _select_niches(cfg, niches)
+    if not selected:
+        return []
+
+    per_run = int(max_channels or (cfg.get("api") or {}).get("max_channels_per_run")
+                  or DEFAULT_MAX_CHANNELS_PER_RUN)
+    worklist = _worklist(selected, channels, per_run)
+    if not worklist:
+        log_line("discover.abort", "no channels matched the filters", level="error")
+        return []
+
+    store = db or PovDB()
+    owns_db = db is None
+    projects_root = povconfig.projects_dir()
+    already = store.seen_ids() | existing_project_ids(projects_root)
+
+    # Flat metadata fetch only, like the shorts pipeline's sourcing pass.
+    base_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "ignoreerrors": True,
+        "retries": 3,
+        "extract_retries": 3,
+        "fragment_retries": 8,
+        "socket_timeout": 30,
+        "skip_download": True,
+        "extract_flat": "in_playlist",
+        "playlistend": 25,
+    }
+    cookies = os.environ.get("YT_COOKIES", "").strip()
+    if cookies:
+        base_opts["cookies"] = cookies
+
+    accepted: list[Candidate] = []
+    rejected = 0
+
+    def target_for(handle: str) -> str:
+        h = (handle or "").strip()
+        if not h:
+            return ""
+        if h.startswith("@"):
+            return f"https://www.youtube.com/{h}/videos"
+        if h.startswith("UC") and "/" not in h:
+            return f"https://www.youtube.com/channel/{h}/videos"
+        return h
+
+    log_line("discover.ytdlp.start",
+             f"{len(worklist)} channel(s) across {len(selected)} niche(s) via yt-dlp")
+
+    try:
+        for niche_name, niche, handle in worklist:
+            found_for_channel: list[Candidate] = []
+
+            # 1) The channel's own uploads page (flat).
+            target = target_for(handle)
+            if target:
+                try:
+                    with yt_dlp.YoutubeDL({**base_opts}) as ydl:
+                        info = ydl.extract_info(target, download=False) or {}
+                        entries = info.get("entries") or []
+                except Exception as exc:
+                    log_line("discover.ytdlp.channel_error",
+                             f"{handle}: {exc}", level="error")
+                    entries = []
+                for entry in entries:
+                    item = _ytdlp_candidate(entry, niche, niche_name, handle,
+                                            already)
+                    if item is not None:
+                        found_for_channel.append(item)
+                        already.add(item.video_id)
+
+            # 2) Keyword search, mirroring sourcing.py's ytsearch pass. Each
+            #    niche keyword that looks searchable becomes a query.
+            queries: list[str] = []
+            for kw in (niche.get("keywords") or []):
+                q = (kw or "").strip().lower()
+                if q and len(q) >= 4:
+                    queries.append(q)
+            cap = max(1, 15 - len(found_for_channel))
+            seen_search = {c.video_id for c in found_for_channel}
+            for query in queries[:5]:
+                if len(found_for_channel) >= cap:
+                    break
+                try:
+                    with yt_dlp.YoutubeDL(
+                            {**base_opts, "playlistend": 15}) as ydl:
+                        info = ydl.extract_info(
+                            f"ytsearch{15}:{query}", download=False) or {}
+                except Exception as exc:
+                    log_line("discover.ytdlp.search_error",
+                             f"{query}: {exc}", level="error")
+                    continue
+                for entry in info.get("entries") or []:
+                    item = _ytdlp_candidate(entry, niche, niche_name, handle,
+                                            already)
+                    if item is None:
+                        continue
+                    if item.video_id in seen_search:
+                        continue
+                    seen_search.add(item.video_id)
+                    already.add(item.video_id)
+                    found_for_channel.append(item)
+                    if len(found_for_channel) >= 15:
+                        break
+
+            if not found_for_channel:
+                log_line("discover.ytdlp.channel", f"{handle}: no candidates")
+                continue
+
+            min_dur = int(niche.get("min_duration") or 0)
+            max_dur = int(niche.get("max_duration") or 10 ** 9)
+            min_views = int(niche.get("min_views") or 0)
+            window = int(niche.get("preferred_upload_days") or 60)
+
+            # 3) Probe survivors for exact publish date (flat entries omit
+            #    upload_date). Bounded and parallel; failures keep the flat
+            #    published_at (empty), which scores without the freshness
+            #    bonus rather than being dropped.
+            over_dur = under_dur_or_views = 0
+            probe_list = []
+            for cand in found_for_channel:
+                if cand.duration_s and not (min_dur <= cand.duration_s <= max_dur):
+                    over_dur += 1
+                    continue
+                probe_list.append(cand)
+            _probe_dates(probe_list, base_opts)
+            # Drop candidates that fail the hard gate now that dates are known.
+            survivors = []
+            for cand in found_for_channel:
+                published = parse_published(cand.published_at) if cand.published_at else None
+                if not (min_dur <= cand.duration_s <= max_dur):
+                    over_dur += 1
+                    continue
+                if cand.views < min_views:
+                    under_dur_or_views += 1
+                    continue
+                survivors.append(cand)
+            rejected += over_dur + under_dur_or_views
+            if not survivors:
+                log_line("discover.ytdlp.channel", f"{handle}: no candidates after filters")
+                continue
+
+            # 4) Score, identically to the API backend.
+            min_score = float(niche.get("min_score") or 0.0)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=window)
+
+            kept: list[Candidate] = []
+            for cand in survivors:
+                published = parse_published(cand.published_at) if cand.published_at else None
+                if published is not None and published < cutoff:
+                    rejected += 1
+                    continue
+                cand.score = compute_score(cand.title, niche, views=cand.views,
+                                           published=published)
+                if cand.score < min_score:
+                    rejected += 1
+                    continue
+                kept.append(cand)
+
+            kept.sort(key=lambda c: c.score, reverse=True)
+            kept = kept[:int(niche.get("max_videos") or 2)]
+            for cand in kept:
+                if dry_run:
+                    accepted.append(cand)
+                    continue
+                if store.enqueue(cand):
+                    accepted.append(cand)
+                    log_line("discover.ytdlp.enqueue",
+                             f"{cand.video_id} [{cand.niche}] score={cand.score} "
+                             f"{cand.title[:70]}")
+
+        log_line("discover.ytdlp.done",
+                 f"{len(accepted)} queued, {rejected} rejected, no API key used")
+        if notify and accepted:
+            try:
+                notify("discover.done",
+                       f"POV discovery (yt-dlp): {len(accepted)} new video(s) queued")
+            except Exception as exc:
+                eprint(f"[notify] {type(exc).__name__}: {exc}")
+    finally:
+        if owns_db:
+            store.close()
+
+    return accepted
+
+
+def _probe_dates(candidates: Sequence[Candidate], base_opts: dict) -> None:
+    """Fill ``published_at`` greedily from a bounded parallel probe.
+
+    Flat channel/search entries omit ``upload_date`` but a full metadata
+    fetch returns it. Probes are capped (channel page + a keyword pass per
+    candidate) and run concurrently so a wide pass stays fast. Candidates
+    that fail the probe simply keep their (empty) flat date.
+    """
+    todo = [c for c in candidates if not c.published_at][:20]
+    if not todo or not _try_import_ytdlp():
+        return
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        from yt_dlp import YoutubeDL
+    except ImportError:
+        return
+
+    opts = {**base_opts, "extract_flat": False}
+
+    def probe_one(cand: Candidate) -> None:
+        try:
+            with YoutubeDL({**opts, "skip_download": True}) as ydl:
+                info = ydl.extract_info(cand.url, download=False) or {}
+        except Exception:
+            return
+        ud = str(info.get("upload_date") or "").strip()
+        if len(ud) == 8 and ud.isdigit():
+            cand.published_at = f"{ud[0:4]}-{ud[4:6]}-{ud[6:8]}T00:00:00+00:00"
+        views = info.get("view_count")
+        if views:
+            try:
+                cand.views = int(views)
+            except (TypeError, ValueError):
+                pass
+        dur = info.get("duration")
+        if dur:
+            try:
+                cand.duration_s = int(dur)
+            except (TypeError, ValueError):
+                pass
+
+    workers = min(6, len(todo))
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        list(pool.map(probe_one, todo))
+
+
+def _ytdlp_candidate(entry: dict, niche: dict, niche_name: str,
+                     handle: str, already: set[str]) -> Candidate | None:
+    """Turn one flat yt-dlp entry into a Candidate, or None when rejected.
+
+    Title-gate and dedupe only; duration/views/recency are filtered with
+    the exact values when the candidate is scored upstream.
+    """
+    vid = entry.get("id") or ""
+    url = entry.get("url") or ""
+    if url and not url.startswith("http"):
+        url = f"https://www.youtube.com/watch?v={vid}"
+    elif not url:
+        url = watch_url(vid)
+    title = (entry.get("title") or "").strip()
+    if not vid or not url or vid in already:
+        return None
+
+    ok, why = title_allowed(title, niche)
+    if not ok:
+        return None
+
+    try:
+        views = int(entry.get("view_count") or 0)
+    except (TypeError, ValueError):
+        views = 0
+
+    try:
+        duration = int(entry.get("duration") or 0)
+    except (TypeError, ValueError):
+        duration = 0
+
+    published = ""
+    ud = (entry.get("upload_date") or "").strip()
+    if len(ud) == 8 and ud.isdigit():
+        published = f"{ud[0:4]}-{ud[4:6]}-{ud[6:8]}T00:00:00+00:00"
+
+    return Candidate(
+        video_id=vid, url=url, channel_id=entry.get("channel_id") or "",
+        channel_handle=handle, niche=niche_name, title=title,
+        duration_s=duration, views=views, published_at=published)
 
 
 def print_summary(accepted: Sequence[Candidate], db: PovDB | None = None) -> None:
