@@ -27,3 +27,6 @@ Pillow>=10.0.0
 
 # Tests
 pytest>=7.4.0
+
+# Scheduling (--mode schedule)
+apscheduler>=3.10.0

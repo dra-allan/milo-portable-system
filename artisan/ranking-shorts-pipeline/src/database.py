@@ -150,6 +150,21 @@ class RankingDatabase:
                 'ORDER BY created_at ASC LIMIT ?', (limit,)).fetchall()
         return [dict(r) for r in rows]
 
+    def pending_builds_count(self) -> int:
+        """Number of built-but-unpublished videos (the ready pool)."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM builds WHERE status='built'"
+            ).fetchone()
+        return int(row['n'] if row else 0)
+
+    def build_row(self, build_id: int) -> Optional[Dict]:
+        """Full row for one build, or None if it no longer exists."""
+        with self._connect() as conn:
+            row = conn.execute(
+                'SELECT * FROM builds WHERE id=?', (build_id,)).fetchone()
+        return dict(row) if row else None
+
     def uploads_since(self, seconds: float) -> int:
         cutoff = time.time() - seconds
         with self._connect() as conn:
