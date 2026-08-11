@@ -4,6 +4,10 @@
 
 defaults:
   clips_per_video: 5
+  # How many videos one `--mode auto` run builds. The panel's Build options
+  # honour this, so "build and leave it running" makes a full day's batch
+  # instead of a single video. Daily upload cap still applies per 24h.
+  videos_per_run: 1
   min_clip_seconds: 2.5
   max_clip_seconds: 40
   target_total_seconds: 55
