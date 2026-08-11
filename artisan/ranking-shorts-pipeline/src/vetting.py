@@ -379,9 +379,17 @@ def vet(candidate: Dict, known_hashes: List[str]) -> Dict:
         if music is not None:
             candidate['music_confidence'] = music
             if music > float(config.get('max_music_confidence', 0.55)):
-                candidate.update(ok=False, reason='has_music')
-                wav.unlink(missing_ok=True)
-                return candidate
+                if (candidate.get('allow_music')
+                        or config.get('allow_music')):
+                    # Moment topics accept clips that carry their own bed (a
+                    # cameraman's narration over ambient sound, or the video's
+                    # original audio). Flag it rather than reject so the ranker
+                    # can still prefer cleaner clips.
+                    candidate['has_music'] = True
+                else:
+                    candidate.update(ok=False, reason='has_music')
+                    wav.unlink(missing_ok=True)
+                    return candidate
         wav.unlink(missing_ok=True)
 
     boxes, coverage = detect_text_boxes(path, duration, media['width'],

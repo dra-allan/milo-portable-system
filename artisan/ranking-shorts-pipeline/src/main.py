@@ -71,6 +71,7 @@ class RankingPipeline:
 
             candidate['allow_commentary'] = bool(
                 topic_cfg.get('allow_commentary'))
+            candidate['allow_music'] = bool(topic_cfg.get('allow_music'))
             result = vetting.vet(candidate, known)
             if not result.get('ok'):
                 rejects += 1
