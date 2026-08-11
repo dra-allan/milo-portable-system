@@ -13,6 +13,11 @@ fetching forty clips up front and throwing thirty-five away.
 Modes:
     once      - build one video for --topic (or the first configured topic)
     auto      - pick the least-recently-run topic, build, upload
+    sweep     - one scheduled run now: drain backlog, refill pool toward
+                queue_target_total, upload (3 fresh + 3 backlog), all capped
+                by the 24h daily cap and the per-run budget. No daemon.
+    schedule  - persist as an APScheduler daemon firing run_sweep on the
+                RUN_TIMES crons (default 0 9 * * *). Same caps apply.
     source    - discovery + vetting only; print what passed. No render.
     assemble  - re-render from a saved plan (data/plans/<slug>.json)
     upload    - upload anything built but not yet published
@@ -21,6 +26,8 @@ Modes:
 
 import argparse
 import json
+import os
+import random
 import sys
 import time
 from pathlib import Path
@@ -184,10 +191,16 @@ class RankingPipeline:
 
     # -- upload --------------------------------------------------------
     def upload_build(self, build_id: int, plan: Dict) -> Optional[str]:
-        cap = int(config.upload_max_per_run)
-        if cap and self.db.uploads_since(3600 * 6) >= cap:
-            logger.info('upload cap reached for this window; leaving %s queued',
-                        plan.get('local_path'))
+        """Upload one build, but never beyond the 24h daily cap.
+
+        This is the hard ceiling every path honours (auto, once, drain,
+        sweep). The per-run budget lives in the sweep orchestrator; this
+        method only refuses to exceed ``upload_max_per_day`` in 24h.
+        """
+        cap = int(config.upload_max_per_day)
+        if cap and self.db.uploads_since(3600 * 24) >= cap:
+            logger.info('daily upload cap (%d/24h) reached; leaving %s queued',
+                        cap, plan.get('local_path'))
             return None
         try:
             from .publisher import RankingPublisher
@@ -226,6 +239,137 @@ class RankingPipeline:
             if self.upload_build(int(row['id']), plan):
                 uploaded += 1
         return uploaded
+
+    # -- sweep ---------------------------------------------------------
+    def _upload_pending(self, cap: int) -> int:
+        """Upload up to ``cap`` oldest built-but-unpublished videos."""
+        uploaded = 0
+        for row in self.db.pending_builds(limit=100):
+            if uploaded >= cap:
+                break
+            path = row.get('local_path')
+            if not path or not Path(path).exists():
+                self.db.mark_failed(int(row['id']), 'file_missing')
+                continue
+            try:
+                plan = json.loads(row.get('plan_json') or '{}')
+            except json.JSONDecodeError:
+                plan = {}
+            plan['local_path'] = path
+            plan.setdefault('upload_title', row.get('title') or 'TOP 5')
+            plan.setdefault('description', '')
+            if self.upload_build(int(row['id']), plan):
+                uploaded += 1
+        return uploaded
+
+    def _build_fresh(self, count: int) -> List[int]:
+        """Build up to ``count`` new videos, rotating topics round-robin.
+
+        Returns build ids for the videos actually produced. A topic whose
+        build fails is skipped rather than retried in a tight loop.
+        """
+        topics = list(config.topic_names())
+        if not topics:
+            return []
+        built_ids: List[int] = []
+        tried = 0
+        while len(built_ids) < count and tried < len(topics) * 3:
+            tried += 1
+            topic = self.db.next_topic(topics)
+            plan = self.build(topic, upload=False)
+            if plan and plan.get('build_id'):
+                built_ids.append(int(plan['build_id']))
+        return built_ids
+
+    def run_sweep(self) -> Dict:
+        """One scheduled run, mirroring the shorts pipeline's sweep.
+
+        Order:
+          1. Drain the backlog (oldest first) up to the backlog share.
+          2. Refill the pool toward ``queue_target_total`` with fresh builds.
+          3. Upload from the freshly built pool up to the fresh share.
+          4. If per-run budget remains, top up from the backlog again.
+
+        Everything is clamped by the 24h daily cap and the per-run budget, so
+        running the sweep by hand and the scheduler firing both respect the
+        same limits.
+        """
+        used = self.db.uploads_since(3600 * 24)
+        daily = int(config.upload_max_per_day)
+        remaining_daily = max(0, daily - used)
+        if remaining_daily <= 0:
+            logger.info('SWEEP_SKIP daily cap reached (%d/%d)', used, daily)
+            return {'built': 0, 'uploaded': 0,
+                    'uploaded_backlog': 0, 'uploaded_fresh': 0}
+
+        per_run = max(0, min(int(config.upload_max_per_run), remaining_daily))
+        if per_run <= 0:
+            logger.info('SWEEP_SKIP no upload budget this run')
+            return {'built': 0, 'uploaded': 0,
+                    'uploaded_backlog': 0, 'uploaded_fresh': 0}
+
+        backlog_share = min(per_run, int(config.sweep_backlog_share))
+        fresh_share = min(per_run, int(config.sweep_fresh_share))
+
+        # 1. Backlog first: post the oldest unposted videos so the pool never
+        #    ages into irrelevance.
+        uploaded_backlog = self._upload_pending(backlog_share)
+        logger.info('SWEEP_BACKLOG uploaded=%d', uploaded_backlog)
+
+        # 2. Refill the ready pool toward the queue target. We build without
+        #    uploading, then choose from the just-built pool below.
+        pool = self.db.pending_builds_count()
+        to_build = max(0, int(config.queue_target_total) - pool)
+        built_ids = self._build_fresh(to_build) if to_build > 0 else []
+        logger.info('SWEEP_REPLENISH built=%d (pool %d -> %d)',
+                    len(built_ids), pool, self.db.pending_builds_count())
+
+        # 3. Upload from the freshly built pool, newest freshness first.
+        uploaded_fresh = 0
+        remaining_run = max(0, per_run - uploaded_backlog)
+        fresh_cap = min(fresh_share, remaining_run)
+        for build_id in built_ids[:fresh_cap]:
+            if not self._upload_one(build_id):
+                continue
+            uploaded_fresh += 1
+        logger.info('SWEEP_FRESH uploaded=%d (cap %d)', uploaded_fresh, fresh_cap)
+
+        # 4. Any leftover per-run budget goes back to the backlog.
+        leftover = max(0, per_run - uploaded_backlog - uploaded_fresh)
+        uploaded_topup = self._upload_pending(leftover) if leftover > 0 else 0
+
+        total = uploaded_backlog + uploaded_fresh + uploaded_topup
+        logger.info(
+            'SWEEP_DONE built=%d uploaded=%d (backlog=%d fresh=%d topup=%d) '
+            'daily=%d/%d',
+            len(built_ids), total, uploaded_backlog, uploaded_fresh,
+            uploaded_topup, used + total, daily,
+        )
+        return {
+            'built': len(built_ids),
+            'uploaded': total,
+            'uploaded_backlog': uploaded_backlog,
+            'uploaded_fresh': uploaded_fresh,
+            'uploaded_topup': uploaded_topup,
+        }
+
+    def _upload_one(self, build_id: int) -> bool:
+        """Upload a single build by id. Returns True on success."""
+        row = self.db.build_row(build_id)
+        if not row:
+            return False
+        path = row.get('local_path')
+        if not path or not Path(path).exists():
+            self.db.mark_failed(build_id, 'file_missing')
+            return False
+        try:
+            plan = json.loads(row.get('plan_json') or '{}')
+        except json.JSONDecodeError:
+            plan = {}
+        plan['local_path'] = path
+        plan.setdefault('upload_title', row.get('title') or 'TOP 5')
+        plan.setdefault('description', '')
+        return bool(self.upload_build(build_id, plan))
 
     # -- plans ---------------------------------------------------------
     def _save_plan(self, plan: Dict) -> Path:
@@ -282,13 +426,73 @@ def environment_check() -> int:
     return 1 if problems else 0
 
 
+def _run_schedule(pipeline: RankingPipeline, args) -> int:
+    """Persistent APScheduler daemon firing the sweep on RUN_TIMES crons.
+
+    The same caps the one-shot sweep respects (24h daily cap, per-run budget)
+    are enforced inside run_sweep, so a missed run or an overlapping fire can
+    never blow through the daily ceiling.
+    """
+    try:
+        from .scheduler import PipelineScheduler
+    except ImportError as exc:
+        logger.error('Scheduler needs APScheduler: %s (pip install apscheduler)',
+                     exc)
+        return 2
+
+    run_times = [t.strip() for t in config.schedule_run_times if t.strip()]
+    if not run_times:
+        run_times = ['0 9 * * *']
+
+    # Anti-burst jitter: a random minute offset keeps the batch from landing
+    # on the same :00 cliff every day.
+    jitter = int(config.schedule_jitter_minutes or 0)
+    if jitter:
+        jittered = []
+        for cron in run_times:
+            parts = cron.split()
+            if len(parts) == 5:
+                try:
+                    parts[0] = str(random.randint(0, min(jitter, 59)))
+                except (ValueError, TypeError):
+                    pass
+            jittered.append(' '.join(parts))
+        run_times = jittered
+        logger.info('Sweep times jittered by up to %d minute(s): %s',
+                    jitter, ', '.join(run_times))
+
+    def job():
+        try:
+            pipeline.run_sweep()
+        except Exception as exc:  # noqa: BLE001
+            logger.error('Scheduled sweep failed: %s', exc, exc_info=True)
+
+    sched = PipelineScheduler()
+    for i, cron in enumerate(run_times):
+        try:
+            sched.add_daily_job(job, cron, job_id=f'ranking_sweep_{i}')
+        except Exception as exc:
+            logger.error('Bad cron entry %r: %s', cron, exc)
+
+    sched.start()
+    logger.info('Scheduler running (%s). Press Ctrl+C to stop.',
+                ', '.join(run_times))
+    try:
+        while True:
+            time.sleep(60)
+    except KeyboardInterrupt:
+        logger.info('Shutting down scheduler')
+        sched.shutdown()
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description='Ranking Shorts pipeline: sources clips, ranks them 5-1, '
                     'composes and publishes a countdown.')
     parser.add_argument('--mode', default='once',
-                        choices=['once', 'auto', 'source', 'assemble',
-                                 'upload', 'test'])
+                        choices=['once', 'auto', 'sweep', 'schedule',
+                                 'source', 'assemble', 'upload', 'test'])
     parser.add_argument('--topic', default=None)
     parser.add_argument('--plan', default=None,
                         help='plan JSON for --mode assemble')
@@ -309,6 +513,17 @@ def main(argv=None) -> int:
         count = pipeline.drain_queue()
         print(f'uploaded {count} build(s)')
         return 0
+
+    if args.mode == 'sweep':
+        result = pipeline.run_sweep()
+        print(f"built {result['built']} | uploaded {result['uploaded']} "
+              f"(backlog {result['uploaded_backlog']}, "
+              f"fresh {result['uploaded_fresh']}, "
+              f"topup {result['uploaded_topup']})")
+        return 0
+
+    if args.mode == 'schedule':
+        return _run_schedule(pipeline, args)
 
     if args.mode == 'assemble':
         if not args.plan:

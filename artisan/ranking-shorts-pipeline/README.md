@@ -81,11 +81,41 @@ python -m src.main --mode assemble --plan data/plans/fishing_moments_1234.json
 
 # publish anything rendered but not yet uploaded
 python -m src.main --mode upload
+
+# one scheduled run now (no daemon): drain backlog, refill pool, upload,
+# all clamped by the 24h daily cap and per-run budget
+python -m src.main --mode sweep
+
+# long-lived scheduler daemon: fires the sweep on the RUN_TIMES crons
+# (default 0 9 * * *), same caps apply
+python -m src.main --mode schedule
 ```
 
-For a schedule, point Task Scheduler or cron at `--mode auto`. There is no
-long-lived scheduler process on purpose: a crashed daemon is invisible, a failed
-scheduled task is not.
+## Scheduling and caps
+
+The ranking pipeline mirrors the youtube-shorts-pipeline's posting model, so
+the two pipelines can share a posting cadence without either blowing through a
+cap.
+
+- **24h daily cap (`UPLOAD_MAX_PER_DAY`, default 6)** is the hard ceiling.
+  Every upload path (`auto`, `once`, `upload`, `sweep`, `schedule`) refuses to
+  post once `UPLOAD_MAX_PER_DAY` videos have gone up in any rolling 24h window.
+  The cap lifts on its own when the window slides.
+- **Ready pool (`QUEUE_TARGET_TOTAL`, default 12)**. A sweep only *builds* to
+  refill the pool toward 12; if the pool is already full it just posts. This is
+  the shorts pipeline's queue-health model - the pool never grows unbounded and
+  the topic source pools don't exhaust.
+- **Per-run mix (`SWEEP_FRESH_SHARE` / `SWEEP_BACKLOG_SHARE`, default 3/3)**.
+  Each sweep posts the oldest unposted backlog first, then fresh videos from
+  that run's build, then tops up from the backlog with any leftover per-run
+  budget. Per-run budget is `UPLOAD_MAX_PER_RUN` (default 6), itself clamped by
+  the daily cap.
+
+`--mode sweep` runs once and exits (good for Task Scheduler / cron / the bat
+menu). `--mode schedule` is a persistent APScheduler daemon that fires the same
+sweep on the `RUN_TIMES` crons, with optional `SCHEDULE_JITTER_MINUTES` to keep
+the batch off the :00 cliff. Because the caps live inside `run_sweep`, a missed
+or overlapping run can never over-post.
 
 ## The vetting rules, and why they are strict
 
