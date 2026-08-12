@@ -3,16 +3,26 @@
 The run is a straight line with one loop in the middle:
 
     discover -> [download -> vet] until enough clips -> rank -> write copy
-    -> voice-over -> SFX -> render -> stitch -> upload
+    -> voice-over -> SFX -> render -> stitch -> upload -> purge
 
 The loop is where the autonomy lives. Vetting rejects most candidates (that is
 the point - the reject rate is what keeps the output looking organic), so the
 pipeline downloads and vets one at a time until it has its five, instead of
 fetching forty clips up front and throwing thirty-five away.
 
+Every build ends by purging its own inputs, and every confirmed upload deletes
+its local export (see ``cleanup``). The pipeline used to leave both behind,
+which is how a week of runs turned into tens of gigabytes of dead clips.
+
+Variants:
+    normal    - a straight TOP-N countdown
+    contrast  - the same footage, 'OTHERS ...' / 'BUT THIS <SUBJECT>' copy
+    mixed     - alternate the two across the videos of one auto run
+
 Modes:
     once      - build one video for --topic (or the first configured topic)
-    auto      - build N videos (--videos, default 1), rotating topics, upload
+    auto      - build N videos (--videos, default videos_per_run), rotating
+                topics, upload unless --no-upload
     sweep     - one scheduled run now: drain backlog, refill pool toward
                 queue_target_total, upload (3 fresh + 3 backlog), all capped
                 by the 24h daily cap and the per-run budget. No daemon.
@@ -21,6 +31,7 @@ Modes:
     source    - discovery + vetting only; print what passed. No render.
     assemble  - re-render from a saved plan (data/plans/<slug>.json)
     upload    - upload anything built but not yet published
+    cleanup   - purge disposable runtime assets now
     test      - environment check
 """
 
@@ -33,12 +44,36 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from . import assembler, ranker, scriptwriter, sourcing, vetting
+from . import assembler, cleanup, ranker, scriptwriter, sourcing, vetting
 from .config import config
 from .database import RankingDatabase
 from .utils import ensure_dir, safe_slug, setup_logger, which_ffmpeg
 
 logger = setup_logger(__name__, config.log_dir / 'ranking.log')
+
+VARIANTS = ('normal', 'contrast')
+
+
+def apply_contrast(clips: List[Dict], meta: Dict) -> Dict:
+    """Rewrite a ranked plan into 'others vs this one' contrast copy.
+
+    This has to run before the render and before the voice-over, not after:
+    the titles are burned into the frames, so patching them into the saved
+    plan afterwards produced a video with ordinary ranking labels and a plan
+    that lied about it.
+    """
+    subject = (os.getenv('CONTRAST_SUBJECT') or config.contrast_subject
+               or 'GUY').upper()
+    total = len(clips)
+    for index, clip in enumerate(clips):
+        action = (clip.get('title') or 'THIS').upper() \
+            .replace('OTHERS ', '').replace('BUT ', '')
+        clip['title'] = (f'BUT THIS {subject}' if index == total - 1
+                         else f'OTHERS {action}')[:72]
+    meta = dict(meta)
+    meta['video_title'] = f'OTHERS VS THIS {subject}'
+    meta['upload_title'] = f"{meta['video_title']} #Shorts"
+    return meta
 
 
 class RankingPipeline:
@@ -106,7 +141,12 @@ class RankingPipeline:
         return accepted
 
     # -- build ---------------------------------------------------------
-    def build(self, topic_name: str, upload: bool = True) -> Optional[Dict]:
+    def build(self, topic_name: str, upload: bool = True,
+              variant: str = 'normal',
+              channel: Optional[str] = None) -> Optional[Dict]:
+        variant = (variant or 'normal').lower()
+        if variant not in VARIANTS:
+            variant = 'normal'
         topic_cfg = config.topic(topic_name)
         if not topic_cfg.get('queries') and not topic_cfg.get('extra_sources'):
             logger.error("topic '%s' has no queries or sources configured",
@@ -135,18 +175,21 @@ class RankingPipeline:
         assembler.fit_windows(ordered)
 
         meta = scriptwriter.write_copy(topic_cfg, ordered)
-        slug = f"{topic_name}_{int(time.time())}"
+        if variant == 'contrast':
+            meta = apply_contrast(ordered, meta)
+        slug = f"{topic_name}_{variant}_{int(time.time())}"
         scriptwriter.generate_voiceover(ordered, slug)
         scriptwriter.attach_sfx(ordered)
 
         plan = {
             'topic': topic_name,
+            'variant': variant,
             'slug': slug,
             'video_title': meta['video_title'],
             'upload_title': meta['upload_title'],
             'description': meta['description'],
             'tags': meta['tags'],
-            'channel': topic_cfg.get('channel'),
+            'channel': channel or topic_cfg.get('channel'),
             'clips': [
                 {
                     'path': clip['local_path'],
@@ -187,6 +230,10 @@ class RankingPipeline:
         plan['build_id'] = build_id
         logger.info('built %s', output)
 
+        # The sources and stage renders are dead the moment the stitch lands:
+        # the clips are retired in the database and can never be reused.
+        cleanup.purge_runtime(reason=f'build:{slug}')
+
         if upload:
             self.upload_build(build_id, plan)
         return plan
@@ -217,6 +264,9 @@ class RankingPipeline:
             plan.get('tags') or [])
         if video_id:
             self.db.mark_uploaded(build_id, video_id)
+            # YouTube has it and the row keeps the id, so the local export is
+            # a duplicate. Keeping it is what filled the output folder.
+            cleanup.delete_local_video(plan.get('local_path'))
         else:
             self.db.mark_failed(build_id, 'upload_failed')
         return video_id
@@ -264,7 +314,7 @@ class RankingPipeline:
                 uploaded += 1
         return uploaded
 
-    def _build_fresh(self, count: int) -> List[int]:
+    def _build_fresh(self, count: int, variant: str = 'normal') -> List[int]:
         """Build up to ``count`` new videos, rotating topics round-robin.
 
         Returns build ids for the videos actually produced. A topic whose
@@ -284,12 +334,14 @@ class RankingPipeline:
             if topic is None:
                 break
             attempted.add(topic)
-            plan = self.build(topic, upload=False)
+            this_variant = (VARIANTS[len(built_ids) % len(VARIANTS)]
+                            if variant == 'mixed' else variant)
+            plan = self.build(topic, upload=False, variant=this_variant)
             if plan and plan.get('build_id'):
                 built_ids.append(int(plan['build_id']))
         return built_ids
 
-    def run_sweep(self) -> Dict:
+    def run_sweep(self, variant: str = 'normal') -> Dict:
         """One scheduled run, mirroring the shorts pipeline's sweep.
 
         Order:
@@ -308,13 +360,15 @@ class RankingPipeline:
         if remaining_daily <= 0:
             logger.info('SWEEP_SKIP daily cap reached (%d/%d)', used, daily)
             return {'built': 0, 'uploaded': 0,
-                    'uploaded_backlog': 0, 'uploaded_fresh': 0}
+                    'uploaded_backlog': 0, 'uploaded_fresh': 0,
+                    'uploaded_topup': 0}
 
         per_run = max(0, min(int(config.upload_max_per_run), remaining_daily))
         if per_run <= 0:
             logger.info('SWEEP_SKIP no upload budget this run')
             return {'built': 0, 'uploaded': 0,
-                    'uploaded_backlog': 0, 'uploaded_fresh': 0}
+                    'uploaded_backlog': 0, 'uploaded_fresh': 0,
+                    'uploaded_topup': 0}
 
         backlog_share = min(per_run, int(config.sweep_backlog_share))
         fresh_share = min(per_run, int(config.sweep_fresh_share))
@@ -328,7 +382,7 @@ class RankingPipeline:
         #    uploading, then choose from the just-built pool below.
         pool = self.db.pending_builds_count()
         to_build = max(0, int(config.queue_target_total) - pool)
-        built_ids = self._build_fresh(to_build) if to_build > 0 else []
+        built_ids = self._build_fresh(to_build, variant) if to_build > 0 else []
         logger.info('SWEEP_REPLENISH built=%d (pool %d -> %d)',
                     len(built_ids), pool, self.db.pending_builds_count())
 
@@ -431,6 +485,11 @@ def environment_check() -> int:
         print(f'[warn] no SFX directory at {config.sfx_dir} - transitions '
               'will be silent')
     print(f"[ok]   encoder: {assembler._Encoder.resolve()}")
+    print(f'[ok]   copy model: {config.script_model} '
+          f'(fallbacks: {", ".join(config.script_model_fallbacks) or "none"})')
+    print(f'[ok]   purge after build: {config.cleanup_after_build} | '
+          f'delete after upload: {config.delete_after_upload}')
+    print(f'[ok]   disk: {cleanup.disk_report()}')
     return 1 if problems else 0
 
 
@@ -469,9 +528,11 @@ def _run_schedule(pipeline: RankingPipeline, args) -> int:
         logger.info('Sweep times jittered by up to %d minute(s): %s',
                     jitter, ', '.join(run_times))
 
+    variant = getattr(args, 'variant', 'normal') or 'normal'
+
     def job():
         try:
-            pipeline.run_sweep()
+            pipeline.run_sweep(variant=variant)
         except Exception as exc:  # noqa: BLE001
             logger.error('Scheduled sweep failed: %s', exc, exc_info=True)
 
@@ -500,26 +561,48 @@ def main(argv=None) -> int:
                     'composes and publishes a countdown.')
     parser.add_argument('--mode', default='once',
                         choices=['once', 'auto', 'sweep', 'schedule',
-                                 'source', 'assemble', 'upload', 'auth', 'test'])
-    parser.add_argument('--topic', default=None)
+                                 'source', 'assemble', 'upload', 'cleanup',
+                                 'auth', 'test'])
+    parser.add_argument('--topic', default=None,
+                        help="topic key, or 'auto' to rotate")
+    parser.add_argument('--variant', default='normal',
+                        choices=['normal', 'contrast', 'mixed'],
+                        help='content type; mixed alternates normal/contrast '
+                             'across the videos of one run')
     parser.add_argument('--channel', default=None,
-                        help='channel key to authenticate with --mode auth '
-                             '(default: NXS)')
+                        help='channel key to publish to, or to authenticate '
+                             'with --mode auth (default: NXS)')
     parser.add_argument('--videos', type=int, default=None,
                         help='number of videos to build in --mode auto '
                              '(default: RANKING_VIDEOS_PER_RUN or 1)')
     parser.add_argument('--plan', default=None,
                         help='plan JSON for --mode assemble')
     parser.add_argument('--no-upload', action='store_true')
+    parser.add_argument('--no-cleanup', action='store_true',
+                        help='keep downloaded clips and stage renders after a '
+                             'build (needed for --mode assemble later)')
+    parser.add_argument('--keep-uploads', action='store_true',
+                        help='keep the local mp4 after a confirmed upload')
     parser.add_argument('--dry-run', action='store_true',
                         help='write the plan, render nothing')
     args = parser.parse_args(argv)
 
     if args.dry_run:
         config.dry_run = True
+    if args.no_cleanup:
+        config.cleanup_after_build = False
+    if args.keep_uploads:
+        config.delete_after_upload = False
 
     if args.mode == 'test':
         return environment_check()
+
+    if args.mode == 'cleanup':
+        print(f'before: {cleanup.disk_report()}')
+        removed = cleanup.purge_runtime(reason='manual', force=True)
+        print(f'after:  {cleanup.disk_report()}')
+        print(f'removed {removed} disposable item(s)')
+        return 0
 
     pipeline = RankingPipeline()
 
@@ -556,7 +639,7 @@ def main(argv=None) -> int:
         return 0
 
     if args.mode == 'sweep':
-        result = pipeline.run_sweep()
+        result = pipeline.run_sweep(variant=args.variant)
         print(f"built {result['built']} | uploaded {result['uploaded']} "
               f"(backlog {result['uploaded_backlog']}, "
               f"fresh {result['uploaded_fresh']}, "
@@ -576,6 +659,10 @@ def main(argv=None) -> int:
         return 0 if output else 1
 
     topic = args.topic
+    if topic and topic.lower() == 'auto':
+        topic = None
+        args.mode = 'auto' if args.mode == 'once' else args.mode
+
     if args.mode == 'auto':
         # Build N videos per run (default 1). After a build the used clips are
         # retired, so the next iteration sources fresh material and picks the
@@ -589,7 +676,9 @@ def main(argv=None) -> int:
             config.get('videos_per_run', 1) or 1)
         wanted = max(1, wanted)
         built = 0
-        for _ in range(wanted):
+        for index in range(wanted):
+            variant = (VARIANTS[index % len(VARIANTS)]
+                       if args.variant == 'mixed' else args.variant)
             # Try each topic at most once per video so a starved topic (every
             # candidate already rejected/used) cannot block the rest.
             attempted: list = []
@@ -600,16 +689,20 @@ def main(argv=None) -> int:
                 if candidate is None:
                     break
                 attempted.append(candidate)
-                plan = pipeline.build(candidate, upload=not args.no_upload)
+                plan = pipeline.build(candidate, upload=not args.no_upload,
+                                      variant=variant, channel=args.channel)
                 if plan:
                     break
             if plan:
                 built += 1
-                logger.info('AUTO_BUILT %d/%d: %s', built, wanted,
+                logger.info('AUTO_BUILT %d/%d [%s] %s: %s', built, wanted,
+                            variant, plan.get('topic'),
                             plan.get('upload_title', ''))
         print(f'built {built}/{wanted} video(s)')
         return 0 if built else 1
-    topic = topic or (config.topic_names() or [None])[0]
+
+    topic = topic or pipeline.db.next_topic(config.topic_names()) \
+        or (config.topic_names() or [None])[0]
     if not topic:
         print('no topics configured in config/ranking.yaml')
         return 2
@@ -623,7 +716,9 @@ def main(argv=None) -> int:
                   f"{clip.get('title')} <- {clip.get('url')}")
         return 0
 
-    plan = pipeline.build(topic, upload=not args.no_upload)
+    variant = 'normal' if args.variant == 'mixed' else args.variant
+    plan = pipeline.build(topic, upload=not args.no_upload, variant=variant,
+                          channel=args.channel)
     return 0 if plan else 1
 
 
