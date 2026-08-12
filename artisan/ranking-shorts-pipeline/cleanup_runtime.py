@@ -1,25 +1,22 @@
-"""Remove disposable ranking build inputs after a finished build.
+"""Remove disposable ranking build inputs.
+
+The pipeline now does this automatically after every successful build (see
+src/cleanup.py). This script stays for the panel's manual purge and for
+cleaning up after a crashed run.
 
 Keeps final exports, plans, database, logs and OAuth tokens. Deletes downloaded
 candidate clips, per-build voice files and FFmpeg stage/temp files.
 """
-import shutil
-from pathlib import Path
-from src.config import config
+from src.cleanup import disk_report, purge_runtime
 
-def clean():
-    removed=0
-    for path in (config.clips_dir, config.vo_dir, config.temp_dir):
-        if not Path(path).exists():
-            continue
-        for item in list(Path(path).iterdir()):
-            try:
-                if item.is_dir(): shutil.rmtree(item)
-                else: item.unlink()
-                removed += 1
-            except OSError:
-                pass
-    print(f"CLEANUP complete: removed {removed} disposable runtime item(s)")
-    print(f"KEPT output: {config.output_dir}")
-    print(f"KEPT plans/database/logs: {config.data_dir}")
-if __name__ == '__main__': clean()
+
+def clean() -> int:
+    print(f'before: {disk_report()}')
+    removed = purge_runtime(reason='manual', force=True)
+    print(f'after:  {disk_report()}')
+    print(f'CLEANUP complete: removed {removed} disposable runtime item(s)')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(clean())

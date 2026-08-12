@@ -7,6 +7,11 @@ from the source title. The template path exists so the pipeline is never
 blocked on an API key or a quota wall - a run that stops because the copy could
 not be written has wasted the download and the render.
 
+Model names rot. A retired name returns 404 and every clip silently falls back
+to template copy, which is exactly what happened to gemini-2.5-flash, so the
+model call walks SCRIPT_MODEL then SCRIPT_MODEL_FALLBACKS and remembers the
+first one that answers for the rest of the process.
+
 Rank 5 gets no voice-over by default. It is the hook clip and it is the
 shortest; a line over it steps on the opening beat rather than adding to it.
 """
@@ -22,6 +27,10 @@ from .config import config
 from .utils import ensure_dir, safe_slug, setup_logger
 
 logger = setup_logger(__name__)
+
+# Remembers the model that answered, so a dead first choice costs one failed
+# call per process instead of one per build.
+_WORKING_MODEL: Dict[str, str] = {}
 
 _STOPWORDS = {
     'the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for',
@@ -77,6 +86,21 @@ TOPIC_EMOJI = {
     'satisfying_processes': '✨',
     'street_moments': '🎪',
     'gta6_countdown': '🚗',
+    'dashcam_near_misses': '🚗',
+    'train_crossing_near_misses': '🚆',
+    'aviation_saves': '✈️',
+    'boat_ramp_fails': '🚤',
+    'weather_near_misses': '⛈️',
+    'construction_near_misses': '🏗️',
+    'forklift_fails': '📦',
+    'drone_crashes': '🛸',
+    'workshop_fails': '🪚',
+    'offroad_recovery_saves': '🛻',
+    'fire_rescue_saves': '🚒',
+    'home_security_catches': '📸',
+    'tree_cutting_fails': '🌲',
+    'mechanic_shop_fails': '🔧',
+    'elevator_escalator_saves': '🛗',
 }
 
 
@@ -106,6 +130,18 @@ def _template_line(clip: Dict) -> str:
     if rank == 3:
         return 'This one gets me every time.'
     return 'Yeah that is going to hurt.'
+
+
+def _model_candidates() -> List[str]:
+    """SCRIPT_MODEL first, then the fallbacks, then whatever last worked."""
+    ordered: List[str] = []
+    working = _WORKING_MODEL.get('name')
+    for name in ([working] if working else []) + [config.script_model] \
+            + list(config.script_model_fallbacks):
+        name = (name or '').strip()
+        if name and name not in ordered:
+            ordered.append(name)
+    return ordered
 
 
 def _model_copy(topic_cfg: Dict, clips: List[Dict]) -> Optional[Dict]:
@@ -139,18 +175,39 @@ def _model_copy(topic_cfg: Dict, clips: List[Dict]) -> Optional[Dict]:
         '"emoji":"..."}]}\n'
         f'Clips: {json.dumps(described, ensure_ascii=False)}'
     )
+
     try:
         client = genai.Client(api_key=config.script_api_key)
-        response = client.models.generate_content(
-            model=config.script_model, contents=prompt)
-        raw = (response.text or '').strip()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('genai client unavailable (%s); using templates', exc)
+        return None
+
+    raw = None
+    for name in _model_candidates():
+        try:
+            response = client.models.generate_content(model=name,
+                                                     contents=prompt)
+            raw = (response.text or '').strip()
+            if _WORKING_MODEL.get('name') != name:
+                logger.info('copywriting model: %s', name)
+            _WORKING_MODEL['name'] = name
+            break
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('copywriting model %s unavailable (%s)', name, exc)
+            continue
+    if raw is None:
+        logger.warning('no copywriting model answered; using templates. Set '
+                       'SCRIPT_MODEL to a current model name.')
+        return None
+
+    try:
         # Models wrap JSON in fences often enough that stripping them is not
         # optional; a fenced payload is not parseable and would silently drop
         # the whole run back to templates.
         raw = re.sub(r'^```(?:json)?|```$', '', raw, flags=re.MULTILINE).strip()
         data = json.loads(raw)
     except Exception as exc:  # noqa: BLE001
-        logger.warning('model copywriting failed (%s); using templates', exc)
+        logger.warning('model copy was not JSON (%s); using templates', exc)
         return None
 
     out: Dict[int, Dict] = {}
