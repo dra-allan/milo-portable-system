@@ -25,6 +25,9 @@ def _i(name, default):
     except (TypeError, ValueError):
         return default
 
+def _list(name, default):
+    return [item.strip() for item in os.getenv(name, default).split(',') if item.strip()]
+
 class RankingConfig:
     def __init__(self):
         _load_env(); self.project_root = PROJECT_ROOT
@@ -46,16 +49,29 @@ class RankingConfig:
         self.fast_mode = _b('RANKING_FAST_MODE', True); self.render_workers = max(1, _i('RANKING_RENDER_WORKERS', 2)); self.reject_budget = max(1, _i('RANKING_REJECT_BUDGET', 2))
         self.vet_transcribe = _b('RANKING_VET_TRANSCRIBE', not self.fast_mode); self.vet_music = _b('RANKING_VET_MUSIC', not self.fast_mode); self.vet_ocr = _b('RANKING_VET_OCR', not self.fast_mode)
         self.vo_enabled = _b('VO_ENABLED', True); self.vo_skip_first = _b('VO_SKIP_FIRST', True); self.tts_voice = os.getenv('RANKING_TTS_VOICE', 'Puck'); self.tts_format = os.getenv('RANKING_TTS_FORMAT', 'mp3')
-        self.script_model = os.getenv('SCRIPT_MODEL', 'gemini-2.5-flash'); self.script_api_key = os.getenv('GEMINI_API_KEY') or (os.getenv('GEMINI_API_KEYS', '').split(',')[0] or '').strip()
+        # Copywriting model. gemini-2.5-flash is closed to new projects and 404s,
+        # which silently dropped every run back to the template writer, so the
+        # default is a rolling alias with a fallback chain behind it.
+        self.script_model = os.getenv('SCRIPT_MODEL', 'gemini-flash-latest')
+        self.script_model_fallbacks = _list('SCRIPT_MODEL_FALLBACKS', 'gemini-3.6-flash,gemini-3.5-flash-lite,gemini-2.5-flash')
+        self.script_api_key = os.getenv('GEMINI_API_KEY') or (os.getenv('GEMINI_API_KEYS', '').split(',')[0] or '').strip()
         self.oauth_client_secrets = self._resolve_path(os.getenv('RANKING_OAUTH_CLIENT_SECRETS', str(PROJECT_ROOT / 'credentials.json')))
         self.oauth_token_file = self._resolve_path(os.getenv('RANKING_OAUTH_TOKEN_FILE', str(self.runtime_root / 'config' / 'youtube_token_ranking.json')))
         self.privacy_status = os.getenv('UPLOAD_PRIVACY', 'private').lower(); self.dry_run = _b('DRY_RUN', False)
+        # Disk hygiene. Sources/stage renders are disposable once a build is
+        # stitched; a finished export is disposable once YouTube has it.
+        self.cleanup_after_build = _b('RANKING_CLEANUP_AFTER_BUILD', True); self.delete_after_upload = _b('RANKING_DELETE_AFTER_UPLOAD', True)
+        self.contrast_subject = (os.getenv('CONTRAST_SUBJECT', 'GUY') or 'GUY').upper()
         self.upload_max_per_day = _i('UPLOAD_MAX_PER_DAY', 6); self.upload_max_per_run = _i('UPLOAD_MAX_PER_RUN', 6); self.queue_target_total = _i('QUEUE_TARGET_TOTAL', 12)
         self.sweep_fresh_share = _i('SWEEP_FRESH_SHARE', 3); self.sweep_backlog_share = _i('SWEEP_BACKLOG_SHARE', 3); self.schedule_run_times = [t.strip() for t in os.getenv('RUN_TIMES', '0 9 * * *').split(',') if t.strip()]; self.schedule_jitter_minutes = _i('SCHEDULE_JITTER_MINUTES', 0)
         self.download_height = _i('RANKING_DOWNLOAD_HEIGHT', 720); self.download_max_bytes = _i('RANKING_MAX_DOWNLOAD_MB', 250) * 1024 * 1024; self.download_concurrency = _i('RANKING_DOWNLOAD_CONCURRENCY', 4); self.max_source_duration = _i('RANKING_MAX_SOURCE_SECONDS', 900); self.render_timeout = _i('RANKING_RENDER_TIMEOUT', 900)
         raw = self._load_yaml(); self.defaults = raw.get('defaults') or {}; self.sfx_map = raw.get('sfx_map') or {}; self.topics = raw.get('topics') or {}
         self.defaults.setdefault('max_download_height', self.download_height); self.defaults.setdefault('max_download_bytes', self.download_max_bytes); self.defaults.setdefault('max_source_duration', self.max_source_duration); self.defaults.setdefault('download_concurrency', self.download_concurrency); self.defaults.setdefault('render_workers', self.render_workers)
+        # Env wins over YAML; YAML wins over the hardcoded default.
         if not os.getenv('VO_ENABLED'): self.vo_enabled = bool(self.defaults.get('vo_enabled', True))
+        if not os.getenv('RANKING_CLEANUP_AFTER_BUILD'): self.cleanup_after_build = bool(self.defaults.get('cleanup_after_build', True))
+        if not os.getenv('RANKING_DELETE_AFTER_UPLOAD'): self.delete_after_upload = bool(self.defaults.get('delete_after_upload', True))
+        if not os.getenv('SCRIPT_MODEL') and self.defaults.get('script_model'): self.script_model = str(self.defaults['script_model'])
         if os.getenv('CLIPS_PER_VIDEO'): self.defaults['clips_per_video'] = _i('CLIPS_PER_VIDEO', 5)
         if os.getenv('RANKING_VIDEOS_PER_RUN'): self.defaults['videos_per_run'] = _i('RANKING_VIDEOS_PER_RUN', 1)
     def _path(self, env, default, create=True):
@@ -76,7 +92,13 @@ class RankingConfig:
     def get(self, key, default=None): return self.defaults.get(key, default)
     def topic(self, name):
         cfg = dict(self.topics.get(name) or {}); cfg.setdefault('title', 'TOP {n}'); cfg.setdefault('queries', []); cfg.setdefault('channels', []); cfg.setdefault('extra_sources', []); cfg.setdefault('negative_keywords', []); cfg.setdefault('tags', []); cfg['name'] = name; return cfg
-    def topic_names(self): return list(self.topics.keys())
+    def topic_names(self):
+        """Every topic that is not explicitly disabled, in YAML order.
+
+        ``enabled: false`` on a topic parks it without deleting the block, so
+        rotation walks only what you actually want published.
+        """
+        return [name for name, cfg in self.topics.items() if (cfg or {}).get('enabled', True)]
     def rank_color(self, rank):
         colors = self.get('rank_colors') or {}; return str(colors.get(rank) or colors.get(str(rank)) or '0x1E90FF')
     def sfx_path(self, name):
