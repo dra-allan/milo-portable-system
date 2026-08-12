@@ -16,6 +16,70 @@ import html
 import re
 import unicodedata
 
+# Latin letter blocks (basic Latin, Latin-1 Supplement, Latin Extended-A/B,
+# Latin Extended-Additional, Latin Extended-C). Any letter outside these is a
+# non-Latin script (Cyrillic, Greek, CJK, Arabic, Hebrew, ...) and marks a
+# hook as non-English "gibberish" from a foreign source or a Whisper
+# hallucination -- never fit for an English Short title.
+_LATIN_BLOCKS = (
+    (0x0041, 0x007A),  # A-Z a-z
+    (0x00C0, 0x024F),  # Latin-1 Supplement + Latin Extended-A/B
+    (0x1E00, 0x1EFF),  # Latin Extended-Additional
+    (0x2C60, 0x2C7F),  # Latin Extended-C
+)
+
+
+def _is_latin_letter(cp):
+    return any(lo <= cp <= hi for lo, hi in _LATIN_BLOCKS)
+
+
+# High-frequency English tokens used to sanity-check whether a Latin-script
+# hook is actually English. Kept small and possessive-free; enough for a
+# coverage heuristic, not a dictionary.
+_COMMON_ENGLISH = frozenset("""
+a about after again all also an and any are as at be because been before being
+between both but by can could did do does doing down each even every few find
+first for from get go going good got had has have he her here him his how i if
+in into is it its just know like long look made make man many me more most much
+my never new no not now of off on one only or other our out over own people
+right said same say see she should so some something still such take tell than
+that the their them then there these they thing this those through time to too
+two under up us very want was way we well were what when where which while who
+why will with would year you your
+""".split())
+
+
+def _tokenize(text):
+    return [t.lower() for t in re.findall(r"[A-Za-z][A-Za-z']*", text or "")]
+
+
+def looks_non_english(text):
+    """True when a hook looks like non-English / hallucinated garbage.
+
+    Rules (stdlib only):
+      1. Any non-Latin letter (Cyrillic, Greek, CJK, Arabic, ...) -> garbage.
+      2. Otherwise, over a minimum length, low coverage of common English
+         tokens -> probably a foreign (e.g. Welsh) transcript.
+    """
+    text = _fix_spacing(text)
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return False
+
+    if any(not _is_latin_letter(ord(c)) for c in letters):
+        return True
+
+    tokens = _tokenize(text)
+    if len(tokens) < 6:
+        return False
+
+    hits = sum(1 for t in tokens if t in _COMMON_ENGLISH)
+    return hits / len(tokens) < 0.30
+
+
+def _looks_non_english(text):
+    return looks_non_english(text)
+
 
 FILLER_LEADS = [
     "and then",
@@ -1053,6 +1117,12 @@ def optimize_title(hook, niche="", keywords=None, clip_index=0, max_len=72):
 
     if not text:
         fallback = f"{_nice_niche_name(niche) or 'Short'} clip #{clip_index}"
+        return _finalize_title(_truncate(fallback, max_len), max_len)
+
+    # Non-English / Whisper-hallucinated hooks must never surface as titles.
+    # Fall back to a clean niche label instead of shipping gibberish.
+    if _looks_non_english(text):
+        fallback = f"{_nice_niche_name(niche) or 'Short'} insight #{clip_index}"
         return _finalize_title(_truncate(fallback, max_len), max_len)
 
     ends_question = text.rstrip().endswith("?")
