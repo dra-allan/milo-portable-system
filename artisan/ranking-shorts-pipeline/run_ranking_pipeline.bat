@@ -11,6 +11,7 @@ rem ---- run shape ----
 set "RANKING_TOPIC=auto"
 set "RANKING_VARIANT=mixed"
 set "RANKING_VIDEOS_PER_RUN=3"
+set "RANKING_SWEEP_VIDEOS=3"
 set "AUTO_UPLOAD=true"
 set "UPLOAD_PRIVACY=public"
 rem ---- speed ----
@@ -163,7 +164,7 @@ pause
 goto menu
 :sweep
 call :start_timer "queue sweep"
-call :run --mode sweep --variant %RANKING_VARIANT%
+call :run --mode sweep --variant %RANKING_VARIANT% --videos %RANKING_SWEEP_VIDEOS%
 call :stop_timer "queue sweep"
 pause
 goto menu
@@ -208,6 +209,7 @@ if defined BAD_V (echo Not a number: %new_videos%&set "BAD_V="&pause&goto menu)
 if %new_videos% LSS 1 goto menu
 if %new_videos% GTR 15 goto menu
 set "RANKING_VIDEOS_PER_RUN=%new_videos%"
+set "RANKING_SWEEP_VIDEOS=%new_videos%"
 goto menu
 :set_variant
 set "new_variant="
