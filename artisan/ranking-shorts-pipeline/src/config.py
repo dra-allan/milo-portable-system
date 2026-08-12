@@ -47,7 +47,8 @@ class RankingConfig:
         self.vet_transcribe = _b('RANKING_VET_TRANSCRIBE', not self.fast_mode); self.vet_music = _b('RANKING_VET_MUSIC', not self.fast_mode); self.vet_ocr = _b('RANKING_VET_OCR', not self.fast_mode)
         self.vo_enabled = _b('VO_ENABLED', True); self.vo_skip_first = _b('VO_SKIP_FIRST', True); self.tts_voice = os.getenv('RANKING_TTS_VOICE', 'Puck'); self.tts_format = os.getenv('RANKING_TTS_FORMAT', 'mp3')
         self.script_model = os.getenv('SCRIPT_MODEL', 'gemini-2.5-flash'); self.script_api_key = os.getenv('GEMINI_API_KEY') or (os.getenv('GEMINI_API_KEYS', '').split(',')[0] or '').strip()
-        self.oauth_client_secrets = os.getenv('RANKING_OAUTH_CLIENT_SECRETS', str(PROJECT_ROOT / 'credentials.json')); self.oauth_token_file = os.getenv('RANKING_OAUTH_TOKEN_FILE', str(self.runtime_root / 'config' / 'youtube_token_ranking.json'))
+        self.oauth_client_secrets = self._resolve_path(os.getenv('RANKING_OAUTH_CLIENT_SECRETS', str(PROJECT_ROOT / 'credentials.json')))
+        self.oauth_token_file = self._resolve_path(os.getenv('RANKING_OAUTH_TOKEN_FILE', str(self.runtime_root / 'config' / 'youtube_token_ranking.json')))
         self.privacy_status = os.getenv('UPLOAD_PRIVACY', 'private').lower(); self.dry_run = _b('DRY_RUN', False)
         self.upload_max_per_day = _i('UPLOAD_MAX_PER_DAY', 6); self.upload_max_per_run = _i('UPLOAD_MAX_PER_RUN', 6); self.queue_target_total = _i('QUEUE_TARGET_TOTAL', 12)
         self.sweep_fresh_share = _i('SWEEP_FRESH_SHARE', 3); self.sweep_backlog_share = _i('SWEEP_BACKLOG_SHARE', 3); self.schedule_run_times = [t.strip() for t in os.getenv('RUN_TIMES', '0 9 * * *').split(',') if t.strip()]; self.schedule_jitter_minutes = _i('SCHEDULE_JITTER_MINUTES', 0)
@@ -59,6 +60,9 @@ class RankingConfig:
         if os.getenv('RANKING_VIDEOS_PER_RUN'): self.defaults['videos_per_run'] = _i('RANKING_VIDEOS_PER_RUN', 1)
     def _path(self, env, default, create=True):
         path = Path(os.getenv(env, default)).expanduser(); path = self.runtime_root / path if not path.is_absolute() else path; return ensure_dir(path) if create else path
+    def _resolve_path(self, value):
+        path = Path(value).expanduser()
+        return str(path if path.is_absolute() else PROJECT_ROOT / path)
     def _asset_path(self, env, default):
         path = Path(os.getenv(env, default)).expanduser(); return PROJECT_ROOT / path if not path.is_absolute() else path
     def _load_yaml(self):

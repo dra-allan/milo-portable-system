@@ -338,6 +338,13 @@ class Config:
         # anything remains posted.
         self.schedule_backlog_min = self._int('SCHEDULE_BACKLOG_MIN', 1, minimum=0)
 
+        # Guaranteed fresh chop (SWEEP_GUARANTEE_FRESH): a full sweep always
+        # chops one fresh source video per authenticated channel, regardless of
+        # the shared sweep budget (SCHEDULE_MAX_TOTAL) and of queue health, so
+        # a channel is never skipped just because its queue looks healthy.
+        # The chop only queues the clips; uploads are still capped below.
+        self.sweep_guarantee_fresh = self._bool('SWEEP_GUARANTEE_FRESH', True)
+
         # --- Upload pacing (anti-burst) ----------------------------------
         # Random delay in seconds between successive uploads in the same run,
         # so a batch of clips doesn't land on YouTube in one burst. YouTube's
