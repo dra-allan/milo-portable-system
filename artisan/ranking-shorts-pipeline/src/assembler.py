@@ -21,6 +21,7 @@ the other direction pushes them past the 180s Shorts limit.
 
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
@@ -534,7 +535,10 @@ def assemble(plan: Dict) -> Optional[Path]:
     fit_windows(clips)
 
     title = plan.get('video_title') or 'TOP 5'
-    work = ensure_dir(config.temp_dir / safe_slug(f"{plan.get('topic')}_{title}"))
+    slug = plan.get('slug') or (
+        f"{plan.get('topic', 'ranking')}_{int(time.time())}"
+    )
+    work = ensure_dir(config.temp_dir / safe_slug(slug))
 
     leaderboard = [
         {'rank': int(clip.get('rank') or 0), 'title': clip.get('title') or ''}
@@ -592,7 +596,7 @@ def assemble(plan: Dict) -> Optional[Path]:
                      len(stages))
         return None
 
-    out_path = config.output_dir / f"{safe_slug(title)}_{len(stages)}.mp4"
+    out_path = config.output_dir / f"{safe_slug(slug)}_{len(stages)}.mp4"
     return stitch(stages, out_path,
                   swoosh=config.sfx_path('swoosh'),
                   music=_pick_music())
