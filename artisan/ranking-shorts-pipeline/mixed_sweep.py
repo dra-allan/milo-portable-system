@@ -7,7 +7,7 @@ import time
 from src.config import config
 from src.main import RankingPipeline
 from src.utils import setup_logger
-from channel_profiles import profiles, channel_for
+from channel_profiles import profiles
 
 log = setup_logger(__name__, config.log_dir / 'ranking.log')
 
@@ -17,6 +17,7 @@ def main():
     lo = int(os.getenv('RANKING_UPLOAD_DELAY_MIN', '45'))
     hi = int(os.getenv('RANKING_UPLOAD_DELAY_MAX', '180'))
     per_run = max(1, int(os.getenv('RANKING_VIDEOS_PER_RUN', str(config.get('videos_per_run', 1) or 1))))
+    other_topics = {x.strip() for x in os.getenv('OTHER_GUYS_TOPICS', '').split(',') if x.strip()}
     pipeline = RankingPipeline()
     channel_map = profiles()
     topics = list(config.topic_names())
@@ -24,29 +25,24 @@ def main():
         print('nothing to do: no topics or no channel profiles')
         return 2
 
-    # Never manufacture contrast labels for an ordinary topic. A topic must
-    # explicitly opt in with contrast_mode: true, otherwise it is normal copy.
-    modes = ['normal']
     used = pipeline.db.uploads_since(86400)
     remaining = max(0, daily - used)
     log.info('MIXED_SWEEP_START builds=%d channels=%s upload_budget=%d/%d', per_run, channel_map, remaining, daily)
 
     built = uploaded = 0
     done: list[str] = []
-    for i in range(per_run):
-        channel = channel_for('normal', i)
-        if not channel:
-            continue
+    for _ in range(per_run):
         topic = pipeline.db.next_topic([t for t in topics if t not in done]) or pipeline.db.next_topic(topics)
         if not topic:
             break
         done.append(topic)
         topic_cfg = config.topic(topic)
-        variant = 'contrast' if topic_cfg.get('contrast_mode') else 'normal'
-        # Other Guys gets only explicitly tagged contrast topics; all other
-        # topics stay normal and cannot become "OTHERS VS THIS GUY" by accident.
-        if channel == 'other_guys' and not topic_cfg.get('contrast_mode'):
-            channel = 'rankedup'
+        is_other_guys = topic in other_topics
+        channel = 'other_guys' if is_other_guys and 'other_guys' in channel_map else 'rankedup'
+        # Contrast is opt-in twice: the topic must be listed for Other Guys and
+        # must declare contrast_mode. Lightning or any ordinary topic can never
+        # become "OTHERS VS THIS GUY" by accident.
+        variant = 'contrast' if is_other_guys and topic_cfg.get('contrast_mode') else 'normal'
         plan = pipeline.build(topic, upload=False, variant=variant, channel=channel)
         if not plan:
             continue
