@@ -10,7 +10,6 @@ if not exist "%PY%" set "PY=python"
 set "RANKING_TOPIC=auto"
 set "RANKING_UPLOAD_CHANNEL=rankdrop"
 set "UPLOAD_PRIVACY=public"
-set "RANKING_VIDEOS_PER_RUN=6"
 set "RANKING_UPLOAD_DELAY_MIN=45"
 set "RANKING_UPLOAD_DELAY_MAX=180"
 call :load_env
@@ -21,19 +20,20 @@ echo                 RANKING SHORTS PIPELINE CONTROL PANEL
 echo ============================================================================
 echo Channel: %RANKING_UPLOAD_CHANNEL%   Privacy: %UPLOAD_PRIVACY%
 echo Batch: 6 videos, 3 normal + 3 Others-vs-This-Guy
- echo 1. Run mixed sweep, build and upload
- echo 2. Build normal ranking, no upload
- echo 3. Build contrast ranking, no upload
- echo 4. Upload pending builds
- echo 5. Source and vet clips
- echo 6. Assemble saved plan
- echo 7. Start scheduler daemon
- echo 8. Test environment
- echo 9. Authenticate YouTube channel
- echo 10. Set upload channel
- echo 11. Set topic
- echo 12. Exit
- echo.
+echo.
+echo  1. Run mixed sweep, build and upload
+echo  2. Build normal ranking, no upload
+echo  3. Build contrast ranking, no upload
+echo  4. Upload pending builds, capped and public
+echo  5. Source and vet clips
+echo  6. Assemble saved plan
+echo  7. Start scheduler daemon
+echo  8. Test environment
+echo  9. Authenticate YouTube channel
+echo 10. Set upload channel
+echo 11. Set topic
+echo 12. Exit
+echo.
 set "choice="
 set /p "choice=Select: "
 if "%choice%"=="1" goto mixed
@@ -83,7 +83,7 @@ goto menu
 :upload
 call :ensure
 if errorlevel 1 goto menu
-"%PY%" -m src.main --mode upload
+"%PY%" upload_pending_public.py
 pause
 goto menu
 :source
