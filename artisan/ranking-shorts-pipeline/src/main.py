@@ -341,7 +341,8 @@ class RankingPipeline:
                 built_ids.append(int(plan['build_id']))
         return built_ids
 
-    def run_sweep(self, variant: str = 'normal') -> Dict:
+    def run_sweep(self, variant: str = 'normal',
+                  videos: Optional[int] = None) -> Dict:
         """One scheduled run, mirroring the shorts pipeline's sweep.
 
         Order:
@@ -381,7 +382,10 @@ class RankingPipeline:
         # 2. Refill the ready pool toward the queue target. We build without
         #    uploading, then choose from the just-built pool below.
         pool = self.db.pending_builds_count()
-        to_build = max(0, int(config.queue_target_total) - pool)
+        if videos is None:
+            to_build = max(0, int(config.queue_target_total) - pool)
+        else:
+            to_build = max(0, int(videos))
         built_ids = self._build_fresh(to_build, variant) if to_build > 0 else []
         logger.info('SWEEP_REPLENISH built=%d (pool %d -> %d)',
                     len(built_ids), pool, self.db.pending_builds_count())
@@ -639,7 +643,8 @@ def main(argv=None) -> int:
         return 0
 
     if args.mode == 'sweep':
-        result = pipeline.run_sweep(variant=args.variant)
+        result = pipeline.run_sweep(variant=args.variant,
+                                    videos=args.videos)
         print(f"built {result['built']} | uploaded {result['uploaded']} "
               f"(backlog {result['uploaded_backlog']}, "
               f"fresh {result['uploaded_fresh']}, "
