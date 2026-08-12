@@ -500,8 +500,11 @@ def main(argv=None) -> int:
                     'composes and publishes a countdown.')
     parser.add_argument('--mode', default='once',
                         choices=['once', 'auto', 'sweep', 'schedule',
-                                 'source', 'assemble', 'upload', 'test'])
+                                 'source', 'assemble', 'upload', 'auth', 'test'])
     parser.add_argument('--topic', default=None)
+    parser.add_argument('--channel', default=None,
+                        help='channel key to authenticate with --mode auth '
+                             '(default: NXS)')
     parser.add_argument('--videos', type=int, default=None,
                         help='number of videos to build in --mode auto '
                              '(default: RANKING_VIDEOS_PER_RUN or 1)')
@@ -519,6 +522,33 @@ def main(argv=None) -> int:
         return environment_check()
 
     pipeline = RankingPipeline()
+
+    if args.mode == 'auth':
+        channel = (args.channel or 'NXS').strip()
+        try:
+            from googleapiclient.discovery import build
+            _ = build  # touch: googleapiclient must be importable for OAuth
+        except ImportError:
+            print('google-api-python-client is not installed')
+            return 1
+        try:
+            from .publisher import auth as ranking_auth
+            channel_id = ranking_auth(channel)
+        except Exception as exc:  # noqa: BLE001
+            logger.error('auth failed for %r: %s', channel, exc)
+            print(f'auth failed for channel {channel!r}: {exc}')
+            return 1
+        if not channel_id:
+            print(f'channel {channel!r} not reachable after auth (no channel id)')
+            return 1
+        print(f'Authenticated channel {channel} (id={channel_id}).')
+        print(f'Token saved near {config.oauth_token_file} as '
+              f'youtube_token_ranking_{channel}.json')
+        authed = {p.name[len('youtube_token_ranking_'):-5]
+                  for p in Path(config.oauth_token_file).parent.glob(
+                      'youtube_token_ranking_*.json')}
+        print(f'Authenticated ranking channels now: {sorted(authed) or "(none)"}')
+        return 0
 
     if args.mode == 'upload':
         count = pipeline.drain_queue()
