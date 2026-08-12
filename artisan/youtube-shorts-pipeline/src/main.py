@@ -801,6 +801,21 @@ class ShortsPipeline:
                 logger.warning("Title optimizer failed; using raw hook", exc_info=True)
                 base = hook_text or ''
 
+        # Last-resort safety net: non-English / Whisper-hallucinated hooks
+        # must never reach YouTube as titles, even with TITLE_OPTIMIZER=off.
+        try:
+            from .title_optimizer import looks_non_english
+            base = ' '.join((base or '').split()).strip()
+            if base and looks_non_english(base):
+                safer = f"{niche} clip #{clip_index}".strip()
+                logger.warning(
+                    "Title looked non-English ('%s'...); using neutral '%s'",
+                    base[:48], safer,
+                )
+                base = safer
+        except Exception:
+            pass
+
         base = ' '.join((base or '').split()).strip()
         if not base:
             return f"{niche} clip #{clip_index} #Shorts"
