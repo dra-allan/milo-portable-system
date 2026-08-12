@@ -429,6 +429,14 @@ def build_opencode_command(prompt: str, *, agent: str | None = None,
         cmd += ["--agent", agent]
     if model and "--model" in flags:
         cmd += ["--model", model]
+    # Headless dispatch: the workspace root is the project dir, so reads of
+    # the shared factory tree (sibling projects, the story-logic bible) trip
+    # the external_directory permission and auto-reject in a non-interactive
+    # run. Auto-approve permissions that are not explicitly denied so the
+    # agent chain can consult the reference material it is told to match.
+    # Explicitly denied rules in opencode config still win.
+    if "--auto" in flags and os.environ.get("POV_OPENCODE_NO_AUTO", "").strip() != "1":
+        cmd += ["--auto"]
     return cmd
 
 
@@ -584,6 +592,9 @@ def build_brief(*, agent: str, prompt_text: str, project_dir: Path, outfile: str
         f"2. `%PROJECT_DIR%` in the agent contract below means: {project_dir}\n"
         f"3. Write your output to EXACTLY this path, nothing else: {target}\n"
         "4. Plain text. No JSON, no markdown fences around the file contents.\n"
+        "5. STORY_LOGIC_BIBLE.txt, if referenced by your contract, is the story-\n"
+        "   logic section you are holding right now - no separate file exists.\n"
+        "   Apply its laws from memory; never stall waiting for a file.\n"
         f"{memory_block}\n"
         f"=== AGENT CONTRACT ({agent}.md) ===\n"
         f"{prompt_text}\n"
