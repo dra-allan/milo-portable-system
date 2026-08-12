@@ -43,7 +43,8 @@ echo  1. Build %RANKING_VIDEOS_PER_RUN% video(s), no upload
  echo 13. Open runtime folders
  echo 14. Delete uploaded local videos
  echo 15. Stop ranking scheduler
- echo 16. Exit
+ echo 16. Authenticate YouTube channel
+ echo 17. Exit
  echo.
 set "choice="
 set /p "choice=Select: "
@@ -62,7 +63,8 @@ if "%choice%"=="12" goto toggle_fast
 if "%choice%"=="13" goto folders
 if "%choice%"=="14" goto cleanup_uploaded
 if "%choice%"=="15" goto stop_daemon
-if "%choice%"=="16" goto done
+if "%choice%"=="16" goto auth
+if "%choice%"=="17" goto done
 goto menu
 :load_env
 if exist "%REPO_DIR%\.env" for /f "usebackq tokens=1,* delims== eol=#" %%A in ("%REPO_DIR%\.env") do if not "%%A"=="" set "%%A=%%B"
@@ -73,6 +75,10 @@ exit /b 0
 if errorlevel 1 (echo [ERROR] Python not found: %PY%&pause&exit /b 1)
 "%PY%" -c "import yaml, yt_dlp" >nul 2>&1
 if errorlevel 1 (echo Installing ranking dependencies...&"%PY%" -m pip install -r requirements.txt&if errorlevel 1 (echo [ERROR] Dependency install failed.&pause&exit /b 1))
+exit /b 0
+:ensure_auth_deps
+"%PY%" -c "import googleapiclient, google_auth_oauthlib" >nul 2>&1
+if errorlevel 1 "%PY%" -m pip install -r requirements.txt
 exit /b 0
 :start_timer
 set "RUN_START=%TIME: =0%"
@@ -189,6 +195,23 @@ goto menu
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$root=[IO.Path]::GetFullPath('%PIPE_DIR%');$ps=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ? { $_.CommandLine -and $_.CommandLine -like ('*'+$root+'*src.main*') -and $_.CommandLine -like '*--mode schedule*' };if(-not $ps){'No ranking scheduler found.'}else{$ps|%%{ 'Stopping PID '+$_.ProcessId;Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
 pause
 goto menu
+:auth
+call :check_auth_python
+if errorlevel 1 goto menu
+set "CHANNEL="
+set /p "CHANNEL=Channel key (same as Shorts/POV, or BACK): "
+if /i "%CHANNEL%"=="BACK" goto menu
+if not defined CHANNEL goto menu
+echo.
+echo A browser will open. Sign into the YouTube channel for "%CHANNEL%".
+"%PY%" -c "from src.publisher import auth; cid=auth(r'%CHANNEL%'); print('Authenticated channel ID:', cid or 'not returned')"
+pause
+goto menu
+:check_auth_python
+call :ensure_python
+if errorlevel 1 exit /b 1
+call :ensure_auth_deps
+exit /b 0
 :done
 endlocal
 exit /b 0
