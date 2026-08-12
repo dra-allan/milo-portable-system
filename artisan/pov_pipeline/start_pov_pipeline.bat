@@ -39,7 +39,8 @@ echo  1. Discover sources and fill queue
  echo 13. Run Python compile check
  echo 14. Open pipeline log
  echo 15. One-time YouTube auth
- echo 16. Exit
+ echo 16. Resume incomplete project
+ echo 17. Exit
  echo.
 set "choice="
 set /p "choice=Select: "
@@ -58,7 +59,8 @@ if "%choice%"=="12" goto edit_config
 if "%choice%"=="13" goto compile_check
 if "%choice%"=="14" goto open_log
 if "%choice%"=="15" goto auth
-if "%choice%"=="16" goto done
+if "%choice%"=="16" goto resume
+if "%choice%"=="17" goto done
 goto menu
 
 :load_env
@@ -184,6 +186,16 @@ goto menu
 call :check_python
 if errorlevel 1 goto menu
 "%PY%" -m uploader auth --channel explaination
+pause
+goto menu
+:resume
+set "PROJECT="
+set /p "PROJECT=Project folder name (blank = newest incomplete): "
+call :check_python
+if errorlevel 1 goto menu
+"%PY%" resume_project.py %PROJECT%
+echo.
+echo [EXIT CODE] %ERRORLEVEL%
 pause
 goto menu
 :done
