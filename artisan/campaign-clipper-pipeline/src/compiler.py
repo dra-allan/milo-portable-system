@@ -5,23 +5,28 @@ Order of operations: **rules first, model second.**
 The requirement blocks are heavily templated (the same dozen phrasings recur
 across campaigns), so a deterministic pass gets most of it and, crucially,
 cannot invent a requirement that was never written. For this lane that is the
-expensive failure mode: a hallucinated rule wastes a render, but a *missed*
-rule loses a submission and possibly the account. The model is only shown the
-lines the rules could not place, and its output is merged additively.
+expensive failure mode: a hallucinated rule wastes a render, but a *missed* rule
+loses a submission and possibly the account. The model is only shown the lines
+the rules could not place, and its output is merged additively.
 
 Parser notes, every one of them from real campaign text
 -------------------------------------------------------
 * ``MINIMUN LENGTH`` is misspelled on live campaigns, so the duration matcher
-  accepts the typo, and duration appears in both orders (``10s MINIMUM
-  LENGTH`` in the body, ``Min. Duration 8 secs`` in the card header).
-* ``0,4% ENGAGEMENT MINIMUM`` uses a comma decimal separator. Parsed naively
-  that becomes 4%, a tenfold error in the strict direction, which would park
-  every clip forever.
-* ``3,000 VIEWS FOR EARNINGS`` uses a comma thousands separator in the same
-  document. So separators are disambiguated by digit grouping, not globally.
-* Prohibitions are detected by *content*, never by position. Clipster draws a
-  red cross beside them; a copy-pasted block has lost the cross, and
-  ``POST SPAM/LOW QUALITY`` then reads as an instruction to post spam.
+  accepts the typo, and duration appears in both orders (``10s MINIMUM LENGTH``
+  in the body, ``Min. Duration 8 secs`` in the card header).
+* ``0,4% ENGAGEMENT MINIMUM`` uses a comma decimal separator. Parsed naively that
+  becomes 4%, a tenfold error in the strict direction, which would park every
+  clip forever.
+* ``3,000 VIEWS FOR EARNINGS`` uses a comma *thousands* separator in the same
+  document. So separators are disambiguated by digit grouping, never globally.
+* ``Required keywords: Kingdom Clash #Tag @handle`` mixes a multi-word phrase
+  with sigil tokens. Splitting all of it on whitespace turns the phrase into two
+  independent words, and a caption saying "clash of kingdoms" would satisfy both
+  while failing the campaign. Sigil tokens are extracted separately and the rest
+  is kept whole.
+* Prohibitions are detected by *content*, never by position. Clipster draws a red
+  cross beside them; a copy-pasted block has lost the cross, and ``POST
+  SPAM/LOW QUALITY`` then reads as an instruction to post spam.
 * Any line that matches nothing lands in ``spec.unparsed``. Silence there would
   make the operator review step pointless.
 """
@@ -30,7 +35,7 @@ import json
 import re
 from typing import Dict, List, Optional, Tuple
 
-from .spec import (CampaignSpec, MUSIC_NATIVE, UGC, CLIPPING,
+from .spec import (CampaignSpec, CLIPPING, MUSIC_NATIVE, UGC,
                    parse_audience_line)
 from .utils import safe_slug, setup_logger
 
@@ -62,7 +67,7 @@ _MUST_IN_VIDEO = (
     re.compile(r'mention the app name\s+([A-Za-z0-9 :\'-]{2,40}?)\s+'
                r'somewhere in the video', re.IGNORECASE),
     re.compile(r'say\s+"([^"]{2,60})"\s+in full', re.IGNORECASE),
-    re.compile(r'say\s+\'([^\']{2,60})\'\s+in full', re.IGNORECASE),
+    re.compile(r"say\s+'([^']{2,60})'\s+in full", re.IGNORECASE),
 )
 
 _MUST_IN_CAPTION = re.compile(
@@ -72,11 +77,12 @@ _TAG_ACCOUNT = re.compile(
     r'tag the official\s+([A-Za-z0-9 _-]{2,40}?)\s+account', re.IGNORECASE)
 _REQUIRED_KEYWORDS = re.compile(r'required keywords?\s*:\s*(.+)',
                                 re.IGNORECASE)
+_SIGIL_TOKEN = re.compile(r'[#@][A-Za-z0-9_.]+')
 
 _PLATFORM_WORDS = {
     'youtube': ('youtube', 'yt shorts', 'yt-shorts', 'shorts'),
     'tiktok': ('tiktok', 'tik tok'),
-    'instagram': ('instagram', 'reels', 'ig '),
+    'instagram': ('instagram', 'reels'),
     'x': ('twitter', ' x ', '(x)'),
 }
 
@@ -88,15 +94,16 @@ _LANGUAGES = {'english': 'en', 'spanish': 'es', 'portuguese': 'pt',
 def _decimal(raw: str) -> float:
     """Parse a number whose separator could be either convention.
 
-    ``0,4`` is four tenths; ``3,000`` is three thousand. The discriminator is
-    the digit grouping after the separator, not a global locale setting - both
-    forms appear inside the *same* campaign block.
+    ``0,4`` is four tenths; ``3,000`` is three thousand. The discriminator is the
+    digit grouping after the separator, not a locale setting, because both forms
+    appear inside the *same* campaign block.
     """
     text = raw.strip()
     if ',' in text and '.' not in text:
         head, _, tail = text.partition(',')
-        return float(f'{head}.{tail}') if len(tail) <= 2 and len(tail) != 3 \
-            else float(head + tail)
+        if len(tail) <= 2:
+            return float(f'{head}.{tail}')
+        return float(head + tail)
     return float(text.replace(',', ''))
 
 
@@ -109,20 +116,42 @@ def extract_links(text: str) -> List[Tuple[str, str]]:
     out = [(m.group(1).strip(), m.group(2).strip())
            for m in _MD_LINK.finditer(text or '')]
     known = {url for _, url in out}
-    for m in _BARE_URL.finditer(text or ''):
-        url = m.group(1).rstrip('.,);')
+    for match in _BARE_URL.finditer(text or ''):
+        url = match.group(1).rstrip('.,);')
         if url not in known:
             out.append(('', url))
             known.add(url)
     return out
 
 
+def parse_keyword_line(raw: str) -> List[str]:
+    """Split a ``Required keywords:`` value into tokens and phrases.
+
+    Sigil tokens (``#tag``, ``@handle``) are pulled out individually; whatever
+    words remain in a comma-delimited chunk stay together as one phrase. This is
+    the difference between requiring ``Kingdom Clash`` and requiring the words
+    ``Kingdom`` and ``Clash`` separately, which a caption reading "clash of
+    kingdoms" would satisfy while failing the campaign.
+    """
+    out: List[str] = []
+    for chunk in re.split(r'[,;]', raw or ''):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        tokens = _SIGIL_TOKEN.findall(chunk)
+        phrase = ' '.join(_SIGIL_TOKEN.sub('', chunk).split()).strip()
+        if phrase:
+            out.append(phrase)
+        out.extend(tokens)
+    return out
+
+
 def _label_kind(label: str, line: str) -> str:
     """Classify a link by its label *and* its line.
 
-    Label alone is not enough: ``CLIP THIS -> CONTENT TO CLIP`` and
-    ``ONLY CLIPS FROM CONTENT FOLDER`` both mean "source pool" but share no
-    common label token.
+    Label alone is not enough: ``CLIP THIS -> CONTENT TO CLIP`` and ``ONLY CLIPS
+    FROM CONTENT FOLDER`` both mean "source pool" but share no common label
+    token.
     """
     blob = f'{label} {line}'.lower()
     if 'logo' in blob:
@@ -131,21 +160,20 @@ def _label_kind(label: str, line: str) -> str:
         return 'brief'
     if 'discord' in blob:
         return 'discord'
-    if any(k in blob for k in ('content', 'clip this', 'clips from',
-                              'footage', 'assets')):
+    if any(word in blob for word in ('content', 'clip this', 'clips from',
+                                     'footage', 'assets')):
         return 'content'
     return 'unknown'
 
 
-def compile_requirements(raw: str, campaign_id: str = '',
-                         name: str = '', url: str = '',
-                         card: Optional[Dict] = None,
+def compile_requirements(raw: str, campaign_id: str = '', name: str = '',
+                         url: str = '', card: Optional[Dict] = None,
                          use_model: bool = False) -> CampaignSpec:
     """Turn a requirements blob (plus optional card metadata) into a spec.
 
-    ``card`` is the structured header Clipster already renders (rate, caps,
-    platforms, min duration). When present it is merged with strictest-wins so
-    a header/body disagreement is resolved deterministically and recorded.
+    ``card`` is the structured header the board already renders (rate, caps,
+    platforms, min duration). When present it is merged with strictest-wins, so a
+    header/body disagreement resolves deterministically and is recorded.
     """
     text = (raw or '').replace('\r\n', '\n')
     card = card or {}
@@ -162,7 +190,7 @@ def compile_requirements(raw: str, campaign_id: str = '',
     caption: Dict = data['caption']
     gates: Dict = data['account_gates']
     policy: Dict = data['policy']
-    sources: Dict = data['sources']
+    source_block: Dict = data['sources']
     assets: Dict = data['assets']
 
     content_folders: List[str] = []
@@ -179,9 +207,8 @@ def compile_requirements(raw: str, campaign_id: str = '',
     min_dur: Optional[float] = None
     max_dur: Optional[float] = None
 
-    lines = [ln.strip() for ln in text.split('\n')]
-    for line in lines:
-        if not line or line.lower().startswith('###'):
+    for line in (ln.strip() for ln in text.split('\n')):
+        if not line or line.startswith('###'):
             continue
         stripped = re.sub(r'^[\*\-\u2022\u2713\u2714\u2717\u2718\s]+', '',
                           line)
@@ -196,15 +223,14 @@ def compile_requirements(raw: str, campaign_id: str = '',
             if kind == 'logo':
                 logo_folders.append(link)
                 assets['logo_required'] = True
-                assets['logo_mode'] = ('if-absent'
-                                       if 'if not already' in low
+                assets['logo_mode'] = ('if-absent' if 'if not already' in low
                                        else 'always')
                 matched = True
             elif kind == 'brief':
-                sources['brief_url'] = link
+                source_block['brief_url'] = link
                 matched = True
             elif kind == 'discord':
-                sources['discord_url'] = link
+                source_block['discord_url'] = link
                 matched = True
             elif kind == 'content':
                 content_folders.append(link)
@@ -257,7 +283,7 @@ def compile_requirements(raw: str, campaign_id: str = '',
                 if platform not in platforms:
                     platforms.append(platform)
                 matched = True
-        if 'shorts only' in low or 'shorts only!' in low:
+        if 'shorts only' in low:
             render['shorts_only'] = True
             matched = True
         for word, code in _LANGUAGES.items():
@@ -265,7 +291,7 @@ def compile_requirements(raw: str, campaign_id: str = '',
                 render['language'] = code
                 matched = True
 
-        # -- own text -----------------------------------------------------
+        # -- render obligations -------------------------------------------
         if ('own text' in low or 'own caption' in low
                 or ('add' in low and 'text' in low and 'logo' not in low)):
             render['own_text_required'] = True
@@ -274,8 +300,8 @@ def compile_requirements(raw: str, campaign_id: str = '',
             render['gameplay_visible'] = True
             matched = True
         if 'trending music' in low or 'trending audio' in low:
-            # Only the platform's own composer can attach native audio, so
-            # this is recorded as a manual step, never as something rendered.
+            # Only the platform's own composer can attach native audio, so this
+            # is recorded as a manual step and never as something rendered.
             render['music'] = MUSIC_NATIVE
             matched = True
         if 'native to the platform' in low or 'feel native' in low:
@@ -284,16 +310,18 @@ def compile_requirements(raw: str, campaign_id: str = '',
         if 'competitor' in low:
             policy['no_competitor_attacks'] = True
             matched = True
-        if 'ugc' in low or 'concept' in low:
+        # Only an explicit "UGC" retypes the campaign. "Concept" used to do it,
+        # which silently converted a clipping campaign whose brief happens to
+        # describe concepts into a UGC one.
+        if re.search(r'\bugc\b', low):
             data['campaign']['type'] = UGC
             matched = True
 
         # -- caption obligations ------------------------------------------
         found = _REQUIRED_KEYWORDS.search(stripped)
         if found:
-            for token in re.split(r'[,\s]+', found.group(1).strip()):
-                token = token.strip()
-                if token and token not in keywords:
+            for token in parse_keyword_line(found.group(1)):
+                if token not in keywords:
                     keywords.append(token)
             continue
         found = _MUST_IN_CAPTION.search(stripped)
@@ -327,10 +355,10 @@ def compile_requirements(raw: str, campaign_id: str = '',
         if 'only clips from' in low or 'clip this' in low:
             matched = True
             if 'discord' in low and not content_folders:
-                sources['manual_only'] = True
-                sources['manual_reason'] = (
-                    'content folder is published in the campaign Discord; '
-                    'no shareable folder link')
+                source_block['manual_only'] = True
+                source_block['manual_reason'] = (
+                    'content folder is published in the campaign Discord; no '
+                    'shareable folder link')
         if 'must read' in low or 'read the full' in low:
             matched = True
 
@@ -338,14 +366,13 @@ def compile_requirements(raw: str, campaign_id: str = '',
             unparsed.append(stripped)
 
     # -- merge card header ------------------------------------------------
-    if card.get('platforms'):
-        for platform in card['platforms']:
-            if platform not in platforms:
-                platforms.append(platform)
+    for platform in card.get('platforms') or []:
+        if platform not in platforms:
+            platforms.append(platform)
     card_min = card.get('min_duration')
     if card_min:
-        min_dur = float(card_min) if min_dur is None \
-            else max(min_dur, float(card_min))
+        min_dur = (float(card_min) if min_dur is None
+                   else max(min_dur, float(card_min)))
     for key in ('rate_per_1m', 'budget_total', 'cap_per_post',
                 'cap_per_profile'):
         if card.get(key):
@@ -363,14 +390,14 @@ def compile_requirements(raw: str, campaign_id: str = '',
     if platforms:
         render['platforms'] = platforms
     if content_folders:
-        sources['content_folders'] = _dedupe(content_folders)
+        source_block['content_folders'] = _dedupe(content_folders)
     if logo_folders:
         assets['logo_folders'] = _dedupe(logo_folders)
     if keywords:
         caption['required_keywords'] = [k for k in keywords
                                         if not k.startswith('@')]
         caption['required_mentions'] = [k for k in keywords
-                                       if k.startswith('@')]
+                                        if k.startswith('@')]
     if must_caption:
         caption['must_mention'] = _dedupe(must_caption)
     if must_video:
@@ -390,9 +417,9 @@ def compile_requirements(raw: str, campaign_id: str = '',
 
     spec = CampaignSpec.from_dict(data)
 
-    # A campaign that demands the operator's own text but published no content
-    # folder link is not an error, it is the Discord case. Flag it as manual so
-    # the run refuses early with a reason instead of rendering nothing.
+    # A campaign that published no content folder link is not an error, it is the
+    # Discord/brief case. Marking it manual makes the run refuse early with a
+    # reason instead of quietly rendering nothing.
     if not spec.sources.has_any() and not spec.sources.manual_only:
         spec.sources.manual_only = True
         spec.sources.manual_reason = ('no content folder link found in the '
@@ -432,7 +459,7 @@ JSON only, no prose, no code fence."""
 def _model_pass(lines: List[str]) -> Optional[Dict]:
     """Ask a model about the leftovers only.
 
-    Scoped to unmatched lines on purpose. Handing the model the whole block
+    Scoped to unmatched lines deliberately. Handing the model the whole block
     would let it restate rules the parser already captured correctly, and
     disagreements between the two passes would then need arbitration.
     """
@@ -441,14 +468,14 @@ def _model_pass(lines: List[str]) -> Optional[Dict]:
         logger.warning('MODEL_PASS_SKIPPED reason=no_api_key')
         return None
     prompt = _MODEL_PROMPT.replace('{lines}',
-                                   '\n'.join(f'- {ln}' for ln in lines))
+                                   '\n'.join(f'- {line}' for line in lines))
     for model in [config.script_model] + config.script_model_fallbacks:
         try:
             import google.generativeai as genai
             genai.configure(api_key=config.script_api_key)
             response = genai.GenerativeModel(model).generate_content(prompt)
-            body = (response.text or '').strip()
-            body = re.sub(r'^```(?:json)?|```$', '', body,
+            body = re.sub(r'^```(?:json)?|```$', '',
+                          (response.text or '').strip(),
                           flags=re.MULTILINE).strip()
             parsed = json.loads(body)
             logger.info('MODEL_PASS_OK model=%s keys=%s', model,
@@ -477,8 +504,7 @@ def _merge_model(data: Dict, extra: Dict) -> None:
 
 
 def compile_to_file(raw: str, campaign_id: str, name: str = '', url: str = '',
-                    card: Optional[Dict] = None,
-                    use_model: bool = False):
+                    card: Optional[Dict] = None, use_model: bool = False):
     """Compile and write ``config/campaigns/<id>.yaml``, returning the spec."""
     from .config import config
     spec = compile_requirements(raw, campaign_id=campaign_id, name=name,
