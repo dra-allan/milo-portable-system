@@ -21,6 +21,9 @@ Commands registered here::
     milo sessions <action>      history, search, insights
     milo vault <action>         the Obsidian cold tier
     milo run <prompt>           run a prompt through the live agent
+    milo channels               which ways Milo can reach you
+    milo send <text>            push a message out through them
+    milo bot                    run the Telegram bot (inbound)
 """
 
 from __future__ import annotations
@@ -38,7 +41,6 @@ from . import naming, paths, ui
 
 
 # ── shared helpers ────────────────────────────────────────────────────────────
-
 
 def _emit(data: Any, as_json: bool) -> bool:
     if not as_json:
@@ -125,10 +127,57 @@ def cmd_prompt(args: argparse.Namespace) -> int:
             mark = "•" if body.strip() else "·"
             ui.say(f"  {mark} {name:<12} {len(body):>6} chars")
         ui.say()
-        ui.say(ui.dim(f"  ~{ctx.approx_tokens()} tokens total"))
+        ui.say(ui.dim(f"~{ctx.approx_tokens()} tokens total"))
         return 0
     only = args.only.split(",") if args.only else None
     print(ctx.render(include=only))
+    return 0
+
+
+def cmd_context(args: argparse.Namespace) -> int:
+    """Fresh boot context: current memory, recent sessions, vault handoff.
+
+    This is the payload a SessionStart hook injects into an agent so it boots
+    with today's state instead of a static persona file. OpenCode gets the same
+    effect from its boot injection; this gives every other harness a CLI hook.
+    """
+    from . import vault as vault_mod
+    from .curated import CuratedMemory
+    from .sessions import store as session_store
+
+    parts: List[str] = []
+
+    mem = CuratedMemory()
+    block = mem.render_block()
+    if block:
+        parts.append(block)
+
+    v = vault_mod.vault()
+    if v.exists:
+        boot = v.boot_context(budget=args.budget)
+        for label in ("handoff", "priorities", "today"):
+            body = boot.get(label, "").strip()
+            if body:
+                parts.append(f"## {label.title()}\n\n{body}")
+
+    st = session_store()
+    rows = st.recent(5)
+    recent = [r for r in rows if r.surface != "hook" or r.task]
+    if recent:
+        lines = []
+        for r in recent:
+            state = "active" if r.ended_at is None else "done"
+            lines.append(f"- {r.age_label():<10} [{state}] {r.surface:<8} {(r.task or r.name or '')[:60]}")
+        parts.append("## Recent sessions\n\n" + "\n".join(lines))
+
+    text = "\n\n".join(p for p in parts if p.strip()).strip()
+    if args.hook:
+        print(json.dumps({"additionalContext": text}))
+        return 0
+    if args.json:
+        print(json.dumps({"context": text, "chars": len(text)}, indent=2))
+        return 0
+    ui.say(text or ui.dim("nothing to load"))
     return 0
 
 
@@ -366,8 +415,15 @@ def cmd_curate(args: argparse.Namespace) -> int:
 
 
 def _run_through_harness(prompt: str, args: argparse.Namespace) -> int:
-    """Send a prompt to the first available agent runtime."""
+    """Send a prompt to the first available agent runtime.
+
+    Every run goes through the :class:`~miloctl.runtime.Runtime` contract so
+    Milo records a ``task_finished`` event, updates routing evidence, and —
+    when a repeatable task clearly succeeded — fires the Hermes-style
+    auto-learning nudge. No separate ``learn`` ceremony required.
+    """
     from . import harness
+    from .runtime import Runtime, contract_for
 
     name = getattr(args, "with_harness", "") or ""
     h = harness.get_harness(name) if name else None
@@ -379,10 +435,72 @@ def _run_through_harness(prompt: str, args: argparse.Namespace) -> int:
             print(prompt)
             return 0
         h = runnable[0]
-    ui.info(f"running through {h.name}")
-    code, out = h.run(prompt, model=getattr(args, "model", "") or "")
-    print(out)
+
+    contract = contract_for(
+        prompt,
+        computer=getattr(args, "computer", False),
+        vision=getattr(args, "vision", False),
+        destructive=getattr(args, "destructive", False),
+    )
+    runtime = Runtime()
+    default_model = getattr(args, "model", "") or ""
+    if not default_model:
+        try:
+            default_model = runtime.select(contract).name
+        except RuntimeError:
+            default_model = ""
+
+    ui.info(f"running through {h.name}"
+            + (f" ({default_model})" if default_model else ""))
+    code, out = h.run(prompt, model=default_model)
+    if out:
+        print(out)
+
+    try:
+        runtime.finish(contract, model=default_model or h.name,
+                       success=code == 0, tests_passed=False, harness=h.name)
+    except Exception as exc:  # never let bookkeeping hide a real failure
+        ui.warn(f"runtime bookkeeping failed: {exc}")
+
+    # Hermes auto-learning: a genuinely repeated, successful task should become
+    # a skill without being asked. We only *remark* on it here — the actual
+    # authoring stays in /learn so the agent has full context.
+    if code == 0:
+        _maybe_auto_learn(contract, h.name, default_model, out)
     return code
+
+
+def _maybe_auto_learn(contract, harness_name: str, model: str, out: str) -> None:
+    """Nudge a skill-worthy run toward authoring, once this session only."""
+    import hashlib
+
+    from .learning import NudgeEngine
+
+    if not (out or "").strip():
+        return
+    nudge = NudgeEngine().check_skill_worthy(
+        tool_calls=8, distinct_tools=3, had_error=False
+    )
+    if nudge is None:
+        return
+    key = hashlib.sha256(contract.task.encode("utf-8")).hexdigest()[:12]
+    stamp = paths.state_dir() / "learned-tasks.jsonl"
+    try:
+        done = [json.loads(l).get("k") for l in stamp.read_text(encoding="utf-8").splitlines()]
+    except (OSError, ValueError):
+        done = []
+    if key in done:
+        return
+    try:
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        with stamp.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"k": key, "task": contract.task[:200],
+                                 "harness": harness_name, "model": model}) + "\n")
+    except OSError:
+        return
+    ui.say()
+    ui.say(ui.dim("  this task looked repeatable and succeeded — it would make a good skill:"))
+    ui.say(ui.dim(f"    milo learn \"{contract.task[:80]}\""))
 
 
 # ── profile ───────────────────────────────────────────────────────────────────
@@ -618,6 +736,232 @@ def cmd_run(args: argparse.Namespace) -> int:
     return _run_through_harness(prompt, args)
 
 
+# ── eval ──────────────────────────────────────────────────────────────────────
+
+
+def cmd_eval(args: argparse.Namespace) -> int:
+    """Score a model or harness against Milo's golden-task matrix.
+
+    Static mode checks the Runtime contract without touching a model. With
+    ``--run`` (or a harness name) it actually executes the coding and browser
+    tasks through that harness and feeds each outcome back to the Runtime so
+    routing evidence reflects reality, not default profiles.
+    """
+    from .evals import DEFAULT_TASKS, EvalResult, run_static, report
+    from . import harness
+    from .runtime import Runtime, TaskContract
+
+    model = args.model or ""
+    h = None
+    if args.run or args.with_harness:
+        name = args.with_harness or ""
+        h = harness.get_harness(name) if name else None
+        if h is None:
+            if name:
+                return _fail(f"unknown harness {name!r}")
+            runnable = [x for x in harness.detect_installed() if x.which()]
+            if not runnable:
+                ui.warn("no agent runtime installed — run without --run for a static check")
+            elif runnable:
+                h = runnable[0]
+
+    if h is None:
+        results = run_static(model, Path(args.state_dir).expanduser())
+        rep = report(results)
+        if _emit(rep, args.json):
+            return 0
+        ui.banner("eval", f"static · model {model or 'auto'}")
+        _print_evals(results)
+        ui.kv("score", f"{rep['score']:.2f}", width=30)
+        return 0 if rep["passed"] == rep["total"] else 1
+
+    ui.info(f"evaluating through {h.name}" + (f" ({model})" if model else ""))
+    runtime = Runtime(Path(args.state_dir).expanduser())
+    results: List[EvalResult] = []
+    for name, prompt, needs in DEFAULT_TASKS:
+        contract = TaskContract(prompt, needs=needs)
+        try:
+            selected = runtime.select(contract, preferred=model)
+            chosen = selected.name
+        except RuntimeError as exc:
+            results.append(EvalResult(name, False, 0.0, f"no profile: {exc}"))
+            continue
+        ui.say(ui.dim(f"  · {name}: {h.name} ({chosen})"))
+        code, out = h.run(prompt, model=chosen, timeout=args.timeout)
+        success = code == 0
+        try:
+            runtime.finish(contract, model=chosen, success=success,
+                           tests_passed=False, harness=h.name, eval_task=name)
+        except Exception as exc:
+            ui.warn(f"runtime bookkeeping failed: {exc}")
+        score = 1.0 if success else 0.0
+        results.append(EvalResult(name, success, score, (out or "")[:300]))
+    rep = report(results)
+    if _emit(rep, args.json):
+        return 0
+    ui.banner("eval", f"live · {h.name}" + (f" · {model}" if model else ""))
+    _print_evals(results)
+    ui.kv("score", f"{rep['score']:.2f}", width=30)
+    return 0 if rep["passed"] == rep["total"] else 1
+
+
+def _print_evals(results) -> None:
+    for r in results:
+        ui.say(f"  {'PASS' if r.passed else 'FAIL'}  {r.name}" + (f"  — {r.detail}" if r.detail else ""))
+
+
+# ── voice ────────────────────────────────────────────────────────────────────
+
+
+def cmd_voice(args: argparse.Namespace) -> int:
+    """Voice mode: mic → STT → agent → spoken reply."""
+    from .voice import run_cli as _voice_cli
+
+    return _voice_cli([
+        *(["--once"] if getattr(args, "once", False) else []),
+        "--duration", str(getattr(args, "duration", 6.0)),
+        *(["--stt", args.stt] if getattr(args, "stt", "") else []),
+        *(["--tts", args.tts] if getattr(args, "tts", "") else []),
+        *(["--identity"] if getattr(args, "identity", False) else []),
+        *(["--wake", args.wake] if getattr(args, "wake", "") else []),
+        *(["--harness", args.harness] if getattr(args, "harness", "") else []),
+        *(["--test-tts", args.test_tts] if getattr(args, "test_tts", "") else []),
+        *(["--tts-out", args.tts_out] if getattr(args, "tts_out", "") else []),
+    ])
+
+
+def cmd_say(args: argparse.Namespace) -> int:
+    """Speak a single line of text (or render it to a WAV file)."""
+    from .voice.mode import json_dumps
+    from .voice.tts_streaming import stream_tts_to_wav
+
+    text = _joined(args.text)
+    if not text:
+        return _fail('say something: milo say "hello, Allan"')
+
+    out = args.out
+    if not out:
+        out = tempfile.mktemp(suffix=".wav")
+
+    try:
+        result = stream_tts_to_wav(text, out, provider=args.tts or None)
+    except Exception as exc:
+        return _fail(f"tts failed: {exc}")
+
+    if args.out:
+        print(json_dumps(result))
+        return 0
+
+    from .voice import audio
+
+    try:
+        audio.play(out)
+    except Exception as exc:
+        ui.warn(f"playback failed: {exc} (audio saved to {out})")
+        return 1
+
+    try:
+        os.unlink(out)
+    except OSError:
+        pass
+    return 0
+
+
+# ── channels ──────────────────────────────────────────────────────────────────
+
+
+def cmd_channels_list(args: argparse.Namespace) -> int:
+    """List all channels and their configuration status."""
+    from . import channels
+
+    rows = [{"channel": c.name, "label": c.label,
+             "configured": c.configured(), "missing": c.missing(),
+             "hint": c.hint}
+            for c in channels.all_channels()]
+    if _emit(rows, args.json):
+        return 0
+
+    ui.banner("channels")
+    ui.table(
+        [[r["channel"], "yes" if r["configured"] else "no",
+          ", ".join(r["missing"]) or "—"] for r in rows],
+        headers=["channel", "ready", "needs"],
+    )
+    unset = [r for r in rows if not r["configured"]]
+    if unset:
+        ui.say()
+        for r in unset:
+            if r["hint"]:
+                ui.say(ui.dim(f"  {r['channel']}: {r['hint']}"))
+    ui.say()
+    ui.say(ui.dim("  test them:  milo channels test"))
+    ui.say(ui.dim("  configure them:  milo channels setup"))
+    return 0
+
+
+def cmd_channels_setup(args: argparse.Namespace) -> int:
+    """Set up one or more channels interactively."""
+    from . import channels
+
+    if args.name:
+        # Set up specific channels
+        success = True
+        for name in args.name:
+            if not channels.setup_channel(name):
+                success = False
+        return 0 if success else 1
+    else:
+        # Set up all unconfigured channels
+        channels.setup_all_channels()
+        return 0
+
+
+def cmd_channels_test(args: argparse.Namespace) -> int:
+    """Send a test message through one or more channels."""
+    from . import channels
+    from . import naming
+
+    text = f"Test from {naming.display_name()} — if you can read this, the channel works."
+    if args.message:
+        text = " ".join(args.message)
+
+    for res in channels.send(text, args.to if hasattr(args, 'to') and args.to else None):
+        (ui.ok if res.ok else (ui.info if res.skipped else ui.err))("  " + res.render())
+
+    # Return non-zero if any configured channel failed
+    results = list(channels.send(text, args.to if hasattr(args, 'to') and args.to else None))
+    if any(not r.skipped and not r.ok for r in results):
+        return 1
+    return 0
+
+
+def cmd_send(args: argparse.Namespace) -> int:
+    """Push a message out. Reads stdin when given no text, so it pipes."""
+    from . import channels
+
+    text = _joined(args.text)
+    if not text and not sys.stdin.isatty():
+        text = sys.stdin.read().strip()
+    if not text:
+        return _fail('say something: milo send "the backup finished"')
+
+    results = channels.send(text, args.to)
+    if _emit([r.__dict__ for r in results], args.json):
+        return 0
+    for res in results:
+        (ui.ok if res.ok else (ui.info if res.skipped else ui.err))(res.render())
+    # Skipped channels are not failures — only a configured channel that
+    # refused should give the shell a non-zero exit.
+    return 0 if all(r.ok or r.skipped for r in results) else 1
+
+
+def cmd_bot(args: argparse.Namespace) -> int:
+    """Run the Telegram bot in the foreground."""
+    from .bot import TelegramBot
+
+    return TelegramBot().run_forever(max_iterations=args.once and 1 or 0)
+
+
 def cmd_harness(args: argparse.Namespace) -> int:
     from . import harness
 
@@ -631,6 +975,100 @@ def cmd_harness(args: argparse.Namespace) -> int:
         headers=["tool", "installed", "synced", "config"],
     )
     return 0
+
+
+# ── tools ──────────────────────────────────────────────────────────────────────
+
+
+def cmd_tools(args: argparse.Namespace) -> int:
+    """Manage and run tools."""
+    from .tools import registry, all as all_tools, get as get_tool
+
+    action = args.action
+    name = args.name
+
+    if action == "list":
+        tools = all_tools()
+        if _emit([t().to_dict() for t in tools], args.json):
+            return 0
+        if not tools:
+            ui.warn("no tools yet")
+            ui.say(ui.dim('  tools are discovered from moloctl/tools/'))
+            return 0
+        ui.banner("tools", f"{len(tools)} found")
+        rows = []
+        for tool_class in tools:
+            tool = tool_class()  # Instantiate to get default values
+            rows.append([
+                tool.name,
+                tool.description[:50],
+                ", ".join(tool.get_parameters_schema().get("properties", {}).keys()) or "none",
+            ])
+        ui.table(rows, headers=["tool", "what it does", "parameters"])
+        return 0
+
+    if action == "show":
+        if not name:
+            return _fail("which tool? moloctl tools show <name>")
+        tool_class = get_tool(name)
+        if not tool_class:
+            return _fail(f"no tool {name!r}")
+        if _emit(tool_class().to_dict(), args.json):
+            return 0
+        tool = tool_class()
+        print(f"# {tool.name}")
+        print()
+        print(tool.description)
+        print()
+        print("## Parameters")
+        schema = tool.get_parameters_schema()
+        props = schema.get("properties", {})
+        required = set(schema.get("required", []))
+        if not props:
+            print("  No parameters")
+        else:
+            for param_name, prop in props.items():
+                req = " (required)" if param_name in required else ""
+                print(f"  {param_name}: {prop.get('type', 'unknown')}{req}")
+        return 0
+
+    if action == "run":
+        if not name:
+            return _fail("which tool? moloctl tools run <name> [args...]")
+        tool_class = get_tool(name)
+        if not tool_class:
+            return _fail(f"no tool {name!r}")
+
+        # Parse arguments in key=value format
+        kwargs = {}
+        for arg in args.args:
+            if "=" not in arg:
+                return _fail(f"invalid argument '{arg}'. Use key=value format.")
+            key, value = arg.split("=", 1)
+            # Try to convert to appropriate types
+            if value.lower() == "true":
+                value = True
+            elif value.lower() == "false":
+                value = False
+            elif value.isdigit():
+                value = int(value)
+            elif value.replace(".", "", 1).isdigit() and value.count(".") == 1:
+                value = float(value)
+            # Otherwise keep as string
+            kwargs[key] = value
+
+        try:
+            tool = tool_class()
+            result = tool.run(**kwargs)
+            if _emit(result, args.json):
+                return 0
+            print(result)
+            return 0
+        except Exception as e:
+            ui.err(f"Error running tool {name}: {e}")
+            return 1
+
+    return _fail(f"unknown action {action!r}")
 
 
 # ── registration ──────────────────────────────────────────────────────────────
@@ -651,6 +1089,14 @@ def register(sub) -> None:
     s.add_argument("--sections", action="store_true", help="show the size budget")
     s.add_argument("--lean", action="store_true")
     s.set_defaults(func=cmd_prompt)
+
+    s = sub.add_parser("context", help="fresh boot context (memory + handoff + sessions)")
+    s.add_argument("--budget", type=int, default=8000,
+                   help="vault handoff/priorities char budget (default: 8000)")
+    s.add_argument("--hook", action="store_true",
+                   help="emit JSON for a Claude Code SessionStart hook")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(func=cmd_context)
 
     s = sub.add_parser("skills", help="procedural memory — what Milo knows how to do")
     s.add_argument("action", nargs="?", default="list",
@@ -698,6 +1144,9 @@ def register(sub) -> None:
     s.add_argument("--section", default="")
     s.add_argument("-o", "--out")
     s.set_defaults(func=cmd_profile)
+    s.add_argument("--run", action="store_true", help="execute via the agent now")
+    s.add_argument("--with-harness", default="", dest="with_harness")
+    s.add_argument("--model", default="")
 
     s = sub.add_parser("sessions", help="history, search and usage insights")
     s.add_argument("action", nargs="?", default="list",
@@ -724,8 +1173,79 @@ def register(sub) -> None:
     s.add_argument("--model", default="")
     s.set_defaults(func=cmd_run)
 
+    s = sub.add_parser("eval", help="score a model/harness against golden tasks")
+    s.add_argument("model", nargs="?", default="")
+    s.add_argument("--with-harness", default="", dest="with_harness")
+    s.add_argument("--run", action="store_true",
+                   help="actually execute the tasks through a harness")
+    s.add_argument("--state-dir", default="~/.milo/runtime")
+    s.add_argument("--timeout", type=int, default=600)
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(func=cmd_eval)
+
+    s = sub.add_parser("channels", aliases=["channel"],
+                       help="how Milo can reach you — Telegram, ntfy, Discord…")
+    s.set_defaults(func=cmd_channels_list)  # default to list when no subcommand given
+    sub_channels = s.add_subparsers(dest="channels_command", help="channel commands")
+
+    # channels list
+    s_list = sub_channels.add_parser("list", help="list channels and their configuration status")
+    s_list.set_defaults(func=cmd_channels_list)
+
+    # channels setup
+    s_setup = sub_channels.add_parser("setup", help="set up channels interactively")
+    s_setup.add_argument("name", nargs="*", help="channel names to set up (default: all unconfigured)")
+    s_setup.set_defaults(func=cmd_channels_setup)
+
+    # channels test
+    s_test = sub_channels.add_parser("test", help="send a test message through channels")
+    s_test.add_argument("message", nargs="*", help="message to send (default: standard test message)")
+    s_test.add_argument("--to", nargs="*", help="send to specific channels (default: all configured)")
+    s_test.set_defaults(func=cmd_channels_test)
+
+    s = sub.add_parser("send", help="push a message out through a channel")
+    s.add_argument("text", nargs="*")
+    s.add_argument("--to", nargs="*",
+                   help="telegram, ntfy, discord, slack, webhook, log "
+                        "(default: every configured channel)")
+    s.set_defaults(func=cmd_send)
+
+    s = sub.add_parser("bot", help="run the Telegram bot (inbound messages)")
+    s.add_argument("--once", action="store_true",
+                   help="poll a single batch and exit — for testing")
+    s.set_defaults(func=cmd_bot)
+
     s = sub.add_parser("harness", help="which agent tools are installed and synced")
     s.set_defaults(func=cmd_harness)
+
+    s = sub.add_parser("voice", help="talk to Milo — mic in, speech out")
+    s.add_argument("--once", action="store_true", help="single turn, then exit")
+    s.add_argument("--duration", type=float, default=6.0,
+                   help="recording seconds for --once")
+    s.add_argument("--stt", help="STT provider (local|openai|groq|xai)")
+    s.add_argument("--tts", help="TTS provider (gemini|openai|elevenlabs)")
+    s.add_argument("--identity", action="store_true",
+                   help="require passphrase check before sensitive actions")
+    s.add_argument("--wake", help="wake-word engine (openwakeword|sherpa|porcupine)")
+    s.add_argument("--harness", default="",
+                   help="agent harness (opencode|claude-code|codex|cursor|gemini)")
+    s.add_argument("--test-tts", metavar="TEXT", help="synthesize TEXT to a file, then exit")
+    s.add_argument("--tts-out", default="", help="output path for --test-tts")
+    s.set_defaults(func=cmd_voice)
+
+    s = sub.add_parser("say", help="speak one line of text out loud (or to a file)")
+    s.add_argument("text", nargs="*")
+    s.add_argument("--tts", default="", help="TTS provider (gemini|openai|elevenlabs)")
+    s.add_argument("--out", default="", help="write to this WAV file instead of the speaker")
+    s.add_argument("--voice", default="", help="voice name (e.g. Charon for Gemini)")
+    s.set_defaults(func=cmd_say)
+
+    s = sub.add_parser("tools", help="manage and run tools")
+    s.add_argument("action", nargs="?", default="list",
+                   choices=["list", "run", "show"])
+    s.add_argument("name", nargs="?", help="tool name (for run/show actions)")
+    s.add_argument("args", nargs="*", help="arguments for the tool (key=value format)")
+    s.set_defaults(func=cmd_tools)
 
     s = sub.add_parser("packs", aliases=["pack"],
                        help="skill and agent libraries from other people")
@@ -741,6 +1261,20 @@ def register(sub) -> None:
     s.add_argument("-n", "--limit", type=int, default=20)
     s.add_argument("--yes", action="store_true")
     s.set_defaults(func=cmd_packs)
+
+    s = sub.add_parser("media", help="manage generated media (images, audio, etc.)")
+    s.add_argument("action", nargs="?", default="list",
+                   choices=["list", "show", "add", "remove", "rm", "forget", "edit", "clear", "path", "replace", "generate"])
+    s.add_argument("text", nargs="*")
+    s.add_argument("--match", default="",
+                   help="unique substring of the entry to replace/remove")
+    s.add_argument("--type", choices=["image", "audio", "video", "document"],
+                   help="type of media to filter by")
+    s.add_argument("--user", "--me", dest="target", action="store_const",
+                   const="user", help="operate on USER.md instead of MEMORY.md")
+    s.add_argument("--memory", dest="target", action="store_const", const="memory")
+    s.add_argument("--yes", action="store_true")
+    s.set_defaults(func=cmd_media, target=None)
 
     s = sub.add_parser("note", aliases=["notes"],
                        help="the small memory Milo carries into every session")
@@ -916,7 +1450,7 @@ def cmd_routines(args: argparse.Namespace) -> int:
 
     if action == "show":
         if not name:
-            return _fail("which routine? milo routines show <name>")
+            return _fail("which routine? moloctl routines show <name>")
         r = st.get(name)
         if not r:
             return _fail(f"no routine {name!r}")
@@ -935,7 +1469,7 @@ def cmd_routines(args: argparse.Namespace) -> int:
     if action == "logs":
         log = paths.logs_dir() / "routines" / f"{name}.log"
         if not name:
-            return _fail("which routine? milo routines logs <name>")
+            return _fail("which routine? moloctl routines logs <name>")
         if not log.is_file():
             ui.warn(f"no log yet for {name}")
             return 0
@@ -953,7 +1487,7 @@ def cmd_routines(args: argparse.Namespace) -> int:
             ui.say(ui.dim(f"  ticks every {scheduler.TICK_MINUTES} minutes"))
             return 0
         ui.err(res.render("installed"))
-        ui.say(ui.dim("  run it yourself any time: milo routines tick"))
+        ui.say(ui.dim("  run it yourself any time: moloctl routines tick"))
         return 1
 
     if action == "uninstall":
@@ -977,7 +1511,7 @@ def cmd_routines(args: argparse.Namespace) -> int:
         for r in scheduler.status():
             (ui.ok if r.ok else ui.warn)("  " + r.render("registered"))
         if not scheduler.is_registered():
-            ui.say(ui.dim("  nothing registered: milo routines install"))
+            ui.say(ui.dim("  nothing registered: moloctl routines install"))
         return 0
 
     return _fail(f"unknown action {action!r}")
@@ -1024,7 +1558,7 @@ def cmd_note(args: argparse.Namespace) -> int:
         block = mem.render_block()
         if not block:
             ui.warn("both stores are empty")
-            ui.say(ui.dim('  add one: milo note add "..." [--user]'))
+            ui.say(ui.dim('  add one: moloctl note add "..." [--user]'))
             return 0
         ui.say(block)
         ui.say()
@@ -1037,16 +1571,17 @@ def cmd_note(args: argparse.Namespace) -> int:
 
     if action == "add":
         if not text:
-            return _fail('what should Milo remember? milo note add "..." [--user]')
+            return _fail('what should Milo remember? moloctl note add "..." [--user]')
         res = mem.add(target, text)
         (ui.ok if res.ok else ui.err)(res.as_text())
         if not res.ok:
-            ui.say(ui.dim("  see what's in there: milo note view"))
+            ui.say(ui.dim("  see what's in there: moloctl note view"))
+            return 0 if res.ok else 1
         return 0 if res.ok else 1
 
     if action == "replace":
         if not args.match or not text:
-            return _fail('milo note replace --match "<substring>" "<new text>"')
+            return _fail('moloctl note replace --match "<substring>" "<new text>"')
         res = mem.replace(target, args.match, text)
         (ui.ok if res.ok else ui.err)(res.as_text())
         return 0 if res.ok else 1
@@ -1054,7 +1589,7 @@ def cmd_note(args: argparse.Namespace) -> int:
     if action in ("remove", "rm", "forget"):
         needle = args.match or text
         if not needle:
-            return _fail('which entry? milo note remove "<substring>"')
+            return _fail('which entry? moloctl note remove "<substring>"')
         res = mem.remove(target, needle)
         (ui.ok if res.ok else ui.err)(res.as_text())
         return 0 if res.ok else 1
@@ -1097,8 +1632,8 @@ def _bar(pct: int, width: int = 16) -> str:
 def _resync_after_pack_change(action: str) -> None:
     """Re-sync harnesses so an enabled agent actually exists in the tool.
 
-    Without this, `milo packs enable code-reviewer` reports success and the
-    subagent does not appear until the user happens to run `milo sync`. They
+    Without this, `moloctl packs enable code-reviewer` reports success and the
+    subagent does not appear until the user happens to run `moloctl sync`. They
     would reasonably conclude the feature is broken, and the failure gives them
     nothing to act on. Sync is cheap and idempotent, so doing it here is
     strictly better than making them remember.
@@ -1111,7 +1646,7 @@ def _resync_after_pack_change(action: str) -> None:
         results = harness.sync_all()
     except Exception as exc:                      # noqa: BLE001 - never block
         ui.warn(f"enabled, but syncing tools failed: {exc}")
-        ui.say(ui.dim("  retry with: milo sync"))
+        ui.say(ui.dim("  retry with: moloctl sync"))
         return
     touched = [r for r in results if r.written]
     bad = [r for r in results if not r.ok]
@@ -1151,12 +1686,12 @@ def cmd_packs(args: argparse.Namespace) -> int:
             for k, v in sorted(known.items()):
                 ui.say(f"  {k:<24} {ui.dim(v['summary'])}")
             ui.say()
-            ui.say(ui.dim(f"  add one: milo packs add {sorted(known)[0]}"))
+            ui.say(ui.dim(f"  add one: moloctl packs add {sorted(known)[0]}"))
         return 0
 
     if action in ("add", "install"):
         if not name:
-            return _fail("which pack? milo packs add superpowers "
+            return _fail("which pack? moloctl packs add superpowers "
                          "| owner/repo | <path>")
         with ui.Spinner(f"fetching {name}"):
             res = packs.install(name, name=args.rename,
@@ -1179,17 +1714,17 @@ def cmd_packs(args: argparse.Namespace) -> int:
             ui.say(ui.dim("  Nothing was added to the system prompt — "
                           f"{res.total} entries would cost real tokens"))
             ui.say(ui.dim("  every turn. They are searchable now:"))
-            ui.say(ui.dim('    milo skills search "code review"'))
-            ui.say(ui.dim("    milo packs enable <name>"))
+            ui.say(ui.dim('    moloctl skills search "code review"'))
+            ui.say(ui.dim("    moloctl packs enable <name>"))
         return 0
 
     if action in ("remove", "rm", "uninstall"):
         if not name:
-            return _fail("which pack? milo packs remove <name>")
+            return _fail("which pack? moloctl packs remove <name>")
         if not args.yes and not ui.confirm(f"remove pack {name!r}?", False):
             return 0
         if not packs.remove(name):
-            return _fail(f"no pack {name!r} — see: milo packs list")
+            return _fail(f"no pack {name!r} — see: moloctl packs list")
         ui.ok(f"removed {name}")
         # Re-sync so anything this pack had exported is reaped from the tools.
         # Leaving a subagent behind whose pack is gone is worse than never
@@ -1210,7 +1745,7 @@ def cmd_packs(args: argparse.Namespace) -> int:
     if action == "search":
         q = _joined(args.query) or name
         if not q:
-            return _fail('what are you after? milo packs search "database"')
+            return _fail('what are you after? moloctl packs search "database"')
         hits = packs.search(q, limit=args.limit)
         if _emit(hits, args.json):
             return 0
@@ -1229,7 +1764,7 @@ def cmd_packs(args: argparse.Namespace) -> int:
         wanted = [name] + list(getattr(args, "query", None) or [])
         wanted = [w for w in wanted if w]
         if not wanted:
-            return _fail(f"which one? milo packs {action} <name>")
+            return _fail(f"which one? moloctl packs {action} <name>")
         on = action == "enable"
         # Accept a pack name or a category as shorthand for "all of these" —
         # enabling 270 agents one at a time is not a workflow anyone will use.
@@ -1244,7 +1779,7 @@ def cmd_packs(args: argparse.Namespace) -> int:
         unknown = [w for w in expanded if w not in known]
         if unknown:
             return _fail(f"not installed: {', '.join(sorted(set(unknown))[:5])}"
-                         f"\n  find it first: milo packs search \"{unknown[0]}\"")
+                         f"\n  find it first: moloctl packs search \"{unknown[0]}\"")
         touched = packs.set_enabled(expanded, on=on)
         if not touched:
             ui.say(ui.dim(f"  already {action}d"))
@@ -1259,7 +1794,7 @@ def cmd_packs(args: argparse.Namespace) -> int:
 
     if action == "show":
         if not name:
-            return _fail("which pack? milo packs show <name>")
+            return _fail("which pack? moloctl packs show <name>")
         entry = packs.installed().get(packs.slugify(name))
         if not entry:
             return _fail(f"no pack {name!r}")
@@ -1278,5 +1813,185 @@ def cmd_packs(args: argparse.Namespace) -> int:
         ui.say()
         ui.say(ui.dim("  * = in the prompt index"))
         return 0
+
+    return _fail(f"unknown action {action!r}")
+
+
+def cmd_media(args: argparse.Namespace) -> int:
+    """Manage generated media (images, audio, etc.)."""
+    from .curated import CuratedMemory, FILENAMES
+
+    mem = CuratedMemory()
+    action = (args.action or "view").lower()
+    target = args.target or ("user" if action in ("me",) else "memory")
+    text = _joined(getattr(args, "text", ""))
+    match_arg = getattr(args, "match", "")
+
+    if action in ("view", "show", "list"):
+        if _emit(mem.stats(), args.json):
+            return 0
+        block = mem.render_block()
+        if not block:
+            ui.warn("both stores are empty")
+            ui.say(ui.dim('  add one: moloctl media add "..." [--user]'))
+            return 0
+        ui.say(block)
+        ui.say()
+        for t in ("memory", "user"):
+            s = mem.stats()[t]  # type: ignore[index]
+            bar = _bar(s["pct"])                     # type: ignore[index]
+            ui.say(f"  {FILENAMES[t]:<10} {bar} "
+                   f"{s['used']}/{s['limit']} chars, {s['entries']} entries")  # type: ignore[index]
+        return 0
+
+    if action == "add":
+        if not text:
+            return _fail('what should Milo remember? moloctl media add "..." [--user]')
+        res = mem.add(target, text)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        if not res.ok:
+            ui.say(ui.dim("  see what's in there: moloctl media view"))
+            return 0 if res.ok else 1
+        return 0 if res.ok else 1
+
+    if action == "replace":
+        if not match_arg or not text:
+            return _fail('moloctl media replace --match "<substring>" "<new text>"')
+        res = mem.replace(target, match_arg, text)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        return 0 if res.ok else 1
+
+    if action in ("remove", "rm", "forget"):
+        needle = match_arg or text
+        if not needle:
+            return _fail('which entry? moloctl media remove "<substring>"')
+        res = mem.remove(target, needle)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        return 0 if res.ok else 1
+
+    if action == "edit":
+        # Hand-editing is a first-class path, not a fallback: these files exist
+        # precisely so a human can correct what the agent believes.
+        path = mem.path_for(target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_text("", encoding="utf-8")
+        if not _open_in_editor(path):
+            ui.say(str(path))
+            return 0
+        after = CuratedMemory()
+        ui.ok(f"{FILENAMES[after._norm(target)]} — {after.summary().splitlines()[0]}")
+        return 0
+
+    if action == "clear":
+        if not args.yes and not ui.confirm(f"clear {FILENAMES[mem._norm(target)]}?", False):
+            return 0
+        ui.ok(mem.clear(target).as_text())
+        return 0
+
+    if action == "path":
+        print(mem.path_for(target))
+        return 0
+
+    # Handle generate action for media generation via tools
+    if action == "generate":
+        if not text:
+            return _fail('which tool? moloctl media generate <tool_name> [key=value ...]')
+        # Use shlex to split the text respecting quotes
+        import shlex
+        try:
+            tokens = shlex.split(text)
+        except ValueError as e:
+            return _fail(f"invalid arguments: {e}")
+        if not tokens:
+            return _fail('which tool? moloctl media generate <tool_name> [key=value ...]')
+        tool_name = tokens[0]
+        tool_args = tokens[1:]
+        # Parse key=value
+        kwargs = {}
+        for arg in tool_args:
+            if '=' not in arg:
+                return _fail(f"invalid argument '{arg}'. Use key=value format.")
+            key, value = arg.split('=', 1)
+            # Try to convert value to appropriate type
+            if value.lower() == "true":
+                value = True
+            elif value.lower() == "false":
+                value = False
+            elif value.isdigit():
+                value = int(value)
+            elif value.replace('.', '', 1).isdigit() and value.count('.') == 1:
+                value = float(value)
+            kwargs[key] = value
+        # Get the tool class
+        from .tools import get_tool
+        tool_class = get_tool(tool_name)
+        if not tool_class:
+            return _fail(f"no tool {tool_name!r}")
+        # Instantiate and run
+        tool = tool_class()
+        try:
+            result = tool.run(**kwargs)
+        except Exception as e:
+            ui.err(f"Error running tool {tool_name}: {e}")
+            return 1
+        # Emit result if json
+        if _emit(result, args.json):
+            return 0
+        # Otherwise, create a media entry from the result
+        # We'll format a string that describes the generated media
+        media_text = f"[{tool_name}] "
+        # Add relevant fields from result
+        if isinstance(result, dict):
+            for key, value in result.items():
+                if key not in ['status']:
+                    media_text += f"{key}: {value} | "
+        else:
+            media_text += str(result)
+        # Remove trailing ' | '
+        if media_text.endswith(' | '):
+            media_text = media_text[:-3]
+        # Now add this media_text to the curated memory
+        res = mem.add(target, media_text)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        if not res.ok:
+            ui.say(ui.dim("  see what's in there: moloctl media view"))
+            return 0 if res.ok else 1
+        return 0 if res.ok else 1
+        # Get the tool class
+        from .tools import get_tool
+        tool_class = get_tool(tool_name)
+        if not tool_class:
+            return _fail(f"no tool {tool_name!r}")
+        # Instantiate and run
+        tool = tool_class()
+        try:
+            result = tool.run(**kwargs)
+        except Exception as e:
+            ui.err(f"Error running tool {tool_name}: {e}")
+            return 1
+        # Emit result if json
+        if _emit(result, args.json):
+            return 0
+        # Otherwise, create a media entry from the result
+        # We'll format a string that describes the generated media
+        media_text = f"[{tool_name}] "
+        # Add relevant fields from result
+        if isinstance(result, dict):
+            for key, value in result.items():
+                if key not in ['status']:
+                    media_text += f"{key}: {value} | "
+        else:
+            media_text += str(result)
+        # Remove trailing ' | '
+        if media_text.endswith(' | '):
+            media_text = media_text[:-3]
+        # Now add this media_text to the curated memory
+        res = mem.add(target, media_text)
+        (ui.ok if res.ok else ui.err)(res.as_text())
+        if not res.ok:
+            ui.say(ui.dim("  see what's in there: moloctl media view"))
+            return 0 if res.ok else 1
+        return 0 if res.ok else 1
 
     return _fail(f"unknown action {action!r}")

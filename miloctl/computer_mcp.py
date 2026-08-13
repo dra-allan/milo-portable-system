@@ -20,7 +20,6 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 from typing import Any, Dict, List
 
 def _approval() -> str:
@@ -40,26 +39,14 @@ def _opencli() -> str:
     return resolved
 
 
-def _default_opencli_profile() -> str:
-    """Fallback profile id: the defaultContextId OpenCLI already declares."""
-    try:
-        cfg = Path.home() / ".opencli" / "browser-profiles.json"
-        return json.loads(cfg.read_text(encoding="utf-8")).get("defaultContextId", "g5f9qrts")
-    except (OSError, ValueError, TypeError):
-        return "g5f9qrts"
-
-
 def _bridge(*parts: str, timeout: int = 120) -> Dict[str, Any]:
     """Run one ``opencli browser <session> <command>`` invocation."""
     session = os.environ.get("MILO_BROWSER_SESSION", "milo")
     argv = [_opencli(), "browser", session, *parts]
-    env = os.environ.copy()
-    if "OPENCLI_PROFILE" not in env:
-        env["OPENCLI_PROFILE"] = _default_opencli_profile()
     try:
         p = subprocess.run(
             argv, capture_output=True, text=True, timeout=timeout,
-            encoding="utf-8", errors="replace", env=env,
+            encoding="utf-8", errors="replace",
         )
     except FileNotFoundError as exc:
         raise RuntimeError("opencli not found on PATH") from exc
