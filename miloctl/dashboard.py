@@ -44,6 +44,11 @@ def serve(daemon: Any, host: str = "127.0.0.1", port: int = 8765) -> None:
     ThreadingHTTPServer((host, port), DashboardHandler).serve_forever()
 
 
-if __name__ == "__main__":
+def main() -> int:
     from .daemon import MiloDaemon
     serve(MiloDaemon())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
