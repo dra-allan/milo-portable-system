@@ -281,6 +281,7 @@ class RankingPipeline:
             logger.info('daily upload cap (%d/24h) reached for %s; leaving '
                         '%s queued', cap, channel, plan.get('local_path'))
             return None
+        channel = self._resolve_channel(plan)
         try:
             from .publisher import RankingPublisher
             publisher = RankingPublisher(channel=channel)
