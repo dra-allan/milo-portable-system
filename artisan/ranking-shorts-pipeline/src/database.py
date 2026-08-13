@@ -17,7 +17,6 @@ import json
 import sqlite3
 import time
 from contextlib import contextmanager
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -176,18 +175,8 @@ class RankingDatabase:
                 'SELECT * FROM builds WHERE id=?', (build_id,)).fetchone()
         return dict(row) if row else None
 
-    def _day_start(self) -> float:
-        """Start of the current local day as an epoch timestamp.
-
-        The caps reset at this fixed boundary (local midnight) instead of a
-        sliding 24h window, so a daily run at the same wall-clock time always
-        sees a fresh budget rather than yesterday's uploads still counting.
-        """
-        now = datetime.now()
-        return datetime(now.year, now.month, now.day).timestamp()
-
     def uploads_since(self, seconds: float) -> int:
-        cutoff = max(time.time() - seconds, self._day_start())
+        cutoff = time.time() - seconds
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM builds WHERE status='uploaded' "
@@ -195,16 +184,15 @@ class RankingDatabase:
         return int(row['n'] if row else 0)
 
     def uploaded_count_for_channel_since(self, channel: str,
-                                         seconds: float = 0) -> int:
-        """Uploads to one channel since the cap boundary.
+                                         seconds: float) -> int:
+        """Uploads to one channel within the rolling window.
 
         This is the per-channel cap primitive the upload policy expects. The
         channel is recorded on the build row at upload time; builds uploaded
         before the column shipped have NULL there and are not counted, which
-        only ever makes the current window look emptier than it was. The
-        boundary is start-of-local-day, so the cap resets every midnight.
+        only ever makes the current window look emptier than it was.
         """
-        cutoff = max(time.time() - seconds, self._day_start())
+        cutoff = time.time() - seconds
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM builds WHERE status='uploaded' "
