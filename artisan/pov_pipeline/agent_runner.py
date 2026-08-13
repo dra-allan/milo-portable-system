@@ -42,11 +42,13 @@ def log(p,msg,error=False):
     except OSError: pass
     print(f"[{'error' if error else 'agent'}] {msg}",file=sys.stderr if error else sys.stdout)
 
-def write_manifest(p,agents,status="RUNNING",results=()):
+def write_manifest(p,agents,status="RUNNING",results=(),stage="agents",source_url="",extra=None):
     p=Path(p); outputs={}
     for _,rel in agents:
         f=p/rel; outputs[rel]={"bytes":f.stat().st_size,"modified":stamp()} if f.exists() else None
-    doc={"schema":2,"project":p.name,"project_dir":str(p),"status":status,"stage":"agents","updated_at":stamp(),"agent_order":[a for a,_ in agents],"outputs":outputs,"agents":{r.agent:asdict(r) for r in results},"log":str(state_dir(p)/"pipeline.log")}
+    doc={"schema":2,"project":p.name,"project_dir":str(p),"status":status,"stage":stage,"updated_at":stamp(),"agent_order":[a for a,_ in agents],"outputs":outputs,"agents":{r.agent:asdict(r) for r in results},"log":str(state_dir(p)/"pipeline.log")}
+    if source_url: doc["source_url"]=source_url
+    if extra: doc["extra"]=extra
     (state_dir(p)/"manifest.json").write_text(json.dumps(doc,indent=2),encoding="utf-8")
 
 def resolve_opencode():
@@ -92,6 +94,17 @@ def build_command(exe,brief_file,agent,model):
     if "--auto" in flags and os.environ.get("POV_OPENCODE_NO_AUTO")!="1": cmd.append("--auto")
     return cmd
 
+def record_outcome(project,chain,model):
+    try:
+        milo=shutil.which("milo") or shutil.which("mylo")
+        if not milo: return
+        status="PASS" if chain.ok else "REVIEW" if chain.needs_review else "FAIL"
+        text=f"POV chain {chain.project}: {status} - {chain.summary()}"
+        if chain.reason: text += f" ({chain.reason})"
+        subprocess.run([milo,"remember",text,"--project","pov-pipeline"],
+                       capture_output=True,timeout=30)
+    except (OSError,subprocess.SubprocessError): pass
+
 def kill_tree(proc):
     try:
         if os.name=="nt": subprocess.run(["taskkill","/PID",str(proc.pid),"/T","/F"],capture_output=True,timeout=20)
@@ -123,13 +136,13 @@ def dispatch(project,agent,outfile,previous,model,timeout,attempt,gate_report,dr
     return result
 
 def run_agent_chain(project_dir,agents,*,agents_dir=AGENTS_DIR,gate_fn=None,gate_after="POV-scriptwriter",gate_retries=None,model=None,agent_override=None,timeout=None,use_memory=True,notify=None,source_url="",dry_run=False):
-    del agents_dir,agent_override,use_memory,source_url
+    del agents_dir,agent_override
     p=Path(project_dir); p.mkdir(parents=True,exist_ok=True); model=model or os.environ.get("POV_OPENCODE_MODEL",DEFAULT_MODEL)
     gate_retries=3 if gate_retries is None else gate_retries; timeout=timeout or int(os.environ.get("POV_AGENT_TIMEOUT","0") or 0) or None
     chain=ChainResult(p.name); previous=None
     print("\n"+"="*60+f"\n  POV AGENT CHAIN (Nemotron, {len(agents)} stages)\n"+"="*60)
     for agent,outfile in agents:
-        write_manifest(p,agents,results=chain.agents); target=p/outfile
+        write_manifest(p,agents,results=chain.agents,source_url=source_url); target=p/outfile
         if target.exists() and target.stat().st_size:
             res=AgentResult(agent,outfile,status="skipped",bytes_written=target.stat().st_size,finished_at=stamp())
         else:
@@ -139,10 +152,11 @@ def run_agent_chain(project_dir,agents,*,agents_dir=AGENTS_DIR,gate_fn=None,gate
                 if res.ok: break
             chain.agents.append(res)
             if not res.ok:
-                chain.reason=f"{agent} failed: {res.error}"; chain.needs_review=True; log(p,chain.reason,True); write_manifest(p,agents,"NEEDS_REVIEW",chain.agents)
+                chain.reason=f"{agent} failed: {res.error}"; chain.needs_review=True; log(p,chain.reason,True); write_manifest(p,agents,"NEEDS_REVIEW",chain.agents,source_url=source_url)
                 if notify:
                     try: notify("agent.failed",chain.reason)
                     except Exception: pass
+                if use_memory: record_outcome(p,chain,model)
                 return chain
         chain.agents.append(res); previous=outfile; print(f"[{agent}] {res.status} {outfile} ({res.bytes_written} bytes)")
         if gate_fn and agent==gate_after and res.status=="done" and not dry_run:
@@ -155,6 +169,10 @@ def run_agent_chain(project_dir,agents,*,agents_dir=AGENTS_DIR,gate_fn=None,gate
                     if not res.ok: break
             chain.gate_passed=passed
             if not passed:
-                chain.reason="script gate failed after retries"; chain.needs_review=True; write_manifest(p,agents,"NEEDS_REVIEW",chain.agents); return chain
-    chain.ok=True; write_manifest(p,agents,"OK",chain.agents); log(p,"chain complete"); return chain
+                chain.reason="script gate failed after retries"; chain.needs_review=True; write_manifest(p,agents,"NEEDS_REVIEW",chain.agents,source_url=source_url)
+                if use_memory: record_outcome(p,chain,model)
+                return chain
+    chain.ok=True; write_manifest(p,agents,"OK",chain.agents,source_url=source_url); log(p,"chain complete")
+    if use_memory: record_outcome(p,chain,model)
+    return chain
 ""
