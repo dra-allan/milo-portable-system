@@ -9,7 +9,7 @@ from typing import Callable
 
 HERE = Path(__file__).resolve().parent
 AGENTS_DIR = HERE / "agents"
-DEFAULT_MODEL = "opencode/nemotron-3-ultra-free"
+DEFAULT_MODEL = "nvidia/nvidia/nemotron-3-ultra-550b-a55b"
 DEFAULT_TIMEOUT = 1800
 TIMEOUTS = {"POV-researcher":2400,"POV-scriptwriter":2400,"POV-image-director":1800,"POV-thumbnail-artist":900,"POV-voice-engineer":1200,"POV-seo-specialist":900,"POV-archive-manager":900}
 
