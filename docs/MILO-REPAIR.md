@@ -14,12 +14,28 @@ Every completed run should call `Runtime.finish(...)`. Milo updates the model's 
 
 ## Computer use
 
-Start a Chromium instance with remote debugging enabled, set `MILO_CDP_URL`, and register `python -m miloctl.computer_mcp` as an MCP server. Keep downloads and other irreversible actions behind `MILO_COMPUTER_APPROVAL`; extend the same approval gate to desktop control before adding mouse/keyboard automation outside the browser.
+Milo drives the browser the same way the Flow CLI does: through the OpenCLI
+Browser Bridge. The extension sits in Allan's real, already-logged-in Chrome —
+no fresh Chromium, no CDP endpoint, no separate profile. `miloctl.computer_mcp`
+is an MCP server that shells out to `opencli browser <session> <command>` and
+is registered automatically by `milo sync` for every installed harness. The
+first use per boot binds the current tab: `opencli browser milo bind`.
+
+Keep downloads and other irreversible actions behind `MILO_COMPUTER_APPROVAL`;
+extend the same approval gate to desktop control before adding mouse/keyboard
+automation outside the browser.
 
 ## Next wiring pass
 
 1. Register the computer MCP server in the shared harness configuration.
 2. Add `Runtime` lifecycle hooks to `milo run`, routines, and Telegram tasks.
 3. Replace static model flags with profile selection and eval thresholds.
-4. Add real Playwright tests and provider-backed coding benchmark tasks.
+4. Add real bridge-backed tests and provider-backed coding benchmark tasks.
 5. Remove all plaintext secrets and rotate anything previously committed.
+
+The first four items are now done on this branch: `milo sync` emits the
+`milo-computer` server everywhere, `milo run` and `milo eval --run` call
+`Runtime.finish` (events + routing evidence in `~/.milo/runtime/events.jsonl`),
+Hermes auto-learning nudges repeatable successes toward `/learn`, and `milo eval`
+scores any model or harness against the golden-task matrix with and without live
+execution.

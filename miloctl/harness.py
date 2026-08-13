@@ -118,6 +118,22 @@ def mcp_servers(secrets: Optional[Dict[str, str]] = None) -> Dict[str, dict]:
         }
     }
 
+    # Computer use: drives the already-logged-in Chrome through the OpenCLI
+    # browser bridge. Needs opencli on PATH plus the bridge extension in the
+    # browser; included unconditionally because it needs no credentials and a
+    # missing bridge fails loudly per-tool rather than at boot.
+    if shutil.which("opencli") is not None:
+        out[agent_slug() + "-computer"] = {
+            "type": "local",
+            "command": [py, "-m", "miloctl.computer_mcp"],
+            "enabled": True,
+            "environment": {
+                "MILO_HOME": str(paths.milo_home()),
+                "MILO_COMPUTER_APPROVAL": "{{MILO_COMPUTER_APPROVAL}}",
+                "MILO_BROWSER_SESSION": "{{MILO_BROWSER_SESSION}}",
+            },
+        }
+
     if s.get("GITHUB_PAT"):
         out["github"] = {
             "type": "local",

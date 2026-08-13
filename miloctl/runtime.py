@@ -58,9 +58,9 @@ class Runtime:
 
     DEFAULT_PROFILES = [
         ModelProfile("deepseek-chat", "deepseek", ["text", "tools", "coding"], quality=0.72, tool_score=0.76),
-        ModelProfile("claude-opus", "anthropic", ["text", "tools", "coding", "vision"], quality=0.90, tool_score=0.91, vision_score=0.92),
-        ModelProfile("gpt-5-codex", "openai", ["text", "tools", "coding", "vision"], quality=0.91, tool_score=0.94, vision_score=0.88),
-        ModelProfile("gemini-pro", "google", ["text", "tools", "coding", "vision"], quality=0.84, tool_score=0.78, vision_score=0.90),
+        ModelProfile("claude-opus", "anthropic", ["text", "tools", "coding", "vision", "browser"], quality=0.90, tool_score=0.91, vision_score=0.92),
+        ModelProfile("gpt-5-codex", "openai", ["text", "tools", "coding", "vision", "browser"], quality=0.91, tool_score=0.94, vision_score=0.88),
+        ModelProfile("gemini-pro", "google", ["text", "tools", "coding", "vision", "browser"], quality=0.84, tool_score=0.78, vision_score=0.90),
     ]
 
     def __init__(self, state_dir: Optional[Path] = None):
