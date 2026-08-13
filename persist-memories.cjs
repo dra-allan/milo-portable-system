@@ -1,151 +1,59 @@
+#!/usr/bin/env node
+'use strict';
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const https = require('https');
 
-const storageDir = path.resolve(process.env.AGENTMEMORY_HOME || 'C:/Users/user/.milo/storage');
+const home = path.resolve(process.env.MILO_HOME || path.join(process.env.LOCALAPPDATA || process.env.HOME || process.cwd(), '.milo'));
+const storageDir = path.resolve(process.env.AGENTMEMORY_HOME || path.join(home, 'storage'));
 const storeFile = path.join(storageDir, 'agent-memory-store.json');
-const storeBackup = storeFile + '.bak';
-const vaultDir = 'C:/Users/user/Desktop/DRA BRAINS';
-const userId = '{{USER_ID}}';
+const backupFile = `${storeFile}.bak`;
+const vaultDir = path.resolve(process.env.MILO_VAULT_DIR || path.join(process.env.HOME || home, 'vault'));
+const userId = process.env.MILO_USER_ID || 'local-user';
+const supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-// Supabase config
-const SUPABASE_URL = '{{SUPABASE_URL}}';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-
-function genId() { return 'mem-' + Math.random().toString(36).slice(2, 11); }
-
-// -- Safe store loading (never nukes memories) --
-let store = {
-  state: {
-    memories: [],
-    relations: [],
-    projects: ['milo'],
-    activeProject: 'milo',
-    currentUser: { id: userId, email: 'milo@agent.local', name: 'Milo' }
-  },
-  version: 0
-};
-
-if (fs.existsSync(storeFile)) {
-  try {
-    const raw = fs.readFileSync(storeFile, 'utf-8');
-    const parsed = JSON.parse(raw);
-    if (parsed.state && Array.isArray(parsed.state.memories)) {
-      store = parsed;
-    } else {
-      throw new Error('Invalid store structure');
-    }
-  } catch (e) {
-    console.error('Store parse failed:', e.message);
-    if (fs.existsSync(storeBackup)) {
-      try {
-        const raw = fs.readFileSync(storeBackup, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (parsed.state && Array.isArray(parsed.state.memories)) {
-          store = parsed;
-          console.error('Restored from backup');
-        }
-      } catch (e2) {
-        console.error('Backup also corrupt, starting fresh');
-      }
-    }
+const emptyStore = () => ({ state: { memories: [], relations: [], projects: ['milo'], activeProject: 'milo', currentUser: { id: userId, name: process.env.MILO_USER_NAME || 'Milo' } }, version: 0 });
+function readStore() {
+  for (const file of [storeFile, backupFile]) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (parsed.state && Array.isArray(parsed.state.memories)) return parsed;
+    } catch (_) { /* try backup */ }
   }
+  return emptyStore();
 }
-
-// Backup before any write
-if (fs.existsSync(storeFile)) {
-  try { fs.copyFileSync(storeFile, storeBackup); } catch (e) { /* skip */ }
+function atomicWrite(file, content) {
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, content, { encoding: 'utf8', mode: 0o600 });
+  fs.renameSync(tmp, file);
 }
-
-const memoriesBefore = store.state.memories.length;
-const newMemories = [];
-
-function addMemory(content, category, tags, importance) {
+function addMemory(store, content, category, tags, importance) {
+  if (!content || store.state.memories.some(m => m.content === content)) return null;
   const now = new Date().toISOString();
-  if (store.state.memories.some(m => m.content === content)) return null;
-  const mem = {
-    id: genId(), content, category,
-    project_name: store.state.activeProject || 'milo',
-    source: 'manual', tags: tags || [], importance: importance || 3,
-    user_id: userId, created_at: now, updated_at: now, embedding: null,
-  };
-  store.state.memories.push(mem);
-  newMemories.push(mem);
-  return mem;
+  const mem = { id: `mem-${crypto.randomUUID()}`, content, category: category || 'fact', project_name: store.state.activeProject || 'milo', source: 'manual', tags: tags || [], importance: Number.isFinite(importance) ? importance : 3, user_id: userId, created_at: now, updated_at: now, embedding: null };
+  store.state.memories.push(mem); return mem;
 }
-
-// CLI: node persist-memories.cjs "content" "category" "tag1,tag2" importance
-const args = process.argv.slice(2);
-if (args.length >= 2) {
-  addMemory(args[0], args[1], args[2] ? args[2].split(',') : [], parseInt(args[3]) || 3);
+async function syncMemory(mem) {
+  if (!supabaseUrl || !supabaseKey) return false;
+  let url; try { url = new URL(`${supabaseUrl}/rest/v1/memories`); } catch (_) { return false; }
+  return new Promise(resolve => {
+    const body = JSON.stringify({ ...mem, project_name: mem.project_name, strength: 1, access_count: 0, is_latest: true });
+    const req = https.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=minimal' } }, res => { res.resume(); resolve(res.statusCode >= 200 && res.statusCode < 300); });
+    req.on('error', () => resolve(false)); req.setTimeout(15000, () => { req.destroy(); resolve(false); }); req.end(body);
+  });
 }
-
-// Sync latest daily notes to memories
-const dailyNotesDir = path.join(vaultDir, '01 - Daily Notes');
-if (fs.existsSync(dailyNotesDir)) {
-  const files = fs.readdirSync(dailyNotesDir)
-    .filter(f => f.endsWith('.md') && /^\d{4}-\d{2}-\d{2}/.test(f))
-    .sort()
-    .slice(-5);
-  for (const file of files) {
-    const dateStr = file.replace('.md', '');
-    addMemory(`Daily note ${dateStr}: session log exists in vault`, 'context', ['vault', 'daily-note', dateStr], 2);
-  }
-}
-
-// -- Write to local store --
-const out = JSON.stringify(store, null, 2);
-fs.writeFileSync(storeFile, out, 'utf-8');
-const addedLocal = store.state.memories.length - memoriesBefore;
-console.log(`Local: added ${addedLocal} memories. Total: ${store.state.memories.length}`);
-
-// -- Sync new memories to Supabase --
-if (SUPABASE_KEY && newMemories.length > 0) {
-  let synced = 0;
-  let errors = 0;
-  let done = 0;
-  const total = newMemories.length;
-
-  for (const mem of newMemories) {
-    const body = JSON.stringify({
-      id: mem.id,
-      user_id: userId,
-      project_name: mem.project_name,
-      content: mem.content,
-      category: mem.category,
-      importance: mem.importance,
-      tags: mem.tags,
-      source: 'manual',
-      strength: 1,
-      access_count: 0,
-      is_latest: true,
-      created_at: mem.created_at,
-      updated_at: mem.updated_at,
-    });
-
-    const req = https.request(`${SUPABASE_URL}/rest/v1/memories`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Prefer': 'return=minimal',
-      },
-    }, (res) => {
-      if (res.statusCode >= 200 && res.statusCode < 300) synced++;
-      else errors++;
-      done++;
-      if (done === total) {
-        console.log(`Supabase: synced ${synced}/${total} (${errors} errors)`);
-        process.exit(0);
-      }
-      res.resume();
-    });
-    req.on('error', () => { errors++; done++; if (done === total) { console.log(`Supabase: synced ${synced}/${total} (${errors} errors)`); process.exit(0); } });
-    req.write(body);
-    req.end();
-  }
-} else {
-  if (newMemories.length > 0) console.log('Supabase: skipped (no key or no new memories)');
-  console.log('Done');
-}
+(async () => {
+  fs.mkdirSync(storageDir, { recursive: true, mode: 0o700 });
+  const store = readStore();
+  if (fs.existsSync(storeFile)) { try { fs.copyFileSync(storeFile, backupFile); } catch (_) {} }
+  const args = process.argv.slice(2), added = [];
+  if (args.length >= 2) { const mem = addMemory(store, args[0], args[1], args[2] ? args[2].split(',').map(x => x.trim()).filter(Boolean) : [], Number.parseInt(args[3], 10) || 3); if (mem) added.push(mem); }
+  const daily = path.join(vaultDir, '01 - Daily Notes');
+  if (fs.existsSync(daily)) for (const file of fs.readdirSync(daily).filter(f => /^\d{4}-\d{2}-\d{2}.*\.md$/.test(f)).sort().slice(-5)) { const mem = addMemory(store, `Daily note ${file}: session log exists in vault`, 'context', ['vault', 'daily-note'], 2); if (mem) added.push(mem); }
+  atomicWrite(storeFile, JSON.stringify(store, null, 2));
+  let synced = 0; for (const mem of added) if (await syncMemory(mem)) synced++;
+  console.log(`Local: added ${added.length} memories. Supabase: synced ${synced}/${added.length}`);
+})().catch(err => { console.error(`Persistence failed: ${err.message}`); process.exitCode = 1; });
