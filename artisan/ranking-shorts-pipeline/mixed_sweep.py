@@ -7,7 +7,7 @@ import time
 from src.config import config
 from src.main import RankingPipeline
 from src.utils import setup_logger
-from channel_profiles import profiles
+from channel_profiles import profiles, route_channel
 
 log = setup_logger(__name__, config.log_dir / 'ranking.log')
 
@@ -38,11 +38,11 @@ def main():
         done.append(topic)
         topic_cfg = config.topic(topic)
         is_other_guys = topic in other_topics
-        channel = 'other_guys' if is_other_guys and 'other_guys' in channel_map else 'rankedup'
         # Contrast is opt-in twice: the topic must be listed for Other Guys and
         # must declare contrast_mode. Lightning or any ordinary topic can never
         # become "OTHERS VS THIS GUY" by accident.
         variant = 'contrast' if is_other_guys and topic_cfg.get('contrast_mode') else 'normal'
+        channel = route_channel(variant)
         plan = pipeline.build(topic, upload=False, variant=variant, channel=channel)
         if not plan:
             continue

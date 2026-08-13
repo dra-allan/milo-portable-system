@@ -105,7 +105,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "tutorial", "asmr", "podcast", "full video"]
-    channel: NXS
+    channel: RankDrop
     tags: ["fishing", "fishingfails", "funnymoments", "top5", "shorts"]
 
   animal_moments:
@@ -121,7 +121,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "ranked", "podcast", "full video"]
-    channel: NXS
+    channel: RankDrop
     tags: ["animals", "funnyanimals", "top5", "shorts"]
 
   sports_moments:
@@ -137,7 +137,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "ranked", "podcast", "full game", "full video"]
-    channel: NXS
+    channel: RankDrop
     tags: ["sports", "sportsfails", "sportsmoments", "top5", "shorts"]
 
   wildlife_moments:
@@ -153,7 +153,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "ranked", "podcast", "documentary full", "full video"]
-    channel: NXS
+    channel: RankDrop
     tags: ["wildlife", "nature", "animals", "top5", "shorts"]
 
   satisfying_processes:
@@ -169,7 +169,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "ranked", "podcast", "asmr", "full video"]
-    channel: NXS
+    channel: RankDrop
     tags: ["satisfying", "oddlysatisfying", "process", "top5", "shorts"]
 
   street_moments:
@@ -185,7 +185,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "ranked", "podcast", "livestream", "full video"]
-    channel: NXS
+    channel: RankDrop
     tags: ["street", "caughtoncamera", "funny", "top5", "shorts"]
 
   gta6_countdown:
@@ -195,7 +195,7 @@ topics:
     extra_sources: []
     max_download_attempts: 6
     negative_keywords: ["leaked footage", "leaked gameplay", "leaked build", "fan made", "concept", "mod showcase", "reaction", "livestream", "podcast", "ai generated"]
-    channel: NXS
+    channel: RankDrop
     tags: ["gta6", "gta6trailer", "leonida", "gtavi", "shorts"]
 
   dashcam_near_misses:
@@ -221,7 +221,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "insurance", "lawyer", "driving lesson", "beamng", "gameplay", "animation", "cgi", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["dashcam", "nearmiss", "driving", "top5", "shorts"]
 
   train_crossing_near_misses:
@@ -247,7 +247,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "model train", "train simulator", "thomas", "railfan compilation", "animation", "gameplay", "cgi", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["trains", "railroad", "nearmiss", "top5", "shorts"]
 
   aviation_saves:
@@ -273,7 +273,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "flight simulator", "microsoft flight simulator", "x-plane", "rc plane", "model plane", "documentary", "animation", "cgi", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["aviation", "planes", "landings", "top5", "shorts"]
 
   boat_ramp_fails:
@@ -299,7 +299,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "fishing tournament", "bass fishing", "boat review", "tutorial", "how to", "commercial", "rental", "animation", "cgi", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["boatramp", "boating", "fails", "top5", "shorts"]
 
   weather_near_misses:
@@ -325,7 +325,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "weather forecast", "radar", "news report", "documentary", "movie", "simulation", "animation", "green screen", "cgi", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["weather", "storm", "nearmiss", "top5", "shorts"]
 
   construction_near_misses:
@@ -351,7 +351,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "training", "safety meeting", "osha", "tutorial", "minecraft", "lego", "simulation", "animation", "cgi", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["construction", "jobsite", "nearmiss", "top5", "shorts"]
 
   forklift_fails:
@@ -377,7 +377,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "training", "certification", "osha", "tutorial", "cartoon", "simulation", "animation", "gameplay", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["forklift", "warehouse", "fails", "top5", "shorts"]
 
   drone_crashes:
@@ -403,7 +403,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "drone review", "tutorial", "simulator", "liftoff", "velocidrone", "gameplay", "animation", "cgi", "fake", "commercial"]
-    channel: NXS
+    channel: RankDrop
     tags: ["drone", "fpv", "crashes", "top5", "shorts"]
 
   workshop_fails:
@@ -429,7 +429,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "tutorial", "how to", "safety lesson", "training", "asmr", "restoration", "simulation", "animation", "cgi", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["workshop", "tools", "fails", "top5", "shorts"]
 
   offroad_recovery_saves:
@@ -455,7 +455,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "snowrunner", "forza", "beamng", "rc truck", "toy truck", "gameplay", "tutorial", "review", "simulation", "cgi", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["offroad", "recovery", "saves", "top5", "shorts"]
 
   fire_rescue_saves:
@@ -481,7 +481,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "training", "drill", "movie", "tv show", "news report", "simulation", "animation", "cgi", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["firerescue", "firefighter", "saves", "top5", "shorts"]
 
   home_security_catches:
@@ -507,7 +507,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "paranormal", "ghost", "prank", "staged", "commercial", "tutorial", "news report", "cat", "dog", "animal", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["securitycam", "doorbellcam", "catches", "top5", "shorts"]
 
   tree_cutting_fails:
@@ -533,7 +533,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "tutorial", "how to", "tree service ad", "commercial", "satisfying", "minecraft", "simulation", "animation", "cgi", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["treecutting", "logging", "fails", "top5", "shorts"]
 
   mechanic_shop_fails:
@@ -559,7 +559,7 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "tutorial", "how to", "repair guide", "diagnosis", "review", "commercial", "training", "simulation", "animation", "gameplay", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["mechanic", "garage", "fails", "top5", "shorts"]
 
   elevator_escalator_saves:
@@ -585,5 +585,5 @@ topics:
     max_source_duration: 90
     min_source_views: 100
     negative_keywords: ["compilation", "reaction", "top 10", "top 5", "ranked", "podcast", "full video", "movie", "prank", "staged", "training", "maintenance", "tutorial", "roblox", "minecraft", "simulation", "animation", "cgi", "fake"]
-    channel: NXS
+    channel: RankDrop
     tags: ["elevator", "escalator", "saves", "top5", "shorts"]

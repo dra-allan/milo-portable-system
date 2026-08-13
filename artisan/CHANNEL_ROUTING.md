@@ -14,10 +14,12 @@ cap is exhausted, rendered clips remain in the lane's backlog.
 
 ## Ranking line
 
-- `rankedup` -> normal ranking topics
-- `other_guys` -> only topics explicitly listed in `OTHER_GUYS_TOPICS`
+- `RankDrop` -> normal ranking topics (TOP-N countdowns)
+- `the other guys` -> contrast `OTHERS VS THIS GUY` clips
 
-A topic must also set `contrast_mode: true` before it can use the `OTHERS VS
-THIS GUY` copy. All other topics stay normal, so a lightning or unrelated topic
-cannot inherit contrast labels. Ranking output is keyed with the channel in the
-plan metadata and never uses the Shorts NXS route.
+Routing is variant-driven: a normal build publishes to RankDrop, a contrast
+build publishes to The Other Guys. A topic must also set `contrast_mode: true`
+before it can use the `OTHERS VS THIS GUY` copy in the mixed sweep. Ranking
+output is keyed with the channel in the plan metadata and never uses the
+Shorts NXS route. Configure lanes with `RANKING_CHANNEL_PROFILES`, for example
+`RankDrop:normal,the other guys:contrast`.
