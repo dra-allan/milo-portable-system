@@ -216,13 +216,15 @@ def script_gate(project_dir: Path) -> bool:
         line = line.strip()
         if not line:
             continue
-        if line.startswith("[NAR-"):
+        # Strip leading markers whether they sit on their own line ([NAR-003])
+        # or inline with the text ([NAR-003] Salt bites...). A line that is
+        # nothing but a marker (or [VOICE...]/[pause] token) is skipped.
+        stripped = re.sub(r"^\[[^\[\]]*\]\s*", "", line)
+        if not stripped:
             continue
-        if line.startswith("[") and line.endswith("]"):
+        if stripped.startswith("POV-") and "The Listener" in stripped:
             continue
-        if line.startswith("POV-") and "The Listener" in line:
-            continue
-        narration_lines.append(line)
+        narration_lines.append(stripped)
     narration_text = " ".join(narration_lines)
     words = len(re.findall(r"[A-Za-z0-9']+", narration_text))
     lo, hi = WORD_BUDGET
