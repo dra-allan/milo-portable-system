@@ -11,7 +11,7 @@ def main():
     daily = int(os.getenv('RANKING_UPLOAD_MAX_PER_DAY', '6'))
     lo = int(os.getenv('RANKING_UPLOAD_DELAY_MIN', '45')); hi = int(os.getenv('RANKING_UPLOAD_DELAY_MAX', '180'))
     p = RankingPipeline(); remaining = max(0, daily - p.db.uploads_since(86400))
-    uploaded = 0
+    uploaded = 0; plan = {}
     for row in p.db.pending_builds(limit=100):
         if uploaded >= remaining: break
         path = row.get('local_path')
