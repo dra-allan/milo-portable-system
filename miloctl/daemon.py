@@ -8,14 +8,14 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from . import ipc, paths
 
 
 class _Handler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
-        daemon: "MiloDaemon" = self.server.daemon_ref  # type: ignore[attr-defined]
+        daemon = self.server.daemon_ref  # type: ignore[attr-defined]
         try:
             raw = self.rfile.readline(ipc.MAX_LINE + 1)
             request = ipc.serve_request(raw, daemon.token)
@@ -36,7 +36,7 @@ class _Server(socketserver.ThreadingTCPServer):
 
 
 class MiloDaemon:
-    def __init__(self, home: Path | None = None):
+    def __init__(self, home: Optional[Path] = None):
         self.home = Path(home or paths.milo_home())
         self.run_dir = self.home / "run"
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -97,16 +97,17 @@ class MiloDaemon:
                 self.jobs[job_id]["updated_at"] = time.time()
                 self._save_jobs()
                 return self.jobs[job_id]
-        raise KeyError(f"unknown method: {method}")
+        raise KeyError("unknown method: " + method)
 
     def run(self) -> None:
         try:
             self.server.serve_forever()
         finally:
             self.server.server_close()
-            for path in (self.port_path,):
-                try: path.unlink()
-                except OSError: pass
+            try:
+                self.port_path.unlink()
+            except OSError:
+                pass
 
 
 def main() -> int:
