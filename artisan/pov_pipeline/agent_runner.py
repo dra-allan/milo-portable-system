@@ -9,7 +9,7 @@ from typing import Callable
 
 HERE = Path(__file__).resolve().parent
 AGENTS_DIR = HERE / "agents"
-DEFAULT_MODEL = "nvidia/nvidia/nemotron-3-ultra-550b-a55b"
+DEFAULT_MODEL = "opencode/nemotron-3-ultra-free"
 DEFAULT_TIMEOUT = 1800
 TIMEOUTS = {"POV-researcher":2400,"POV-scriptwriter":2400,"POV-image-director":1800,"POV-thumbnail-artist":900,"POV-voice-engineer":1200,"POV-seo-specialist":900,"POV-archive-manager":900}
 
@@ -105,6 +105,15 @@ def record_outcome(project,chain,model):
                        capture_output=True,timeout=30)
     except (OSError,subprocess.SubprocessError): pass
 
+def model_error(logfile):
+    try:
+        tail=logfile.read_text(encoding="utf-8",errors="replace")[-4000:]
+    except OSError: return ""
+    for sig in ("Model not found","Unexpected server error","INVALID_ARGUMENT","401","403","API key"):
+        if sig in tail:
+            return f"provider/model error in log ({sig})"
+    return ""
+
 def kill_tree(proc):
     try:
         if os.name=="nt": subprocess.run(["taskkill","/PID",str(proc.pid),"/T","/F"],capture_output=True,timeout=20)
@@ -131,7 +140,8 @@ def dispatch(project,agent,outfile,previous,model,timeout,attempt,gate_report,dr
                 time.sleep(1)
     except (OSError,subprocess.SubprocessError) as exc: result.status,result.error="failed",str(exc); return result
     result.duration_s=round(time.time()-started,1); result.finished_at=stamp()
-    if not target.exists() or target.stat().st_size==0: result.status,result.error="failed",f"{outfile} was not written"
+    if not target.exists() or target.stat().st_size==0:
+        result.status,result.error="failed",model_error(logfile) or f"{outfile} was not written"
     else: result.status,result.bytes_written="done",target.stat().st_size
     return result
 
