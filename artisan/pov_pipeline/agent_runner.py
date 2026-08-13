@@ -170,12 +170,14 @@ def run_agent_chain(project_dir,agents,*,agents_dir=AGENTS_DIR,gate_fn=None,gate
                 return chain
         chain.agents.append(res); previous=outfile; print(f"[{agent}] {res.status} {outfile} ({res.bytes_written} bytes)")
         if gate_fn and agent==gate_after and res.status=="done" and not dry_run:
-            passed=False
+            passed=False; gate_report=""
             for n in range(1,gate_retries+2):
-                chain.gate_attempts=n; passed=bool(gate_fn(p))
+                chain.gate_attempts=n; result=gate_fn(p)
+                if isinstance(result,tuple): passed,gate_report=bool(result[0]),result[1]
+                else: passed,gate_report=bool(result),""
                 if passed: break
                 if n<=gate_retries:
-                    res=dispatch(p,agent,outfile,previous,model,timeout or TIMEOUTS.get(agent,DEFAULT_TIMEOUT),n+1,"Script gate failed. Rewrite the file to satisfy every gate.",dry_run); chain.agents.append(res)
+                    res=dispatch(p,agent,outfile,previous,model,timeout or TIMEOUTS.get(agent,DEFAULT_TIMEOUT),n+1,gate_report or "Script gate failed. Rewrite the file to satisfy every gate.",dry_run); chain.agents.append(res)
                     if not res.ok: break
             chain.gate_passed=passed
             if not passed:

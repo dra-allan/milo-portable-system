@@ -194,44 +194,83 @@ def run_agents(project_dir: Path, *, model: str = None, gate_retries: int = None
     return chain.ok
 
 
-def script_gate(project_dir: Path) -> bool:
-    """SCRIPT GATE: wordcount + rewrite-originality. Cheap check BEFORE TTS."""
-    print("\n" + "=" * 60)
-    print("  SCRIPT GATE")
-    print("=" * 60)
-    script_path = project_dir / "01_SCRIPT_RAW.txt"
-    source_path = project_dir / "00_SOURCE_SCRIPT.txt"
-    ok = True
-
-    # 1. Wordcount (body segments only - narration text, not manifest or segment headers)
-    if not script_path.exists():
-        eprint("[gate] FAIL - 01_SCRIPT_RAW.txt missing")
-        return False
-    raw = script_path.read_text(encoding="utf-8")
-    body = raw.split("=== END MANIFEST ===")[-1]
-    # Count only actual narration lines: skip [NAR-###] markers, [VOICE...] markers,
-    # empty lines, and the title card "POV-... The Listener."
-    narration_lines = []
+def _extract_narration(body: str) -> str:
+    """Pull narration text out of a script body, supporting both formats:
+    the contract table format (narration is the SUMMARY column of BODY/OUTRO
+    rows) and the standalone-marker format (marker on its own line, text
+    follows). Header/transition rows, segment metadata and [NAR-###]/[VOICE]
+    markers never count as narration."""
+    parts = []
     for line in body.splitlines():
         line = line.strip()
         if not line:
             continue
-        # Strip leading markers whether they sit on their own line ([NAR-003])
-        # or inline with the text ([NAR-003] Salt bites...). A line that is
-        # nothing but a marker (or [VOICE...]/[pause] token) is skipped.
+        if "|" in line:
+            fields = [f.strip() for f in line.split("|")]
+            if len(fields) >= 6:
+                role = fields[1]
+                if role in ("BODY", "OUTRO"):
+                    summary = re.sub(r"^\[[^\[\]]*\]\s*", "", fields[5]).strip()
+                    if summary:
+                        parts.append(summary)
+                continue
         stripped = re.sub(r"^\[[^\[\]]*\]\s*", "", line)
         if not stripped:
             continue
         if stripped.startswith("POV-") and "The Listener" in stripped:
             continue
-        narration_lines.append(stripped)
-    narration_text = " ".join(narration_lines)
+        parts.append(stripped)
+    return " ".join(parts)
+
+
+def script_gate(project_dir: Path):
+    """SCRIPT GATE: wordcount + rewrite-originality. Cheap check BEFORE TTS.
+
+    Returns ``(ok, report)``. The report is specific enough for the
+    scriptwriter to act on (actual wordcount vs budget, per-segment guidance,
+    overlap hits) instead of re-dispatching blind.
+    """
+    print("\n" + "=" * 60)
+    print("  SCRIPT GATE")
+    print("=" * 60)
+    script_path = project_dir / "01_SCRIPT_RAW.txt"
+    source_path = project_dir / "00_SOURCE_SCRIPT.txt"
+    report_lines = []
+    ok = True
+
+    # 1. Wordcount (BODY/OUTRO narration text only, not metadata or headers).
+    if not script_path.exists():
+        msg = "01_SCRIPT_RAW.txt missing"
+        eprint("[gate] FAIL - " + msg)
+        return False, "Script gate FAIL: " + msg
+    raw = script_path.read_text(encoding="utf-8")
+    body = raw.split("=== END MANIFEST ===")[-1]
+    narration_text = _extract_narration(body)
     words = len(re.findall(r"[A-Za-z0-9']+", narration_text))
     lo, hi = WORD_BUDGET
     print(f"[gate] wordcount (narration only): {words} (target {lo}-{hi})")
     if not (lo <= words <= hi):
         eprint("[gate] FAIL - outside budget. Expand/cut then re-run.")
         ok = False
+        report_lines.append(
+            f"Script gate FAIL wordcount: {words} narration words "
+            f"(target {lo}-{hi}). Current count is "
+            f"{lo - words if words < lo else words - hi} words "
+            f"{'SHORT' if words < lo else 'OVER'}."
+        )
+    else:
+        report_lines.append(f"Script gate wordcount PASS: {words} (target {lo}-{hi}).")
+
+    # Per-segment guidance so the writer knows how much to add/cut.
+    segs = re.findall(r"(?:^|\n)\s*[A-Za-z0-9_-]+\s*\|\s*(BODY|OUTRO)\s*\|[^|]*\|[^|]*\|[^|]*\|\s*\[?[^|\n]*",
+                      "\n" + body)
+    if len(segs) >= 5:
+        avg = words / max(1, len(segs))
+        report_lines.append(
+            f"{len(segs)} BODY/OUTRO segments, avg {avg:.0f} words each; "
+            f"aim ~{lo // max(1, len(segs))}-{hi // max(1, len(segs))} words "
+            f"per segment."
+        )
 
     # 2. Rewrite-originality (only if a source exists).
     if source_path.exists():
@@ -257,6 +296,10 @@ def script_gate(project_dir: Path) -> bool:
             for h in hits[:10]:
                 eprint(f"       \"...{h}...\"")
             ok = False
+            report_lines.append(
+                f"Script gate FAIL overlap: {len(hits)} matching {n}-word runs "
+                f"against the source: {'; '.join(hits[:5])}."
+            )
         elif hits:
             print(f"[gate] WARN - {len(hits)} runs to eyeball:")
             for h in hits[:10]:
@@ -265,7 +308,7 @@ def script_gate(project_dir: Path) -> bool:
         print("[gate] no source file - originality check skipped")
 
     print(f"[gate] {'PASS' if ok else 'FAIL'}")
-    return ok
+    return ok, "\n".join(report_lines)
 
 
 def run_tts(project_dir: Path) -> bool:
@@ -754,7 +797,8 @@ def main():
             sys.exit(0)
 
     if a.stage == "gate" or (a.stage is None and not ran_chain):
-        if not script_gate(project_dir):
+        gate_ok, _ = script_gate(project_dir)
+        if not gate_ok:
             eprint("[error] Script gate failed - fix the script, then re-run.")
             sys.exit(1)
         if a.stage == "gate":
