@@ -1,0 +1,38 @@
+# Campaign clipper: style and machine defaults only.
+#
+# Campaign RULES do not belong here. They live in config/campaigns/<id>.yaml,
+# which is schema-validated on load. A requirement hidden in shared defaults
+# would silently apply to every campaign, including the ones it is wrong for -
+# which is exactly the bug this split exists to prevent.
+
+defaults:
+  # Aimed for, then clamped into each campaign's legal band. Never equal to a
+  # campaign minimum: a clip rendered at exactly the minimum has no margin for
+  # keyframe-aligned seeking or a platform re-encode rounding down.
+  target_duration: 22
+  clips_per_run: 3
+
+style:
+  text_size: 76
+
+# Fallback hooks for when there is no model key or the model call fails.
+# Deliberately generic: a hook that names a game or a streamer would be wrong
+# on most campaigns, and wrong copy is worse than plain copy.
+hook_templates:
+  - WAIT FOR IT
+  - THIS IS INSANE
+  - HE ACTUALLY DID THAT
+  - NO WAY THIS HAPPENED
+  - WATCH TILL THE END
+  - THIS CHANGED EVERYTHING
+  - I CANT BELIEVE THIS
+  - THE ENDING THOUGH
+
+# Global forbidden terms, checked in addition to each campaign's own banned
+# topics. Word-boundary matched, so these do not fire inside longer words.
+banned_words:
+  - nsfw
+  - onlyfans
+  - slur
+  - suicide
+  - overdose

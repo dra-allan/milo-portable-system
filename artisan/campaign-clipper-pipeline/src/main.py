@@ -8,7 +8,7 @@ No stage is skipped because the previous one looked fine, and each of the last
 two is a separate opt-in. That is not excessive caution, it reflects how the
 costs differ: a bad render costs minutes, a bad upload is deletable, and a bad
 *submission* spends one of a handful of daily slots and moves you toward losing
-the linked account - which is the only asset here that cannot be rebuilt from a
+the linked account, which is the only asset here that cannot be rebuilt from a
 git branch.
 
 So with default config ``--mode run`` builds, validates, and stops, printing
@@ -20,7 +20,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from . import captions, cleanup, clipster, compiler, renderer, sources
+from . import captions, cleanup, clipster, compiler, overlay as ov
+from . import renderer, sources
 from . import validator as validation
 from .config import config
 from .database import ClipperDatabase
@@ -76,10 +77,10 @@ def mode_test() -> int:
     except Exception as exc:
         hard.append(f'encoder probe: {exc}')
 
-    for module, note in (('cv2', 'logo detection will report unverifiable'),
+    for module, note in (('yaml', 'campaign specs cannot be loaded'),
+                        ('cv2', 'logo detection reports unverifiable'),
                         ('playwright', 'browse/submit unavailable, manual '
                                        'paste still works'),
-                        ('yaml', 'campaign specs cannot be loaded'),
                         ('googleapiclient', 'uploads unavailable'),
                         ('gdown', 'Drive folder download unavailable')):
         try:
@@ -87,8 +88,6 @@ def mode_test() -> int:
             print(f'[ OK ] {module}')
         except ImportError:
             soft.append(f'{module} missing: {note}')
-    if module == 'yaml':
-        pass
 
     if not config.script_api_key:
         soft.append('GEMINI_API_KEY unset: copy falls back to templates')
@@ -117,8 +116,9 @@ def mode_campaigns(platform: str) -> int:
         return 1
     for card in cards:
         rate = card.get('rate_per_1m')
-        print(f"{card['id']:<32} {card.get('type','?'):<9} "
-              f"{('$%s/1M' % rate) if rate else '':<12} {card['url']}")
+        rate_text = f'${rate:g}/1M' if rate else ''
+        print(f"{card['id']:<32} {card.get('type', '?'):<9} "
+              f"{rate_text:<12} {card['url']}")
     write_json(config.data_dir / f'campaigns_{platform}.json', cards)
     return 0
 
@@ -131,20 +131,19 @@ def mode_pull(url: str, campaign_id: str, use_model: bool) -> int:
               'into a text file and use: --mode add --id <id> --file <path>')
         return 1
     spec, path = compiler.compile_to_file(
-        page['requirements'], campaign_id=campaign_id,
-        name=campaign_id, url=url, card=page.get('card'),
-        use_model=use_model)
+        page['requirements'], campaign_id=campaign_id, name=campaign_id,
+        url=url, card=page.get('card'), use_model=use_model)
     _db().upsert_campaign(spec.id, spec.name, url, spec.to_dict(),
                           page['requirements'])
     _report_spec(spec, path)
     return 0
 
 
-def mode_add(campaign_id: str, file_path: str, name: str,
-             url: str, use_model: bool) -> int:
+def mode_add(campaign_id: str, file_path: str, name: str, url: str,
+             use_model: bool) -> int:
     """Compile a requirements block you pasted into a file.
 
-    The path that always works. No browser, no selectors, no login.
+    The path that always works: no browser, no selectors, no login.
     """
     raw = Path(file_path).expanduser().read_text(encoding='utf-8')
     spec, path = compiler.compile_to_file(
@@ -163,8 +162,7 @@ def _report_spec(spec: CampaignSpec, path: Path) -> None:
                         ('UNPARSED', spec.unparsed)):
         for item in items:
             print(f'  [{label}] {item}')
-    problems = spec.blocking_problems()
-    for item in problems:
+    for item in spec.blocking_problems():
         print(f'  [BLOCK] {item}')
     print('\nRead the YAML before building. The compiler is good, not '
           'psychic.')
@@ -195,8 +193,7 @@ def build(spec: CampaignSpec, db, count: Optional[int] = None,
     """Source, plan, render and validate a run's worth of clips."""
     from . import segmenter
 
-    pre = validation.preflight(spec)
-    if not pre['ok']:
+    if not validation.preflight(spec)['ok']:
         return []
 
     rows = sources.sync_sources(spec, db, refresh=refresh)
@@ -214,14 +211,11 @@ def build(spec: CampaignSpec, db, count: Optional[int] = None,
     for plan in plans:
         copy = captions.build_copy(spec, plan, use_model=use_model)
 
-        # "if-absent" exists because these content folders mix branded and
+        # 'if-absent' exists because these content folders mix branded and
         # unbranded clips, and a second logo on an already-branded clip is the
-        # sloppy look the campaigns reject.
+        # sloppy look the campaigns reject by name.
         stamp = bool(logo)
         if logo and spec.assets.logo_mode == 'if-absent':
-            already = __import__('importlib').import_module(
-                'src.overlay') if False else None
-            from . import overlay as ov
             detected = ov.logo_present(plan['source_path'], logo)
             stamp = detected is not True
             logger.info('LOGO_MODE campaign=%s source=%s already=%s stamp=%s',
@@ -240,8 +234,8 @@ def build(spec: CampaignSpec, db, count: Optional[int] = None,
         db.record_validation(clip_id, {**verdict, 'render': report},
                              verdict['passed'])
         if verdict['passed']:
-            # Only claim the window once the clip is actually shippable, so a
-            # failed render does not permanently burn those seconds.
+            # The window is only claimed once the clip is actually shippable, so
+            # a failed render does not permanently burn those seconds of source.
             db.mark_window_used(spec.id, plan['fingerprint'], plan['start'],
                                 plan['end'])
             renderer.cleanup_work(report)
@@ -256,11 +250,10 @@ def mode_build(campaign_id: str, count: Optional[int], use_model: bool,
     spec = _spec(campaign_id)
     if not spec:
         return 1
-    db = _db()
-    results = build(spec, db, count=count, use_model=use_model,
+    results = build(spec, _db(), count=count, use_model=use_model,
                     refresh=refresh)
     if not results:
-        print('Nothing built. Check the log above for the blocking reason.')
+        print('Nothing built. The blocking reason is in the log above.')
         return 1
     _print_results(results)
     return 0
@@ -289,7 +282,7 @@ def upload_clip(spec: CampaignSpec, db, clip_id: int,
     if not row:
         logger.error('UPLOAD_NO_CLIP id=%s', clip_id)
         return None
-    if row['status'] not in ('validated',):
+    if row['status'] != 'validated':
         logger.error('UPLOAD_REFUSED id=%s status=%s (must be validated)',
                      clip_id, row['status'])
         return None
@@ -313,7 +306,7 @@ def upload_clip(spec: CampaignSpec, db, clip_id: int,
     db.mark_uploaded(clip_id, result['id'], result['url'],
                      account=publisher.channel)
     if result['privacy'] != 'public':
-        logger.warning('UPLOAD_PRIVATE id=%s - views only count once public; '
+        logger.warning('UPLOAD_PRIVATE id=%s views only count once public; '
                        'flip it before submitting', clip_id)
     return result
 
@@ -359,24 +352,23 @@ def mode_submit(campaign_id: str, clip_id: int, fill_only: bool) -> int:
 
 def mode_run(campaign_id: str, count: Optional[int], use_model: bool,
              refresh: bool) -> int:
-    """End to end, stopping at the first gate that is not opened in config."""
+    """End to end, stopping at the first gate that config has not opened."""
     spec = _spec(campaign_id)
     if not spec:
         return 1
     db = _db()
     results = build(spec, db, count=count, use_model=use_model,
-                    refresh=refresh)
+                   refresh=refresh)
     _print_results(results)
     passed = [r for r in results if r['verdict']['passed']]
     if not passed:
         print('\nNothing passed validation. Nothing will be published.')
         return 1
     if not config.auto_upload:
-        print(f'\n{len(passed)} clip(s) ready. Auto-upload is off. Review '
-              f'them, then:')
+        print(f'\n{len(passed)} clip(s) ready. Auto-upload is off. Watch them, '
+              'then:')
         for item in passed:
-            print(f"  --mode upload --id {spec.id} "
-                  f"--clip {item['clip_id']}")
+            print(f"  --mode upload --id {spec.id} --clip {item['clip_id']}")
         return 0
     for item in passed:
         result = upload_clip(spec, db, item['clip_id'])
@@ -396,7 +388,7 @@ def mode_status() -> int:
     print('clips by status:')
     for status, count in sorted(db.stats().items()):
         print(f'  {status:<24} {count}')
-    print(f"uploads in last 24h: {db.uploads_since(86400)} "
+    print(f'uploads in last 24h: {db.uploads_since(86400)} '
           f'(cap {config.upload_max_per_day})')
     pending = clipster.manual_queue()
     if pending:
@@ -405,8 +397,8 @@ def mode_status() -> int:
             print(f"  {item['campaign_id']}: {item['video_url']}")
     for status in ('validated', 'uploaded', 'rejected'):
         for row in db.clips_by_status(status, limit=10):
-            print(f"  [{status}] clip {row['id']} {row['campaign_id']} "
-                  f"{Path(row['local_path'] or '').name}")
+            name = Path(row['local_path'] or '').name
+            print(f"  [{status}] clip {row['id']} {row['campaign_id']} {name}")
     cleanup.disk_report()
     return 0
 
@@ -429,7 +421,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument('--mode', required=True, choices=[
         'test', 'login', 'campaigns', 'pull', 'add', 'specs', 'sources',
         'build', 'upload', 'submit', 'run', 'status', 'cleanup'])
-    parser.add_argument('--id', default='', help='campaign id (spec filename)')
+    parser.add_argument('--id', default='',
+                        help='campaign id (the spec filename)')
     parser.add_argument('--url', default='', help='campaign page URL')
     parser.add_argument('--file', default='',
                         help='text file holding a pasted Requirements block')

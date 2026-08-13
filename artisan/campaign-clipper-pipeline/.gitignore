@@ -1,0 +1,19 @@
+# Runtime lives under VIDEO_FACTORY_ROOT, but guard against a misconfigured
+# run writing here. Campaign content is other people's copyrighted video and
+# must never enter git history.
+config/.env
+.env
+credentials.json
+*token*.json
+data/
+temp/
+output/
+sources/
+assets/*
+!assets/fonts/
+browser/
+__pycache__/
+*.pyc
+*.mp4
+*.mov
+*.mkv
