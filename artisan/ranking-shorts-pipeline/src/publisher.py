@@ -28,7 +28,7 @@ def _client_secrets() -> Path:
 
 class RankingPublisher:
     def __init__(self, channel: Optional[str] = None, privacy_status: Optional[str] = None):
-        self.channel = channel or (os.getenv('RANKING_UPLOAD_CHANNEL') or 'rankdrop').strip()
+        self.channel = channel or (os.getenv('RANKING_UPLOAD_CHANNEL') or 'RankDrop').strip()
         self.privacy_status = (privacy_status or os.getenv('UPLOAD_PRIVACY') or 'public').lower()
         self.credentials_path = _client_secrets(); self.token_file = _token_path(self.channel)
         self.credentials = self._credentials()

@@ -181,6 +181,13 @@ class RankingPipeline:
         scriptwriter.generate_voiceover(ordered, slug)
         scriptwriter.attach_sfx(ordered)
 
+        try:
+            from channel_profiles import route_channel
+        except ImportError:  # pragma: no cover - channel_profiles always ships
+            route_channel = None
+        if not channel:
+            channel = route_channel(variant) if route_channel else topic_cfg.get('channel')
+
         plan = {
             'topic': topic_name,
             'variant': variant,
@@ -189,7 +196,7 @@ class RankingPipeline:
             'upload_title': meta['upload_title'],
             'description': meta['description'],
             'tags': meta['tags'],
-            'channel': channel or topic_cfg.get('channel'),
+            'channel': channel or 'RankDrop',
             'clips': [
                 {
                     'path': clip['local_path'],
@@ -239,6 +246,26 @@ class RankingPipeline:
         return plan
 
     # -- upload --------------------------------------------------------
+    @staticmethod
+    def _resolve_channel(plan: Dict) -> str:
+        """Decide the publish channel for a build, fixing stale routing.
+
+        Old builds (pre-routing-fix) have ``NXS``/``rankedup`` baked into their
+        saved plans, which would post ranking content to the Shorts line. Route
+        by variant instead: ranked videos go to RankDrop, contrast clips go to
+        The Other Guys. Only fall back to the stored channel when it is a real
+        ranking lane (explicit ``--channel`` from the user).
+        """
+        try:
+            from channel_profiles import canonical_channel, route_channel
+        except ImportError:  # pragma: no cover - channel_profiles always ships
+            return (plan.get('channel') or 'RankDrop').strip() or 'RankDrop'
+        stored = (plan.get('channel') or '').strip()
+        if stored and canonical_channel(stored) in ('RankDrop', 'the other guys'):
+            return canonical_channel(stored)
+        variant = (plan.get('variant') or 'normal').lower()
+        return route_channel(variant)
+
     def upload_build(self, build_id: int, plan: Dict) -> Optional[str]:
         """Upload one build, but never beyond the 24h daily cap.
 
@@ -251,9 +278,10 @@ class RankingPipeline:
             logger.info('daily upload cap (%d/24h) reached; leaving %s queued',
                         cap, plan.get('local_path'))
             return None
+        channel = self._resolve_channel(plan)
         try:
             from .publisher import RankingPublisher
-            publisher = RankingPublisher(channel=plan.get('channel'))
+            publisher = RankingPublisher(channel=channel)
         except Exception as exc:  # noqa: BLE001
             logger.error('publisher unavailable: %s', exc)
             self.db.mark_failed(build_id, 'no_publisher')
@@ -575,7 +603,7 @@ def main(argv=None) -> int:
                              'across the videos of one run')
     parser.add_argument('--channel', default=None,
                         help='channel key to publish to, or to authenticate '
-                             'with --mode auth (default: NXS)')
+                             'with --mode auth (default: RankDrop)')
     parser.add_argument('--videos', type=int, default=None,
                         help='number of videos to build in --mode auto '
                              '(default: RANKING_VIDEOS_PER_RUN or 1)')
@@ -611,7 +639,7 @@ def main(argv=None) -> int:
     pipeline = RankingPipeline()
 
     if args.mode == 'auth':
-        channel = (args.channel or 'NXS').strip()
+        channel = (args.channel or 'RankDrop').strip()
         try:
             from googleapiclient.discovery import build
             _ = build  # touch: googleapiclient must be importable for OAuth

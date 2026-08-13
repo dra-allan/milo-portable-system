@@ -1,16 +1,28 @@
 """Explicit ranking-channel routing.
 
-The ranking line is separate from the Shorts line. NXS is never inferred from
-ranking output, and the legacy RankDrop spelling is normalized to rankedup.
+The ranking line is separate from the Shorts line. Ranked countdowns (normal
+variant) publish to RankDrop; the 'OTHERS VS THIS GUY' clips (contrast
+variant) publish to The Other Guys. NXS is never used by ranking output.
+
+Channel keys in this module are the actual token-file suffixes, so a key here
+maps one-to-one to ``config/youtube_token_ranking_<key>.json``.
 """
 from __future__ import annotations
 import os
 
 ALIASES = {
-    'rankdrop': 'rankedup',
-    'rank_drop': 'rankedup',
-    'nxs': 'rankedup',  # legacy misroute: ranking must not use Shorts NXS
+    'rankdrop': 'RankDrop',
+    'rank_drop': 'RankDrop',
+    'rank drop': 'RankDrop',
+    'otherguy': 'the other guys',
+    'other_guy': 'the other guys',
+    'other guy': 'the other guys',
+    'otherguys': 'the other guys',
+    'other_guys': 'the other guys',
+    'other guys': 'the other guys',
 }
+
+DEFAULT_PROFILES = 'RankDrop:normal,the other guys:contrast'
 
 
 def canonical_channel(value: str) -> str:
@@ -19,11 +31,7 @@ def canonical_channel(value: str) -> str:
 
 
 def profiles() -> dict[str, set[str]]:
-    raw = os.getenv('RANKING_CHANNEL_PROFILES', '').strip()
-    # Normal ranking belongs to rankedup. The Other Guys lane is kept in its
-    # own channel/profile and never mixed into rankedup or NXS.
-    if not raw:
-        raw = 'rankedup:normal,other_guys:normal'
+    raw = os.getenv('RANKING_CHANNEL_PROFILES', '').strip() or DEFAULT_PROFILES
     out: dict[str, set[str]] = {}
     for item in raw.split(','):
         if ':' not in item:
@@ -43,3 +51,14 @@ def enabled_channels(mode: str) -> list[str]:
 def channel_for(mode: str, cursor: int = 0) -> str | None:
     channels = enabled_channels(mode)
     return channels[cursor % len(channels)] if channels else None
+
+
+def route_channel(variant: str) -> str:
+    """Channel for a content variant.
+
+    Ranked countdowns go to the normal lane (RankDrop); 'OTHERS VS THIS GUY'
+    clips go to the contrast lane (The Other Guys). Falls back to RankDrop
+    when the profiles don't declare the lane.
+    """
+    mode = 'contrast' if (variant or 'normal').lower() == 'contrast' else 'normal'
+    return channel_for(mode) or 'RankDrop'

@@ -22,8 +22,8 @@ rem ---- disk hygiene: purge sources after a build, delete exports once posted
 set "RANKING_CLEANUP_AFTER_BUILD=true"
 set "RANKING_DELETE_AFTER_UPLOAD=true"
 rem ---- channels and caps ----
-set "RANKING_CHANNEL_PROFILES=rankdrop:both"
-set "RANKING_UPLOAD_CHANNEL=rankdrop"
+set "RANKING_CHANNEL_PROFILES=RankDrop:normal,the other guys:contrast"
+set "RANKING_UPLOAD_CHANNEL=RankDrop"
 set "UPLOAD_MAX_PER_DAY=6"
 set "RANKING_UPLOAD_MAX_PER_DAY=6"
 set "RANKING_UPLOAD_DELAY_MIN=45"
@@ -77,7 +77,8 @@ echo  23. Test environment
 echo  24. Compile Python
 echo  25. Open runtime folders
 echo  26. Stop scheduler
-echo  27. Exit
+echo  27. Reset upload caps
+echo  28. Exit
 echo.
 set "choice="
 set /p "choice=Select: "
@@ -107,7 +108,8 @@ if "%choice%"=="23" goto test
 if "%choice%"=="24" goto compile_check
 if "%choice%"=="25" goto folders
 if "%choice%"=="26" goto stop_daemon
-if "%choice%"=="27" goto done
+if "%choice%"=="27" goto reset_caps
+if "%choice%"=="28" goto done
 goto menu
 :load_env
 if exist "%REPO_DIR%\.env" for /f "usebackq tokens=1,* delims== eol=#" %%A in ("%REPO_DIR%\.env") do if not "%%A"=="" set "%%A=%%B"
@@ -235,7 +237,7 @@ if /i "%RANKING_DELETE_AFTER_UPLOAD%"=="true" (set "RANKING_DELETE_AFTER_UPLOAD=
 goto menu
 :profiles
 set "NEW_PROFILES="
-set /p "NEW_PROFILES=Profiles, e.g. rankdrop:contrast,rankings_main:normal,rankmix:both: "
+set /p "NEW_PROFILES=Profiles, e.g. RankDrop:normal,the other guys:contrast: "
 if defined NEW_PROFILES set "RANKING_CHANNEL_PROFILES=%NEW_PROFILES%"
 goto menu
 :subject
@@ -294,6 +296,14 @@ start "Ranking output" "%RANKING_RUNTIME%\output"
 goto menu
 :stop_daemon
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$root=[IO.Path]::GetFullPath('%PIPE_DIR%');$ps=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ? { $_.CommandLine -and $_.CommandLine -like ('*'+$root+'*src.main*') -and $_.CommandLine -like '*--mode schedule*' };if(-not $ps){'No ranking scheduler found.'}else{$ps|%%{ 'Stopping PID '+$_.ProcessId;Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+pause
+goto menu
+:reset_caps
+call :ensure_python
+if errorlevel 1 goto menu
+call :start_timer "reset upload caps"
+"%PY%" reset_caps.py
+call :stop_timer "reset upload caps"
 pause
 goto menu
 :done
