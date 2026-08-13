@@ -1,88 +1,171 @@
 """Local computer-use MCP server for Milo.
 
-Browser control is intentionally explicit and auditable. It uses Playwright
-when installed and connects to a local browser over CDP, so Milo never needs a
-remote browser credential. Destructive actions require an approval token.
+Browser control rides the OpenCLI Browser Bridge, which drives the real Chrome
+already on this machine (the one with the bridge extension loaded and Allan
+logged in). Milo therefore never spawns a fresh Chromium, never needs a CDP
+endpoint, and works in every tab the user actually has open.
+
+Each MCP tool shells out to ``opencli browser <session> <command>``. The
+session defaults to ``milo`` (override with ``MILO_BROWSER_SESSION``). The
+first time a session is used it must be bound to the live tab with
+``opencli browser milo bind`` — the ``browser_bind`` tool does exactly that.
+
+Destructive actions (downloads) require an approval token in
+``MILO_COMPUTER_APPROVAL``, matching the old Playwright gate.
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import sys
-import time
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-try:
-    from playwright.sync_api import sync_playwright
-except ImportError:  # pragma: no cover
-    sync_playwright = None
-
-_BROWSER = None
-_PAGES = {}
-_APPROVAL = os.environ.get("MILO_COMPUTER_APPROVAL", "")
+def _approval() -> str:
+    return os.environ.get("MILO_COMPUTER_APPROVAL", "")
 
 
-def _page(page_id: str = "current"):
-    if page_id in _PAGES:
-        return _PAGES[page_id]
-    if not _PAGES:
-        if sync_playwright is None:
-            raise RuntimeError("install the optional browser extra: pip install playwright")
-        global _BROWSER
-        _BROWSER = sync_playwright().start()
-        endpoint = os.environ.get("MILO_CDP_URL", "http://127.0.0.1:9222")
-        browser = _BROWSER.chromium.connect_over_cdp(endpoint)
-        context = browser.contexts[0] if browser.contexts else browser.new_context()
-        _PAGES["current"] = context.pages[0] if context.pages else context.new_page()
-        return _PAGES["current"]
-    raise KeyError("unknown page: " + page_id)
+def _opencli() -> str:
+    """Full path to the opencli shim.
+
+    Windows ships opencli as a ``.CMD`` wrapper; CreateProcess only finds
+    ``.exe``/``.bat`` on PATH, so resolve the real file. Falls back to the bare
+    name (POSIX) if resolution somehow fails.
+    """
+    resolved = shutil.which("opencli") or shutil.which("opencli.cmd")
+    if not resolved:
+        raise RuntimeError("opencli not found on PATH — install the OpenCLI CLI and load the browser bridge extension")
+    return resolved
+
+
+def _bridge(*parts: str, timeout: int = 120) -> Dict[str, Any]:
+    """Run one ``opencli browser <session> <command>`` invocation."""
+    session = os.environ.get("MILO_BROWSER_SESSION", "milo")
+    argv = [_opencli(), "browser", session, *parts]
+    try:
+        p = subprocess.run(
+            argv, capture_output=True, text=True, timeout=timeout,
+            encoding="utf-8", errors="replace",
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("opencli not found on PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"browser command timed out after {timeout}s") from exc
+
+    out = ((p.stdout or "") + (p.stderr or "")).strip()
+    payload: Dict[str, Any] = {"command": " ".join(parts)}
+    if p.returncode != 0:
+        raise RuntimeError(out or f"opencli browser exited {p.returncode}")
+    if not out:
+        return payload
+    try:
+        parsed = json.loads(out)
+        if isinstance(parsed, (dict, list)):
+            payload["result"] = parsed
+    except (ValueError, TypeError):
+        pass
+    payload["output"] = out
+    return payload
 
 
 def call(name: str, args: Dict[str, Any]) -> Any:
-    page = _page(args.get("page_id", "current"))
+    if name == "browser_bind":
+        return _bridge("bind")
     if name == "browser_open":
-        page.goto(args["url"], wait_until="domcontentloaded", timeout=30000)
-        return {"url": page.url, "title": page.title()}
+        url = args["url"]
+        tab = args.get("tab") or ""
+        return _bridge("open", *(f"--tab={tab}" if tab else ()), url)
     if name == "browser_snapshot":
-        return {"url": page.url, "title": page.title(), "text": page.locator("body").inner_text()[:20000]}
+        return _bridge("state")
+    if name == "browser_extract":
+        return _bridge("extract")
     if name == "browser_screenshot":
-        path = args.get("path", "milo-screenshot.png")
-        page.screenshot(path=path, full_page=bool(args.get("full_page", False)))
-        return {"path": path, "url": page.url}
+        path = args.get("path") or "milo-screenshot.png"
+        flags = ["--annotate"] if args.get("annotate") else []
+        return _bridge("screenshot", *flags, path)
     if name == "browser_click":
-        page.locator(args["selector"]).click(timeout=15000)
-        return {"ok": True, "url": page.url}
+        return _click_or_keys("click", args)
     if name == "browser_type":
-        page.locator(args["selector"]).fill(args["text"])
-        return {"ok": True}
+        target = args.get("target") or ""
+        text = args.get("text", "")
+        if not text:
+            raise ValueError("browser_type needs 'text'")
+        return _bridge("fill", target, text) if target else _fill_by_semantic("fill", args)
+    if name == "browser_keys":
+        return _click_or_keys("keys", args, is_keys=True)
     if name == "browser_scroll":
-        page.mouse.wheel(0, int(args.get("pixels", 700)))
-        return {"ok": True}
+        direction = args.get("direction", "down")
+        if direction not in ("up", "down"):
+            raise ValueError("direction must be 'up' or 'down'")
+        pixels = args.get("pixels", 500)
+        return _bridge("scroll", direction, f"--amount={pixels}")
     if name == "browser_watch":
         seconds = min(int(args.get("seconds", 10)), 120)
-        page.wait_for_timeout(seconds * 1000)
-        return {"ok": True, "url": page.url, "title": page.title()}
+        return _bridge("wait", "time", str(seconds), timeout=seconds + 30)
     if name == "browser_download":
-        if args.get("approval") != _APPROVAL or not _APPROVAL:
+        if args.get("approval") != _approval() or not _approval():
             raise PermissionError("download requires MILO_COMPUTER_APPROVAL")
-        with page.expect_download() as download:
-            page.locator(args["selector"]).click(timeout=15000)
-        item = download.value
-        path = args.get("path", item.suggested_filename)
-        item.save_as(path)
-        return {"path": path}
+        pattern = args.get("pattern") or args.get("filename") or ""
+        if not pattern:
+            raise ValueError("browser_download needs a filename/URL pattern to wait for")
+        return _bridge("wait", "download", pattern, timeout=180)
     raise KeyError(name)
 
 
-TOOLS = {
-    "browser_open": "Open a URL in Milo's connected browser.",
-    "browser_snapshot": "Read the current page text and metadata.",
-    "browser_screenshot": "Capture the current page for visual inspection.",
-    "browser_click": "Click a CSS selector in the current page.",
-    "browser_type": "Fill a text field in the current page.",
-    "browser_scroll": "Scroll the current page.",
-    "browser_watch": "Wait while observing the current page or video.",
-    "browser_download": "Download from the page, guarded by explicit approval.",
+def _click_or_keys(name: str, args: Dict[str, Any], *, is_keys: bool = False) -> Any:
+    """click/keys: a numeric ref, CSS selector, or semantic locator."""
+    target = args.get("target") or ""
+    opts: List[str] = []
+    for flag in ("role", "name", "label", "text", "testid"):
+        val = args.get(flag)
+        if val:
+            opts.append(f"--{flag}={val}")
+    nth = args.get("nth")
+    if nth is not None:
+        opts.append(f"--nth={nth}")
+    if is_keys:
+        key = target or args.get("key") or ""
+        if not key:
+            raise ValueError("browser_keys needs 'target'/'key' (e.g. Enter)")
+        return _bridge("keys", *opts, key)
+    if target or not opts:
+        return _bridge("click", *opts, target)
+    raise ValueError("browser_click needs 'target' (ref/CSS) or a semantic locator flag")
+
+
+def _fill_by_semantic(sub: str, args: Dict[str, Any]) -> Any:
+    opts: List[str] = []
+    for flag in ("role", "name", "label", "testid"):
+        val = args.get(flag)
+        if val:
+            opts.append(f"--{flag}={val}")
+    return _bridge(sub, *opts, args["text"])
+
+
+TOOLS: Dict[str, str] = {
+    "browser_bind": "Bind the currently focused Chrome tab to the browser session (run once before other tools).",
+    "browser_open": "Open a URL in the bound browser session.",
+    "browser_snapshot": "Read the current page: URL, title, and interactive elements with numeric indices.",
+    "browser_extract": "Extract the current page as readable markdown.",
+    "browser_screenshot": "Capture the current page (optionally with annotated element refs) to a file.",
+    "browser_click": "Click an element by numeric ref, CSS selector, or semantic locator.",
+    "browser_type": "Fill a text field with exact text (set-and-verify).",
+    "browser_keys": "Press a keyboard key (Enter, Escape, Tab, Control+a).",
+    "browser_scroll": "Scroll the page up or down by pixels.",
+    "browser_watch": "Wait a number of seconds while observing the page (e.g. a video).",
+    "browser_download": "Wait for a browser download to land, guarded by an approval token.",
+}
+
+_SCHEMAS: Dict[str, Dict[str, Any]] = {
+    "browser_open": {"url": {"type": "string", "description": "URL to open"}},
+    "browser_screenshot": {"path": {"type": "string", "description": "Output path (default milo-screenshot.png)"}, "annotate": {"type": "boolean", "description": "Overlay element ref labels"}},
+    "browser_click": {"target": {"type": "string", "description": "Numeric ref (from snapshot), CSS selector, or empty with a semantic flag"}, "role": {"type": "string"}, "name": {"type": "string"}, "nth": {"type": "integer"}},
+    "browser_type": {"target": {"type": "string", "description": "Numeric ref or CSS selector"}, "text": {"type": "string", "description": "Text to set"}, "role": {"type": "string"}, "name": {"type": "string"}},
+    "browser_keys": {"key": {"type": "string", "description": "Key to press, e.g. Enter, Escape, Control+a"}},
+    "browser_scroll": {"direction": {"type": "string", "description": "up or down"}, "pixels": {"type": "integer", "description": "Pixels to scroll (default 500)"}},
+    "browser_watch": {"seconds": {"type": "integer", "description": "Seconds to wait (max 120)"}},
+    "browser_download": {"pattern": {"type": "string", "description": "Download filename/URL pattern to wait for"}, "approval": {"type": "string", "description": "MILO_COMPUTER_APPROVAL token"}},
 }
 
 
@@ -95,7 +178,7 @@ def serve() -> int:
             if method == "initialize":
                 result = {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": False}}, "serverInfo": {"name": "milo-computer", "version": "1.0"}}
             elif method == "tools/list":
-                result = {"tools": [{"name": n, "description": d, "inputSchema": {"type": "object", "properties": {}}} for n, d in TOOLS.items()]}
+                result = {"tools": [{"name": n, "description": d, "inputSchema": {"type": "object", "properties": _SCHEMAS.get(n, {})}} for n, d in TOOLS.items()]}
             elif method == "tools/call":
                 p = req.get("params", {})
                 result = {"content": [{"type": "text", "text": json.dumps(call(p["name"], p.get("arguments", {})))}]}

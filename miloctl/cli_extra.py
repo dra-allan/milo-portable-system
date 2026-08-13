@@ -415,8 +415,15 @@ def cmd_curate(args: argparse.Namespace) -> int:
 
 
 def _run_through_harness(prompt: str, args: argparse.Namespace) -> int:
-    """Send a prompt to the first available agent runtime."""
+    """Send a prompt to the first available agent runtime.
+
+    Every run goes through the :class:`~miloctl.runtime.Runtime` contract so
+    Milo records a ``task_finished`` event, updates routing evidence, and —
+    when a repeatable task clearly succeeded — fires the Hermes-style
+    auto-learning nudge. No separate ``learn`` ceremony required.
+    """
     from . import harness
+    from .runtime import Runtime, contract_for
 
     name = getattr(args, "with_harness", "") or ""
     h = harness.get_harness(name) if name else None
@@ -428,10 +435,72 @@ def _run_through_harness(prompt: str, args: argparse.Namespace) -> int:
             print(prompt)
             return 0
         h = runnable[0]
-    ui.info(f"running through {h.name}")
-    code, out = h.run(prompt, model=getattr(args, "model", "") or "")
-    print(out)
+
+    contract = contract_for(
+        prompt,
+        computer=getattr(args, "computer", False),
+        vision=getattr(args, "vision", False),
+        destructive=getattr(args, "destructive", False),
+    )
+    runtime = Runtime()
+    default_model = getattr(args, "model", "") or ""
+    if not default_model:
+        try:
+            default_model = runtime.select(contract).name
+        except RuntimeError:
+            default_model = ""
+
+    ui.info(f"running through {h.name}"
+            + (f" ({default_model})" if default_model else ""))
+    code, out = h.run(prompt, model=default_model)
+    if out:
+        print(out)
+
+    try:
+        runtime.finish(contract, model=default_model or h.name,
+                       success=code == 0, tests_passed=False, harness=h.name)
+    except Exception as exc:  # never let bookkeeping hide a real failure
+        ui.warn(f"runtime bookkeeping failed: {exc}")
+
+    # Hermes auto-learning: a genuinely repeated, successful task should become
+    # a skill without being asked. We only *remark* on it here — the actual
+    # authoring stays in /learn so the agent has full context.
+    if code == 0:
+        _maybe_auto_learn(contract, h.name, default_model, out)
     return code
+
+
+def _maybe_auto_learn(contract, harness_name: str, model: str, out: str) -> None:
+    """Nudge a skill-worthy run toward authoring, once this session only."""
+    import hashlib
+
+    from .learning import NudgeEngine
+
+    if not (out or "").strip():
+        return
+    nudge = NudgeEngine().check_skill_worthy(
+        tool_calls=8, distinct_tools=3, had_error=False
+    )
+    if nudge is None:
+        return
+    key = hashlib.sha256(contract.task.encode("utf-8")).hexdigest()[:12]
+    stamp = paths.state_dir() / "learned-tasks.jsonl"
+    try:
+        done = [json.loads(l).get("k") for l in stamp.read_text(encoding="utf-8").splitlines()]
+    except (OSError, ValueError):
+        done = []
+    if key in done:
+        return
+    try:
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        with stamp.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"k": key, "task": contract.task[:200],
+                                 "harness": harness_name, "model": model}) + "\n")
+    except OSError:
+        return
+    ui.say()
+    ui.say(ui.dim("  this task looked repeatable and succeeded — it would make a good skill:"))
+    ui.say(ui.dim(f"    milo learn \"{contract.task[:80]}\""))
 
 
 # ── profile ───────────────────────────────────────────────────────────────────
@@ -665,6 +734,80 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not prompt:
         return _fail('say something: milo run "what did we decide about the copier?"')
     return _run_through_harness(prompt, args)
+
+
+# ── eval ──────────────────────────────────────────────────────────────────────
+
+
+def cmd_eval(args: argparse.Namespace) -> int:
+    """Score a model or harness against Milo's golden-task matrix.
+
+    Static mode checks the Runtime contract without touching a model. With
+    ``--run`` (or a harness name) it actually executes the coding and browser
+    tasks through that harness and feeds each outcome back to the Runtime so
+    routing evidence reflects reality, not default profiles.
+    """
+    from .evals import DEFAULT_TASKS, EvalResult, run_static, report
+    from . import harness
+    from .runtime import Runtime, TaskContract
+
+    model = args.model or ""
+    h = None
+    if args.run or args.with_harness:
+        name = args.with_harness or ""
+        h = harness.get_harness(name) if name else None
+        if h is None:
+            if name:
+                return _fail(f"unknown harness {name!r}")
+            runnable = [x for x in harness.detect_installed() if x.which()]
+            if not runnable:
+                ui.warn("no agent runtime installed — run without --run for a static check")
+            elif runnable:
+                h = runnable[0]
+
+    if h is None:
+        results = run_static(model, Path(args.state_dir).expanduser())
+        rep = report(results)
+        if _emit(rep, args.json):
+            return 0
+        ui.banner("eval", f"static · model {model or 'auto'}")
+        _print_evals(results)
+        ui.kv("score", f"{rep['score']:.2f}", width=30)
+        return 0 if rep["passed"] == rep["total"] else 1
+
+    ui.info(f"evaluating through {h.name}" + (f" ({model})" if model else ""))
+    runtime = Runtime(Path(args.state_dir).expanduser())
+    results: List[EvalResult] = []
+    for name, prompt, needs in DEFAULT_TASKS:
+        contract = TaskContract(prompt, needs=needs)
+        try:
+            selected = runtime.select(contract, preferred=model)
+            chosen = selected.name
+        except RuntimeError as exc:
+            results.append(EvalResult(name, False, 0.0, f"no profile: {exc}"))
+            continue
+        ui.say(ui.dim(f"  · {name}: {h.name} ({chosen})"))
+        code, out = h.run(prompt, model=chosen, timeout=args.timeout)
+        success = code == 0
+        try:
+            runtime.finish(contract, model=chosen, success=success,
+                           tests_passed=False, harness=h.name, eval_task=name)
+        except Exception as exc:
+            ui.warn(f"runtime bookkeeping failed: {exc}")
+        score = 1.0 if success else 0.0
+        results.append(EvalResult(name, success, score, (out or "")[:300]))
+    rep = report(results)
+    if _emit(rep, args.json):
+        return 0
+    ui.banner("eval", f"live · {h.name}" + (f" · {model}" if model else ""))
+    _print_evals(results)
+    ui.kv("score", f"{rep['score']:.2f}", width=30)
+    return 0 if rep["passed"] == rep["total"] else 1
+
+
+def _print_evals(results) -> None:
+    for r in results:
+        ui.say(f"  {'PASS' if r.passed else 'FAIL'}  {r.name}" + (f"  — {r.detail}" if r.detail else ""))
 
 
 # ── voice ────────────────────────────────────────────────────────────────────
@@ -1029,6 +1172,16 @@ def register(sub) -> None:
     s.add_argument("--with-harness", default="", dest="with_harness")
     s.add_argument("--model", default="")
     s.set_defaults(func=cmd_run)
+
+    s = sub.add_parser("eval", help="score a model/harness against golden tasks")
+    s.add_argument("model", nargs="?", default="")
+    s.add_argument("--with-harness", default="", dest="with_harness")
+    s.add_argument("--run", action="store_true",
+                   help="actually execute the tasks through a harness")
+    s.add_argument("--state-dir", default="~/.milo/runtime")
+    s.add_argument("--timeout", type=int, default=600)
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(func=cmd_eval)
 
     s = sub.add_parser("channels", aliases=["channel"],
                        help="how Milo can reach you — Telegram, ntfy, Discord…")
