@@ -53,12 +53,24 @@ def _tokenize(text):
     return [t.lower() for t in re.findall(r"[A-Za-z][A-Za-z']*", text or "")]
 
 
+def _leading_clause(text):
+    """Return the first sentence of a hook (what a Shorts title shows first)."""
+    text = (text or "").strip()
+    match = re.search(r"[.!?]", text)
+    if match:
+        return text[: match.end()]
+    return text
+
+
 def looks_non_english(text):
     """True when a hook looks like non-English / hallucinated garbage.
 
     Rules (stdlib only):
       1. Any non-Latin letter (Cyrillic, Greek, CJK, Arabic, ...) -> garbage.
-      2. Otherwise, over a minimum length, low coverage of common English
+      2. The leading clause (first sentence) must be English-dominant too:
+         a hook that *starts* in a foreign language is broken even when the
+         tail is English, because Shorts titles are truncated from the front.
+      3. Otherwise, over a minimum length, low coverage of common English
          tokens -> probably a foreign (e.g. Welsh) transcript.
     """
     text = _fix_spacing(text)
@@ -68,6 +80,13 @@ def looks_non_english(text):
 
     if any(not _is_latin_letter(ord(c)) for c in letters):
         return True
+
+    lead = _leading_clause(text)
+    lead_tokens = _tokenize(lead)
+    if len(lead_tokens) >= 6:
+        lead_hits = sum(1 for t in lead_tokens if t in _COMMON_ENGLISH)
+        if lead_hits / len(lead_tokens) < 0.10:
+            return True
 
     tokens = _tokenize(text)
     if len(tokens) < 6:

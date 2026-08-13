@@ -6,7 +6,50 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.title_optimizer import _clean, _truncate, optimize_title
+from src.title_optimizer import _clean, _truncate, looks_non_english, optimize_title
+
+
+def test_leading_clause_non_english_flagged():
+    # Welsh gibberish prefix with a long English tail. The whole-string
+    # ratio passes, but the leading clause is what a Shorts title shows.
+    hook = (
+        "Yna gwrs yn yr sgynnu genemol yna. A ffwch yn yn hwnnog ddoedd yn "
+        "ffordd ei hwnnog ddyn nhw o ffwch i'r rhyw I'm going to walk through "
+        "spend cadence. OK. So the way that I do this"
+    )
+    assert looks_non_english(hook)
+
+
+def test_leading_clause_non_english_falls_back():
+    hook = (
+        "Yna gwrs yn yr sgynnu genemol yna. A ffwch yn yn hwnnog ddoedd yn "
+        "ffordd ei hwnnog ddyn nhw o ffwch i'r rhyw I'm going to walk through "
+        "spend cadence. OK. So the way that I do this"
+    )
+    t = optimize_title(hook, niche="wealth_mindset", clip_index=3)
+    assert t == "Wealth Mindset insight #3"
+
+
+def test_english_hook_with_tricky_first_sentence_kept():
+    # Genuinely English, low coverage in the first clause but not garbage.
+    hook = (
+        "AI coming in didn't somehow erase the leverage that capital uses. "
+        "If you are in media and you make a video like this"
+    )
+    assert not looks_non_english(hook)
+
+
+def test_fallback_title_not_reflagged():
+    # The fallback optimize_title returns (before hashtags are appended)
+    # must not trip the guard again when re-checked.
+    t = optimize_title(
+        "Yna gwrs yn yr sgynnu genemol yna. A ffwch yn yn hwnnog ddoedd yn "
+        "ffordd ei hwnnog ddyn nhw o ffwch i'r rhyw I'm going to walk through "
+        "spend cadence. OK. So the way that I do this",
+        niche="wealth_mindset", clip_index=10,
+    )
+    assert t == "Wealth Mindset insight #10"
+    assert not looks_non_english(t)
 
 
 def test_question_hook_kept():
