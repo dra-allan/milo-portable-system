@@ -1,0 +1,66 @@
+# Duel [CLIPPING - YT SHORTS] 4
+#
+# manual_only: the content pool is published inside the campaign Discord. There
+# is no shareable folder URL and nothing to scrape, so drop the files into
+# local_folders and the pipeline treats them exactly like a downloaded folder.
+
+campaign:
+  id: duel_yt_shorts_4
+  name: Duel [CLIPPING - YT SHORTS] 4
+  url: ''
+  type: clipping
+  enabled: true
+  rate_per_1m: 2500
+  budget_total: 4200
+
+sources:
+  content_folders: []
+  local_folders: []
+  manual_only: true
+  manual_reason: content folder is published in the campaign Discord
+  brief_url: ''
+  discord_url: ''
+
+assets:
+  logo_folders: []
+  logo_required: false
+  logo_mode: always
+
+render:
+  min_duration: 7
+  max_duration: 60
+  platforms: [youtube]
+  shorts_only: true
+  language: en
+  own_text_required: true
+  gameplay_visible: false
+  music: none
+  keep_source_audio: true
+  must_appear_in_video: []
+
+caption:
+  required_keywords: []
+  required_mentions: []
+  must_mention: []
+  max_length: 400
+
+account_gates:
+  audience: []
+  # "1% ENGAGEMENT MINIMUM" is a post-publish metric. Nothing local can verify
+  # it, so the validator reports it rather than pretending to check it.
+  min_engagement_pct: 1.0
+  min_views_for_earnings: 0
+  eligible_accounts: []
+  max_linked_accounts: 0
+
+policy:
+  keep_live_days: 0
+  prohibitions:
+    - POST LOW QUALITY / SPAM
+  banned_topics: []
+
+conflicts: []
+unparsed: []
+manual_steps:
+  - Join the campaign Discord, download the content folder, and point
+    sources.local_folders at it.
