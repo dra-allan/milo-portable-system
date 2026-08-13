@@ -11,26 +11,15 @@ requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [{ name = "Allan", email = "allan@dra.local" }]
 keywords = ["agent", "assistant", "opencode", "claude-code", "mcp", "memory", "skills"]
-
-# Deliberately empty. Milo's whole promise is that it installs on a fresh
-# machine — including a Termux phone with no compiler — so the core runs on
-# the Python standard library alone. Anything that needs a wheel is optional.
 dependencies = []
 
 [project.optional-dependencies]
-# Telegram channel. Only needed if you actually run the bot.
 bot = ["python-telegram-bot>=20.0"]
-# Nicer terminal output. The CLI degrades gracefully without it.
 pretty = ["rich>=13.0"]
-# Voice mode: STT + streaming TTS + wake word. edge-tts is the default spoken
-# voice (free, no API key); these extras add local transcription, on-device
-# wake word and mic/speaker I/O.
 voice = ["sounddevice>=0.4", "numpy>=1.20", "edge-tts>=7.0"]
 voice-local = ["sounddevice>=0.4", "numpy>=1.20", "faster-whisper>=1.0"]
 voice-wake = ["openwakeword>=0.5", "sounddevice>=0.4", "numpy>=1.20"]
-# Embedding dependencies for semantic search
 embeddings = ["onnxruntime>=1.0", "numpy>=1.20"]
-# Machine learning dependencies (includes embeddings)
 ml = ["onnxruntime>=1.0", "numpy>=1.20", "scipy>=1.0"]
 dev = ["pytest>=7.0", "ruff>=0.4"]
 all = ["python-telegram-bot>=20.0", "rich>=13.0"]
@@ -40,13 +29,11 @@ Homepage = "https://github.com/dra-allan/milo-portable-system"
 Source = "https://github.com/dra-allan/milo-portable-system"
 
 [project.scripts]
-# Both spellings, always. Allan types them interchangeably and neither
-# should ever be the one that doesn't work.
 milo = "miloctl.cli:main"
 mylo = "miloctl.cli:main"
-# Explicit MCP entry point so agent configs can reference a stable command
-# instead of "python -m miloctl.mcp" with a guessed interpreter path.
 milo-mcp = "miloctl.mcp:main"
+milo-daemon = "miloctl.daemon:main"
+milo-dashboard = "miloctl.dashboard:main"
 
 [tool.setuptools]
 include-package-data = true
