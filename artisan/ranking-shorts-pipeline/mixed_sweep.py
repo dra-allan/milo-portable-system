@@ -13,7 +13,9 @@ log = setup_logger(__name__, config.log_dir / 'ranking.log')
 
 
 def main():
-    daily = int(os.getenv('RANKING_UPLOAD_MAX_PER_DAY', str(config.upload_max_per_day)))
+    daily = int(os.getenv('RANKING_UPLOAD_MAX_PER_CHANNEL',
+                          os.getenv('RANKING_UPLOAD_MAX_PER_DAY',
+                                    str(config.upload_max_per_channel))))
     lo = int(os.getenv('RANKING_UPLOAD_DELAY_MIN', '45'))
     hi = int(os.getenv('RANKING_UPLOAD_DELAY_MAX', '180'))
     per_run = max(1, int(os.getenv('RANKING_VIDEOS_PER_RUN', str(config.get('videos_per_run', 1) or 1))))
@@ -25,11 +27,10 @@ def main():
         print('nothing to do: no topics or no channel profiles')
         return 2
 
-    used = pipeline.db.uploads_since(86400)
-    remaining = max(0, daily - used)
-    log.info('MIXED_SWEEP_START builds=%d channels=%s upload_budget=%d/%d', per_run, channel_map, remaining, daily)
+    log.info('MIXED_SWEEP_START builds=%d channels=%s cap_per_channel=%d/24h',
+             per_run, channel_map, daily)
 
-    built = uploaded = 0
+    built = uploaded = skipped = 0
     done: list[str] = []
     for _ in range(per_run):
         topic = pipeline.db.next_topic([t for t in topics if t not in done]) or pipeline.db.next_topic(topics)
@@ -47,16 +48,17 @@ def main():
         if not plan:
             continue
         built += 1
-        if remaining <= 0:
-            log.info('MIXED_SWEEP_QUEUED cap reached; %s remains queued', plan.get('local_path'))
+        if pipeline.db.uploaded_count_for_channel_since(channel, 86400) >= daily:
+            log.info('MIXED_SWEEP_QUEUED cap reached for %s; %s remains queued',
+                     channel, plan.get('local_path'))
+            skipped += 1
             continue
         if uploaded and hi > 0:
             time.sleep(random.uniform(lo, hi))
         if pipeline.upload_build(plan['build_id'], plan) is not None:
             uploaded += 1
-            remaining -= 1
 
-    print(f'mixed sweep built={built} uploaded={uploaded} topics={",".join(done) or "none"} profiles={channel_map} privacy={config.privacy_status}')
+    print(f'mixed sweep built={built} uploaded={uploaded} cap_skipped={skipped} topics={",".join(done) or "none"} profiles={channel_map} privacy={config.privacy_status}')
     return 0 if (built or uploaded) else 1
 
 

@@ -25,7 +25,9 @@ rem ---- channels and caps ----
 set "RANKING_CHANNEL_PROFILES=RankDrop:normal,the other guys:contrast"
 set "RANKING_UPLOAD_CHANNEL=RankDrop"
 set "UPLOAD_MAX_PER_DAY=6"
+set "UPLOAD_MAX_PER_CHANNEL=6"
 set "RANKING_UPLOAD_MAX_PER_DAY=6"
+set "RANKING_UPLOAD_MAX_PER_CHANNEL=6"
 set "RANKING_UPLOAD_DELAY_MIN=45"
 set "RANKING_UPLOAD_DELAY_MAX=180"
 set "CONTRAST_SUBJECT=GUY"
@@ -39,7 +41,7 @@ echo                 RANKING SHORTS PIPELINE CONTROL PANEL
 echo ============================================================================
 echo Topic: %RANKING_TOPIC%    Content: %RANKING_VARIANT%    Privacy: %UPLOAD_PRIVACY%
 echo Videos per run: %RANKING_VIDEOS_PER_RUN%    Upload after run: %AUTO_UPLOAD%
-echo Cap: %UPLOAD_MAX_PER_DAY% uploads / rolling 24h    Profiles: %RANKING_CHANNEL_PROFILES%
+echo Cap: %UPLOAD_MAX_PER_CHANNEL% uploads / channel / rolling 24h    Profiles: %RANKING_CHANNEL_PROFILES%
 echo Contrast subject: %CONTRAST_SUBJECT%    Fast vetting: %RANKING_FAST_MODE%    Workers: %RANKING_RENDER_WORKERS%
 echo Purge after build: %RANKING_CLEANUP_AFTER_BUILD%    Delete after upload: %RANKING_DELETE_AFTER_UPLOAD%
 echo Runtime: %RANKING_RUNTIME%
@@ -48,12 +50,12 @@ echo  RUN
 echo   1. Run now: %RANKING_VIDEOS_PER_RUN% video/s, %RANKING_VARIANT%, upload=%AUTO_UPLOAD%
 echo   2. Build normal ranking only, no upload
 echo   3. Build contrast ranking only, no upload
-echo   4. Configured mixed sweep across channels
-echo   5. One queue sweep: backlog, refill, post
-echo   6. Start scheduler daemon
+echo   4. Upload pending builds, capped and %UPLOAD_PRIVACY%
+echo   5. Configured mixed sweep across channels
+echo   6. One queue sweep: backlog, refill, post
+echo   7. Start scheduler daemon
 echo.
 echo  PUBLISH
-echo   7. Upload pending builds, capped and %UPLOAD_PRIVACY%
 echo   8. Authenticate a channel
 echo.
 echo  SETTINGS
@@ -85,10 +87,10 @@ set /p "choice=Select: "
 if "%choice%"=="1" goto run_now
 if "%choice%"=="2" goto build_normal
 if "%choice%"=="3" goto build_contrast
-if "%choice%"=="4" goto mixed
-if "%choice%"=="5" goto sweep
-if "%choice%"=="6" goto schedule
-if "%choice%"=="7" goto upload
+if "%choice%"=="4" goto upload
+if "%choice%"=="5" goto mixed
+if "%choice%"=="6" goto sweep
+if "%choice%"=="7" goto schedule
 if "%choice%"=="8" goto auth
 if "%choice%"=="9" goto set_topic
 if "%choice%"=="10" goto set_videos

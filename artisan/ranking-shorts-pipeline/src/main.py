@@ -267,18 +267,20 @@ class RankingPipeline:
         return route_channel(variant)
 
     def upload_build(self, build_id: int, plan: Dict) -> Optional[str]:
-        """Upload one build, but never beyond the 24h daily cap.
+        """Upload one build, but never beyond the per-channel 24h cap.
 
         This is the hard ceiling every path honours (auto, once, drain,
         sweep). The per-run budget lives in the sweep orchestrator; this
-        method only refuses to exceed ``upload_max_per_day`` in 24h.
+        method only refuses to exceed ``upload_max_per_channel`` in 24h for
+        the channel this build is routed to.
         """
-        cap = int(config.upload_max_per_day)
-        if cap and self.db.uploads_since(3600 * 24) >= cap:
-            logger.info('daily upload cap (%d/24h) reached; leaving %s queued',
-                        cap, plan.get('local_path'))
-            return None
+        cap = int(config.upload_max_per_channel)
         channel = self._resolve_channel(plan)
+        if cap and self.db.uploaded_count_for_channel_since(
+                channel, 3600 * 24) >= cap:
+            logger.info('daily upload cap (%d/24h) reached for %s; leaving '
+                        '%s queued', cap, channel, plan.get('local_path'))
+            return None
         try:
             from .publisher import RankingPublisher
             publisher = RankingPublisher(channel=channel)
@@ -291,7 +293,7 @@ class RankingPipeline:
             plan['local_path'], plan['upload_title'], plan['description'],
             plan.get('tags') or [])
         if video_id:
-            self.db.mark_uploaded(build_id, video_id)
+            self.db.mark_uploaded(build_id, video_id, channel=channel)
             # YouTube has it and the row keeps the id, so the local export is
             # a duplicate. Keeping it is what filled the output folder.
             cleanup.delete_local_video(plan.get('local_path'))
@@ -384,10 +386,23 @@ class RankingPipeline:
         same limits.
         """
         used = self.db.uploads_since(3600 * 24)
-        daily = int(config.upload_max_per_day)
-        remaining_daily = max(0, daily - used)
+        daily = int(config.upload_max_per_channel)
+        # The sweep can touch every routed channel (normal -> RankDrop,
+        # contrast -> The Other Guys), so the early-exit gate only fires when
+        # every channel the sweep could publish to is exhausted. The hard
+        # per-channel ceiling is enforced per-build in upload_build.
+        try:
+            from channel_profiles import enabled_channels
+            sweep_channels = list(dict.fromkeys(
+                enabled_channels('normal') + enabled_channels('contrast')))
+        except ImportError:  # pragma: no cover
+            sweep_channels = ['RankDrop']
+        remaining_daily = sum(
+            max(0, daily - self.db.uploaded_count_for_channel_since(c, 3600 * 24))
+            for c in sweep_channels)
         if remaining_daily <= 0:
-            logger.info('SWEEP_SKIP daily cap reached (%d/%d)', used, daily)
+            logger.info('SWEEP_SKIP daily cap reached (%d/%d across %s)',
+                        used, daily, ','.join(sweep_channels))
             return {'built': 0, 'uploaded': 0,
                     'uploaded_backlog': 0, 'uploaded_fresh': 0,
                     'uploaded_topup': 0}
@@ -435,7 +450,7 @@ class RankingPipeline:
         total = uploaded_backlog + uploaded_fresh + uploaded_topup
         logger.info(
             'SWEEP_DONE built=%d uploaded=%d (backlog=%d fresh=%d topup=%d) '
-            'daily=%d/%d',
+            'uploaded_total_24h=%d cap_per_channel=%d',
             len(built_ids), total, uploaded_backlog, uploaded_fresh,
             uploaded_topup, used + total, daily,
         )
