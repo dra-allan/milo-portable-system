@@ -2,111 +2,38 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const MILO_HOME = process.env.MILO_HOME || path.resolve('./MILO_HOME');
+const REPO_ROOT = path.resolve(process.env.MILO_REPO_ROOT || path.join(__dirname, '..'));
+const MILO_HOME = path.resolve(process.env.MILO_HOME || path.join(process.env.LOCALAPPDATA || process.env.HOME || process.cwd(), '.milo'));
 const LOG_DIR = path.join(MILO_HOME, 'logs');
-const TELEGRAM_HOME = path.join(MILO_HOME, 'telegram-data');
-
-// Ensure directories exist
-[LOG_DIR, path.join(MILO_HOME, 'data', 'backups')].forEach(dir => 
-  fs.mkdirSync(dir, { recursive: true })
-);
+fs.mkdirSync(LOG_DIR, { recursive: true });
 
 function log(message) {
-  const timestamp = new Date().toISOString();
-  const logLine = `[${timestamp}] ${message}\n`;
-  fs.appendFileSync(path.join(LOG_DIR, 'launcher.log'), logLine, { flag: 'a' });
-  console.log(`🚀 ${message}`);
+  const line = `[${new Date().toISOString()}] ${message}\n`;
+  fs.appendFileSync(path.join(LOG_DIR, 'launcher.log'), line);
+  console.log(`Milo: ${message}`);
 }
 
-function startService(name, command, args, options = {}) {
-  try {
-    const ps = spawn(command, args, {
-      detached: true,
-      stdio: 'ignore',
-      cwd: MILO_HOME,
-      env: {
-        ...process.env,
-        MILO_HOME,
-        // For Telegram bot, we need to point to our telegram-data
-        ...(name.includes('Telegram') && { 
-          OPENCODE_TELEGRAM_HOME: TELEGRAM_HOME,
-          // Also set the MILO_DB_PATH to our portable database
-          MILO_DB_PATH: path.join(MILO_HOME, 'data', 'memories.db')
-        })
-      },
-      ...options.env
-    });
-    
-    ps.unref(); // Prevent Node.js from waiting for exit
-    log(`✅ ${name} started (PID: ${ps.pid})${options.silent ? '' : ' - Check logs for details'}`);
-    return ps;
-  } catch (error) {
-    log(`❌ Failed to start ${name}: ${error.message}`);
-    return null;
-  }
+function start(name, command, args) {
+  const child = spawn(command, args, {
+    cwd: REPO_ROOT,
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env, MILO_HOME, MILO_REPO_ROOT: REPO_ROOT }
+  });
+  child.on('error', err => log(`${name} failed: ${err.message}`));
+  child.unref();
+  log(`${name} started (pid ${child.pid})`);
 }
 
 function startMiloServices() {
-  log('🚀 Starting Milo Portable Services...');
-  
-  // 1. Start Telegram bot (using the existing bot.py)
-  const botScript = path.join(MILO_HOME, 'milo-bot', 'src', 'bot.py');
-  if (fs.existsSync(botScript)) {
-    startService(
-      'MiloTelegramBot', 
-      process.platform === 'win32' ? 'python' : 'python3', 
-      [botScript],
-      { 
-        silent: true 
-      }
-    );
-    
-    // Also capture bot output for logging
-    const botPs = spawn(process.platform === 'win32' ? 'python' : 'python3', [botScript], {
-      cwd: MILO_HOME,
-      env: {
-        ...process.env,
-        MILO_HOME,
-        OPENCODE_TELEGRAM_HOME: TELEGRAM_HOME,
-        MILO_DB_PATH: path.join(MILO_HOME, 'data', 'memories.db')
-      }
-    });
-    
-    botPs.stdout.on('data', data => {
-      const msg = data.toString().trim();
-      if (msg) log(`[Telegram] ${msg}`);
-    });
-    botPs.stderr.on('data', data => {
-      const msg = data.toString().trim();
-      if (msg) log(`[Telegram ERROR] ${msg}`);
-    });
-    botPs.unref();
-  } else {
-    log(`❌ Telegram bot script not found: ${botScript}`);
-  }
-
-  // 2. Start GitHub bidirectional sync watcher
-  const watcherPath = path.join(MILO_HOME, 'scripts', 'git-watcher.js');
-  if (fs.existsSync(watcherPath)) {
-    startService(
-      'GitSyncWatcher',
-      'node',
-      [watcherPath]
-    );
-  } else {
-    log(`⚠️ Git sync watcher not found: ${watcherPath}`);
-    log('💡 Deploy git-watcher.js to enable bidirectional GitHub sync');
-  }
-
-  log('✅ Milo Portable services initiated');
-  log('💡 Verification:');
-  log(`   - Telegram bot: Message @Milo_drabot`);
-  log(`   - GitHub sync: ${path.join(MILO_HOME, 'logs', 'launcher.log')}`);
+  log(`Starting services from ${REPO_ROOT}`);
+  const bot = path.join(REPO_ROOT, 'milo-bot', 'src', 'bot.py');
+  if (fs.existsSync(bot)) start('Telegram bot', process.platform === 'win32' ? 'python' : 'python3', [bot]);
+  else log(`Telegram bot not found: ${bot}`);
+  const watcher = path.join(REPO_ROOT, 'scripts', 'git-watcher.js');
+  if (fs.existsSync(watcher)) start('Git sync watcher', process.execPath, [watcher]);
+  else log(`Git sync watcher not found: ${watcher}`);
 }
 
-// Start services if run directly
-if (require.main === module) {
-  startMiloServices();
-}
-
+if (require.main === module) startMiloServices();
 module.exports = { startMiloServices };
