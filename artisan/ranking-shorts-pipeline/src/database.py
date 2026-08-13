@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS builds (
     plan_json     TEXT,
     status        TEXT NOT NULL DEFAULT 'built',
     youtube_id    TEXT,
+    channel       TEXT,
     created_at    REAL NOT NULL,
     uploaded_at   REAL
 );
@@ -69,6 +70,14 @@ class RankingDatabase:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    def _migrate(self, conn) -> None:
+        """Add columns added after the original schema shipped."""
+        cols = {row['name'] for row in conn.execute(
+            'PRAGMA table_info(builds)').fetchall()}
+        if 'channel' not in cols:
+            conn.execute('ALTER TABLE builds ADD COLUMN channel TEXT')
 
     @contextmanager
     def _connect(self):
@@ -130,12 +139,13 @@ class RankingDatabase:
                  'built', time.time()))
             return int(cur.lastrowid)
 
-    def mark_uploaded(self, build_id: int, youtube_id: str) -> None:
+    def mark_uploaded(self, build_id: int, youtube_id: str,
+                      channel: Optional[str] = None) -> None:
         with self._connect() as conn:
             conn.execute(
                 "UPDATE builds SET status='uploaded', youtube_id=?, "
-                'uploaded_at=? WHERE id=?',
-                (youtube_id, time.time(), build_id))
+                'uploaded_at=?, channel=COALESCE(?, channel) WHERE id=?',
+                (youtube_id, time.time(), channel, build_id))
 
     def mark_failed(self, build_id: int, reason: str) -> None:
         with self._connect() as conn:
@@ -171,6 +181,23 @@ class RankingDatabase:
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM builds WHERE status='uploaded' "
                 'AND uploaded_at >= ?', (cutoff,)).fetchone()
+        return int(row['n'] if row else 0)
+
+    def uploaded_count_for_channel_since(self, channel: str,
+                                         seconds: float) -> int:
+        """Uploads to one channel within the rolling window.
+
+        This is the per-channel cap primitive the upload policy expects. The
+        channel is recorded on the build row at upload time; builds uploaded
+        before the column shipped have NULL there and are not counted, which
+        only ever makes the current window look emptier than it was.
+        """
+        cutoff = time.time() - seconds
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM builds WHERE status='uploaded' "
+                'AND uploaded_at >= ? AND channel = ?',
+                (cutoff, channel)).fetchone()
         return int(row['n'] if row else 0)
 
     # -- topic rotation -------------------------------------------------

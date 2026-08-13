@@ -62,7 +62,7 @@ class RankingConfig:
         # stitched; a finished export is disposable once YouTube has it.
         self.cleanup_after_build = _b('RANKING_CLEANUP_AFTER_BUILD', True); self.delete_after_upload = _b('RANKING_DELETE_AFTER_UPLOAD', True)
         self.contrast_subject = (os.getenv('CONTRAST_SUBJECT', 'GUY') or 'GUY').upper()
-        self.upload_max_per_day = _i('UPLOAD_MAX_PER_DAY', 6); self.upload_max_per_run = _i('UPLOAD_MAX_PER_RUN', 6); self.queue_target_total = _i('QUEUE_TARGET_TOTAL', 12)
+        self.upload_max_per_day = _i('UPLOAD_MAX_PER_DAY', 6); self.upload_max_per_run = _i('UPLOAD_MAX_PER_RUN', 6); self.upload_max_per_channel = _i('UPLOAD_MAX_PER_CHANNEL', self.upload_max_per_day); self.queue_target_total = _i('QUEUE_TARGET_TOTAL', 12)
         self.sweep_fresh_share = _i('SWEEP_FRESH_SHARE', 3); self.sweep_backlog_share = _i('SWEEP_BACKLOG_SHARE', 3); self.schedule_run_times = [t.strip() for t in os.getenv('RUN_TIMES', '0 9 * * *').split(',') if t.strip()]; self.schedule_jitter_minutes = _i('SCHEDULE_JITTER_MINUTES', 0)
         self.download_height = _i('RANKING_DOWNLOAD_HEIGHT', 720); self.download_max_bytes = _i('RANKING_MAX_DOWNLOAD_MB', 250) * 1024 * 1024; self.download_concurrency = _i('RANKING_DOWNLOAD_CONCURRENCY', 4); self.max_source_duration = _i('RANKING_MAX_SOURCE_SECONDS', 900); self.render_timeout = _i('RANKING_RENDER_TIMEOUT', 900)
         raw = self._load_yaml(); self.defaults = raw.get('defaults') or {}; self.sfx_map = raw.get('sfx_map') or {}; self.topics = raw.get('topics') or {}
