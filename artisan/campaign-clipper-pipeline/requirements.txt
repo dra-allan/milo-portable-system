@@ -1,1 +1,29 @@
-# Core render path. Nothing here is optional.\npillow>=10.0.0\npyyaml>=6.0\npython-dotenv>=1.0.0\n\n# Automatic person-aware smart crop.\nultralytics>=8.2.0\nopencv-python-headless>=4.8.0\nnumpy>=1.24.0\n\n# Automatic setup -> payoff scoring. The pipeline transcribes each source once,\n# caches its timestamped transcript, and ranks candidate windows unattended.\n# If unavailable, it falls back to motion + audio scoring.\nfaster-whisper>=1.0.0\n\n# Campaign board automation. Needs: python -m playwright install chromium\nplaywright>=1.40.0\n\n# Content folder download. rclone (external binary) is preferred for large\n# folders; gdown needs no configuration.\ngdown>=5.0.0\n\n# YouTube upload.\ngoogle-api-python-client>=2.100.0\ngoogle-auth-oauthlib>=1.1.0\ngoogle-auth-httplib2>=0.1.1\n\n# Copy generation. Optional; template hooks are used when absent.\ngoogle-generativeai>=0.8.0\n
+# Core render path. Nothing here is optional.
+pillow>=10.0.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Automatic person-aware smart crop.
+ultralytics>=8.2.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+
+# Automatic setup -> payoff scoring. The pipeline transcribes each source once,
+# caches its timestamped transcript, and ranks candidate windows unattended.
+# If unavailable, it falls back to motion + audio scoring.
+faster-whisper>=1.0.0
+
+# Campaign board automation. Needs: python -m playwright install chromium
+playwright>=1.40.0
+
+# Content folder download. rclone (external binary) is preferred for large
+# folders; gdown needs no configuration.
+gdown>=5.0.0
+
+# YouTube upload.
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+
+# Copy generation. Optional; template hooks are used when absent.
+google-generativeai>=0.8.0
