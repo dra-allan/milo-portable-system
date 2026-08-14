@@ -8,9 +8,37 @@ import os, sys, subprocess, re, shutil, textwrap, json
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-PROJECTS_DIR = Path(r"C:\Users\user\Desktop\Milo Video Factory\projects\money_matrix")
-FFMPEG = r"C:\Users\user\Desktop\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
-FFPROBE = FFMPEG.replace("ffmpeg.exe", "ffprobe.exe")
+PROJECTS_DIR = Path(os.environ.get(
+    "MILO_MM_PROJECTS",
+    r"C:\Users\user\Desktop\Milo Video Factory\projects\money_matrix",
+))
+LEGACY_FFMPEG = r"C:\Users\user\Desktop\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
+
+
+def _find_ffmpeg():
+    env_path = os.environ.get("MILO_FFMPEG", "").strip()
+    if env_path and Path(env_path).exists():
+        return env_path
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    if os.path.exists(LEGACY_FFMPEG):
+        return LEGACY_FFMPEG
+    return "ffmpeg"
+
+
+def _find_ffprobe():
+    env_path = os.environ.get("MILO_FFPROBE", "").strip()
+    if env_path and Path(env_path).exists():
+        return env_path
+    found = shutil.which("ffprobe")
+    if found:
+        return found
+    return _find_ffmpeg().replace("ffmpeg.exe", "ffprobe.exe")
+
+
+FFMPEG = _find_ffmpeg()
+FFPROBE = _find_ffprobe()
 PIPELINE_AGENTS = [
     ("01", "ResearchAnalyst",  "00_RESEARCH_NOTES.txt"),
     ("02", "ScriptEngineer",   "01_SCRIPT_RAW.txt"),
