@@ -4,7 +4,7 @@ HOW ALLAN WANTS ME TO BEHAVE: brutally honest, call out when he is wrong, no syc
 §
 KEY PEOPLE: Nabiryo Mercy = girlfriend. Dra Benon = uncle/guardian, pays tuition, runs Dra Investment. Hepato = producer friend. Kirevu Jordan = best friend. Mutesi Jacinta = mom, Seeta. Pepera Joy = sister.
 §
-ACTIVE PROJECTS: Pharmacy (KIU). FarmDig + Milo. Music (Hepato et al). Forex (seasonal). Dra Investment (Benon). Website flip. ACTIVE YT CHANNELS (08-08): flick rush + capital/money mindset (shorts), ExplaiNation (long-form). 16 shorts. 5-channel plan stale.
+BROWSER RULE (Allan): drive his own Chrome via milo-computer (open if closed, bind, navigate) for any account page (clipster, YT Studio, Flow) — never web search those.
 §
 CRITICAL RULE (Allan permanent): self-fix Milo bugs & improvements, save+commit+push https://github.com/dra-allan/milo-portable-system, no waiting. MILO SELF-CONTAINED: any tool/agent/skill used must be COPIED INTO milo, never imported from outside — vendor it in so milo stays portable.
 §
