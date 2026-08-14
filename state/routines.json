@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786653309.4709737,
+  "updated_at": 1786669207.667616,
   "routines": [
     {
       "name": "curate-skills",
@@ -22,11 +22,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0468326,
-      "last_run": 1786583410.5259917,
+      "last_run": 1786669207.31383,
       "last_status": "ok",
       "last_output": "curator not due yet",
-      "next_run": 1786669200.0,
-      "runs": 6,
+      "next_run": 1786755600.0,
+      "runs": 7,
       "failures": 0
     },
     {
@@ -77,11 +77,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786653306.5975103,
+      "last_run": 1786668608.8915727,
       "last_status": "ok",
-      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     161\n  notes        8\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1786656908.9551313,
-      "runs": 565,
+      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     161\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
+      "next_run": 1786672231.713174,
+      "runs": 569,
       "failures": 24
     },
     {
@@ -104,11 +104,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786653308.9573042,
-      "last_status": "failed (1)",
-      "last_output": "[x] vault clean, nothing to commit",
-      "next_run": 1786656909.470691,
-      "runs": 559,
+      "last_run": 1786668631.7271283,
+      "last_status": "ok",
+      "last_output": "[ok] vault clean, nothing to commit",
+      "next_run": 1786672236.1273527,
+      "runs": 563,
       "failures": 79
     },
     {
@@ -212,11 +212,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0510957,
-      "last_run": 1786636507.0126894,
-      "last_status": "failed (1)",
-      "last_output": "[x] vault clean, nothing to commit",
-      "next_run": 1786658117.5167217,
-      "runs": 27,
+      "last_run": 1786658409.6161313,
+      "last_status": "ok",
+      "last_output": "[ok] vault clean, nothing to commit",
+      "next_run": 1786680016.424522,
+      "runs": 28,
       "failures": 6
     }
   ]
