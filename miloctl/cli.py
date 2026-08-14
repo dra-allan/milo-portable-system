@@ -98,12 +98,12 @@ def cmd_install(args: argparse.Namespace) -> int:
         ui.say()
         existing = env.load(include_os=False)
         updates: Dict[str, str] = {}
-        for key, label, default, secret in env.FIELDS:
+        for key, label, _required, secret in env.FIELDS:
             if args.only and key not in args.only:
                 continue
             current = existing.get(key, "")
             shown = env.mask(current) if (secret and current) else current
-            value = ui.ask(label, default=shown or default,
+            value = ui.ask(label, default=shown or "",
                            secret_hint="hidden" if secret else "")
             if value and value != shown:
                 updates[key] = value
