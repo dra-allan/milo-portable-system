@@ -26,7 +26,10 @@ class YouTubeUploader:
                  token_file: Optional[str] = None, privacy_status: Optional[str] = None):
         self.channel = channel
         self.privacy_status = (privacy_status or config.privacy_status).lower()
-        self.credentials_path = Path(credentials_path or config.oauth_client_secrets or (config.project_root / 'credentials.json'))
+        self.credentials_path = Path(
+            credentials_path or config.oauth_client_secrets_for(channel)
+            or config.oauth_client_secrets or (config.project_root / 'credentials.json')
+        )
         base = Path(config.oauth_token_file)
         candidate = base.with_name(f'youtube_token_{channel}.json') if channel else base
         self.token_file = Path(token_file) if token_file else (candidate if candidate.exists() else base)

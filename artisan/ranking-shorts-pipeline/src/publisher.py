@@ -20,9 +20,14 @@ def _token_path(channel: str) -> Path:
     legacy = Path(config.oauth_token_file).with_name(f'youtube_token_ranking_{channel}.json')
     return shared if shared.exists() else legacy
 
-def _client_secrets() -> Path:
+def _client_secrets(channel: str = None) -> Path:
     override = os.getenv('POV_OAUTH_CLIENT_SECRETS', '').strip()
     if override and Path(override).exists(): return Path(override).expanduser()
+    if channel:
+        per_channel = _shared_dir() / f'credentials_{channel}.json'
+        if per_channel.exists(): return per_channel
+        per_channel = Path(config.oauth_client_secrets).with_name(f'youtube_client_secrets_ranking_{channel}.json')
+        if per_channel.exists(): return per_channel
     shared = _shared_dir() / 'credentials.json'
     return shared if shared.exists() else Path(config.oauth_client_secrets)
 
@@ -30,7 +35,7 @@ class RankingPublisher:
     def __init__(self, channel: Optional[str] = None, privacy_status: Optional[str] = None):
         self.channel = channel or (os.getenv('RANKING_UPLOAD_CHANNEL') or 'RankDrop').strip()
         self.privacy_status = (privacy_status or os.getenv('UPLOAD_PRIVACY') or 'public').lower()
-        self.credentials_path = _client_secrets(); self.token_file = _token_path(self.channel)
+        self.credentials_path = _client_secrets(self.channel); self.token_file = _token_path(self.channel)
         self.credentials = self._credentials()
         from googleapiclient.discovery import build
         self.youtube = build('youtube','v3',credentials=self.credentials,cache_discovery=False)
