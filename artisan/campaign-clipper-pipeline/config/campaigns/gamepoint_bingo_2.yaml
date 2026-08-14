@@ -1,0 +1,72 @@
+# Gamepoint Bingo [CLIPPING] 2
+#
+# "Say GamePoint Bingo in full (never just Bingo)" is enforced two ways: the
+# full phrase is forced into the burned text, and the validator blocks the clip
+# if it is missing. Without a voice track, on-screen text is the only lever the
+# pipeline has for an in-video phrase requirement.
+#
+# "Tag the official Bingo account" has no handle written anywhere in the
+# requirements, so it is a manual step. A guessed @mention is worse than an
+# admitted unknown: tagging the wrong account is its own violation.
+
+campaign:
+  id: gamepoint_bingo_2
+  name: Gamepoint Bingo [CLIPPING] 2
+  url: ''
+  type: clipping
+  enabled: true
+  rate_per_1m: 1500
+  budget_total: 3000
+
+sources:
+  content_folders: []
+  local_folders: []
+  manual_only: true
+  manual_reason: concepts, assets and captions live in the Notion brief
+  brief_url: https://app.notion.com/p/GamePoint-Bingo-Technical-specification-1-Video-6754a057b8c982bfbcbb81cf62724ed3
+  discord_url: ''
+
+assets:
+  logo_folders: []
+  logo_required: false
+  logo_mode: always
+
+render:
+  min_duration: 10
+  max_duration: 60
+  platforms: [youtube, instagram, tiktok]
+  shorts_only: true
+  language: en
+  own_text_required: true
+  gameplay_visible: true
+  music: none
+  keep_source_audio: true
+  must_appear_in_video: ['GamePoint Bingo']
+
+caption:
+  required_keywords: ['GamePoint Bingo']
+  required_mentions: []
+  must_mention: []
+  max_length: 400
+
+account_gates:
+  audience: []
+  min_engagement_pct: 0
+  min_views_for_earnings: 0
+  eligible_accounts: []
+  max_linked_accounts: 0
+
+policy:
+  keep_live_days: 0
+  prohibitions: []
+  banned_topics: []
+  native_feel: false
+  no_competitor_attacks: false
+
+conflicts: []
+unparsed: []
+manual_steps:
+  - Read the brief for the approved concepts, assets and caption patterns.
+  - Get the official GamePoint Bingo account handle from the brief and add it to
+    caption.required_mentions. Do not guess it.
+  - Gameplay footage must appear in every video.
