@@ -10,7 +10,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-REPO_ROOT = Path(r'C:\Users\user\Desktop\milo-portable-system\artisan\youtube-shorts-pipeline')
+REPO_ROOT = Path(__file__).resolve().parent
 DB_PATH = REPO_ROOT / 'data' / 'processed_videos.db'
 CLIP_PLANS_DIR = REPO_ROOT / 'data' / 'clip_plans'
 

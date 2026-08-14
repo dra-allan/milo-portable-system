@@ -6,11 +6,12 @@ Orchestrates: TTS generation -> Audio merge -> Video assembly.
 Prerequisites:
 - GEMINI_API_KEY environment variable set (for TTS)
 - PEXELS_API_KEY environment variable set (for stock footage, optional)
-- FFmpeg at C:\Users\user\Desktop\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe
+- FFmpeg on PATH, or set MILO_FFMPEG to the ffmpeg.exe path
 - Python packages: google-genai, pydub, numpy, pillow, matplotlib, python-dotenv, tqdm, requests
 """
 
 import os
+import shutil
 import sys
 import subprocess
 from pathlib import Path
@@ -39,7 +40,7 @@ def check_prerequisites():
         if not f.exists():
             missing.append(str(f))
     
-    ffmpeg = Path(r"C:\Users\user\Desktop\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe")
+    ffmpeg = Path(os.environ.get("MILO_FFMPEG", "") or (shutil.which("ffmpeg") or ""))
     if not ffmpeg.exists():
         missing.append(f"FFmpeg: {ffmpeg}")
     

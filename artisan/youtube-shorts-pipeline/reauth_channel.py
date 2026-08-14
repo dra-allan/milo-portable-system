@@ -18,6 +18,7 @@ This:
 """
 import argparse
 import json
+import os
 import shutil
 import sys
 import threading
@@ -25,9 +26,9 @@ from pathlib import Path
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-SHORTS_ROOT = Path(r"C:\Users\user\Desktop\milo-portable-system\artisan\youtube-shorts-pipeline")
-RANKING_ROOT = Path(r"C:\Users\user\Desktop\milo-portable-system\artisan\ranking-shorts-pipeline")
-POV_CONFIG = Path(r"C:\Users\user\Desktop\Milo Video Factory\pov\config")
+SHORTS_ROOT = Path(__file__).resolve().parent
+RANKING_ROOT = SHORTS_ROOT.parent / "ranking-shorts-pipeline"
+POV_CONFIG = Path(os.environ.get("POV_FACTORY_DIR", "")) / "config" if os.environ.get("POV_FACTORY_DIR") else Path(Path.home() / "Desktop" / "Milo Video Factory" / "pov" / "config")
 
 SCOPES = ['https://www.googleapis.com/auth/youtube.upload',
           'https://www.googleapis.com/auth/youtube',

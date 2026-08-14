@@ -39,9 +39,9 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
 
-# Windows dev default. The VPS overrides it with POV_FACTORY_DIR - this is
-# the one documented absolute path in the whole pipeline.
-DEFAULT_FACTORY_DIR = Path(r"C:\Users\user\Desktop\Milo Video Factory\pov")
+# Windows dev default (resolved per-machine, not hardcoded). The VPS
+# overrides it with POV_FACTORY_DIR - env-configurable everywhere.
+DEFAULT_FACTORY_DIR = Path.home() / "Desktop" / "Milo Video Factory" / "pov"
 
 
 def eprint(*a: Any, **kw: Any) -> None:

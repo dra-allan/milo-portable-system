@@ -5,7 +5,7 @@ cd /d "%~dp0"
 title POV Pipeline Control Panel
 set "POV_DIR=%~dp0"
 set "REPO_DIR=%~dp0..\.."
-set "FACTORY_DIR=C:\Users\user\Desktop\Milo Video Factory\pov"
+set "FACTORY_DIR=%USERPROFILE%\Desktop\Milo Video Factory\pov"
 if not exist "%FACTORY_DIR%" set "FACTORY_DIR=%REPO_DIR%\artisan\pov_pipeline"
 set "PY=%REPO_DIR%\.venv\Scripts\python.exe"
 if not exist "%PY%" set "PY=python"
