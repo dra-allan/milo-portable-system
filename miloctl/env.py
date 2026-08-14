@@ -134,6 +134,7 @@ def load(path: Optional[Path] = None, include_os: bool = True) -> Dict[str, str]
 
 
 def _quote(value: str) -> str:
+    value = "" if value is None else str(value)
     if value == "" or re.search(r"[\s#\"']", value):
         return '"' + value.replace('"', '\\"') + '"'
     return value
@@ -207,7 +208,7 @@ def save(data: Dict[str, str], path: Optional[Path] = None) -> Path:
 
 def update(changes: Dict[str, str], path: Optional[Path] = None) -> Path:
     data = load(path, include_os=False)
-    data.update({k: v for k, v in changes.items() if v is not None})
+    data.update({k: str(v) for k, v in changes.items() if v is not None})
     return save(data, path)
 
 
