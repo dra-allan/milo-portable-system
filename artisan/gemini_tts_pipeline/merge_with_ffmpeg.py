@@ -1,7 +1,23 @@
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
-FFMPEG = r"C:\Users\user\Desktop\AGENTIC WORK\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
+
+def _find_ffmpeg() -> str:
+    env_path = os.environ.get("MILO_FFMPEG", "").strip()
+    if env_path and Path(env_path).exists():
+        return env_path
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    legacy = Path.home() / "Desktop" / "ffmpeg-2026-05-18-git-b4d11dffbf-full_build" / "bin" / "ffmpeg.exe"
+    if legacy.exists():
+        return str(legacy)
+    return "ffmpeg"
+
+
+FFMPEG = _find_ffmpeg()
 
 
 def merge_audio_files(seg_dir: Path, output_path: Path) -> bool:
