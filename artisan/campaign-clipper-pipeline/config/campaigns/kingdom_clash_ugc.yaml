@@ -1,0 +1,86 @@
+# Kingdom Clash [UGC]
+#
+# The hardest of the five and the one that shows the limits honestly. Two of its
+# requirements cannot be satisfied by a render at all:
+#
+#   1. trending audio must be added inside the platform composer at publish
+#      time (music: native -> manual step);
+#   2. at least 40% of the account audience must be US, which is a fact about
+#      the account, not the file.
+#
+# The pipeline handles what it can and refuses to pretend about the rest.
+
+campaign:
+  id: kingdom_clash_ugc
+  name: Kingdom Clash [UGC]
+  url: ''
+  type: ugc
+  enabled: true
+  rate_per_1m: 1500
+  budget_total: 3000
+
+sources:
+  content_folders: []
+  local_folders: []
+  manual_only: true
+  manual_reason: assets and concepts are specified in the Notion brief
+  brief_url: https://ugcninja.notion.site/Technical-Specification-1-Kingdom-Clash-3ad91845215180518226db716ee168b0
+  discord_url: ''
+
+assets:
+  logo_folders: []
+  logo_required: false
+  logo_mode: always
+
+render:
+  min_duration: 10
+  max_duration: 60
+  platforms: [youtube, tiktok, instagram]
+  shorts_only: true
+  language: en
+  own_text_required: true
+  gameplay_visible: true
+  # FFmpeg cannot do this. Recorded so the validator warns and the operator is
+  # told, rather than the requirement being quietly dropped.
+  music: native
+  keep_source_audio: true
+  must_appear_in_video: [Kingdom Clash]
+
+caption:
+  required_keywords: ['Kingdom Clash', '#KingdomClashMove1']
+  required_mentions: ['@kingdomclashgame']
+  must_mention: []
+  max_length: 400
+
+account_gates:
+  audience:
+    - country: United States
+      operator: '>='
+      percent: 40
+  min_engagement_pct: 0
+  min_views_for_earnings: 0
+  eligible_accounts: []
+  max_linked_accounts: 0
+
+policy:
+  keep_live_days: 30
+  prohibitions: []
+  banned_topics:
+    - adult
+    - politics
+    - religion
+    - alcohol
+    - drugs
+    - hate speech
+    - discrimination
+    - gambling
+    - violence
+  native_feel: true
+  no_competitor_attacks: true
+
+conflicts: []
+unparsed: []
+manual_steps:
+  - Read the full brief; concepts and assets are defined there, not on the board.
+  - Add trending audio in the platform composer at publish time.
+  - Keep the video live for at least 30 days.

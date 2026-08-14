@@ -1,0 +1,79 @@
+# Castle [CLIPPING]
+#
+# The reference example. Note the recorded conflict: the board header says
+# "Min. Duration 8 secs" while the requirements text says "10s MINIMUM LENGTH".
+# Strictest wins, so builds target 10s and the looser value is kept on record.
+
+campaign:
+  id: castle_clipping
+  name: Castle [CLIPPING]
+  url: ''
+  type: clipping
+  enabled: true
+  rate_per_1m: 3000
+  budget_total: 5000
+  cap_per_post: 1000
+  cap_per_profile: 3000
+
+sources:
+  content_folders:
+    - https://drive.google.com/drive/folders/1WftBLD55s7Eji2M_fXkCGhcYOAwWKS0j
+  local_folders: []
+  manual_only: false
+  manual_reason: ''
+  brief_url: ''
+  discord_url: ''
+
+assets:
+  logo_folders:
+    - https://drive.google.com/drive/folders/1GdLfDD-Zq1HJyLTK7UH0y-g9OIVr9lSs
+  logo_required: true
+  # "ADD LOGO IF NOT ALREADY ON CLIP" - the folder mixes branded and unbranded
+  # sources, and double-stamping is the sloppy look this campaign rejects.
+  logo_mode: if-absent
+  logo_position: top-right
+  logo_scale: 0.14
+  logo_margin: 0.04
+  logo_opacity: 1.0
+
+render:
+  min_duration: 10
+  max_duration: 60
+  platforms: [youtube, tiktok, instagram]
+  shorts_only: true
+  language: en
+  own_text_required: true
+  gameplay_visible: false
+  music: none
+  keep_source_audio: true
+  must_appear_in_video: []
+
+caption:
+  required_keywords: []
+  required_mentions: []
+  must_mention: []
+  template: ''
+  max_length: 400
+
+account_gates:
+  audience:
+    - country: India
+      operator: '<='
+      percent: 15
+  min_engagement_pct: 0
+  min_views_for_earnings: 0
+  eligible_accounts: [capitalmindsetshorts]
+  max_linked_accounts: 1
+
+policy:
+  keep_live_days: 0
+  prohibitions:
+    - POST SPAM/LOW QUALITY
+  banned_topics: []
+  native_feel: false
+  no_competitor_attacks: false
+
+conflicts:
+  - 'min_duration: kept 10 (stricter), board header said 8'
+unparsed: []
+manual_steps: []

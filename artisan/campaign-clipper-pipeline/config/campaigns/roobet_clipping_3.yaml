@@ -1,0 +1,68 @@
+# Roobet [CLIPPING] 3
+#
+# The cleanest fully-automatable campaign of the five: a real content folder, a
+# real logo folder, and one required caption keyword.
+
+campaign:
+  id: roobet_clipping_3
+  name: Roobet [CLIPPING] 3
+  url: ''
+  type: clipping
+  enabled: true
+  rate_per_1m: 2500
+  budget_total: 4800
+
+sources:
+  content_folders:
+    - https://drive.google.com/drive/folders/1iKX6F225uCaXbv43Y5webUsQnYigEqpG
+  local_folders: []
+  manual_only: false
+  brief_url: ''
+  discord_url: ''
+
+assets:
+  logo_folders:
+    - https://drive.google.com/drive/folders/1qgXnyx5MDuG_d1Y6qoiTTXJPw8uR748-
+  logo_required: true
+  # "ADD PROVIDED LOGO" with no conditional, so it always goes on.
+  logo_mode: always
+  logo_position: top-right
+  logo_scale: 0.14
+
+render:
+  min_duration: 10
+  max_duration: 60
+  platforms: [youtube, tiktok, instagram, x]
+  shorts_only: true
+  language: en
+  own_text_required: true
+  gameplay_visible: false
+  music: none
+  keep_source_audio: true
+  # "MUST MENTION ROOBET IN CAPTION" is a caption rule, so the brand is not
+  # forced into the burned text as well. Over-satisfying a requirement adds
+  # clutter to the frame for no extra payout.
+  must_appear_in_video: []
+
+caption:
+  required_keywords: ['#roobet']
+  required_mentions: []
+  must_mention: [Roobet]
+  max_length: 400
+
+account_gates:
+  audience: []
+  min_engagement_pct: 0.4
+  min_views_for_earnings: 3000
+  eligible_accounts: []
+  max_linked_accounts: 0
+
+policy:
+  keep_live_days: 0
+  prohibitions:
+    - POST LOW QUALITY / SPAM / TRASH
+  banned_topics: []
+
+conflicts: []
+unparsed: []
+manual_steps: []
