@@ -22,7 +22,7 @@ def _supports_colour() -> bool:
         return False
     if os.environ.get("MILO_FORCE_COLOR"):
         return True
-    if not sys.stdout.isatty():
+    if sys.stdout is None or not sys.stdout.isatty():
         return False
     if os.name == "nt":
         # Windows 10+ terminals honour VT sequences once enabled.
@@ -236,7 +236,7 @@ class Spinner:
 
     def __init__(self, label: str):
         self.label = label
-        self._active = COLOUR and sys.stdout.isatty() and not _QUIET
+        self._active = COLOUR and sys.stdout is not None and sys.stdout.isatty() and not _QUIET
         self._i = 0
         self._start = 0.0
 
