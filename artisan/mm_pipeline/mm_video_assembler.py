@@ -737,7 +737,7 @@ if __name__ == "__main__":
     project = args[0] if args else os.path.join(
         os.environ.get(
             "MILO_MM_PROJECTS",
-            r"C:\Users\user\Desktop\Milo Video Factory\projects\money_matrix",
+            os.path.join(str(Path.home()), "Desktop", "Milo Video Factory", "projects", "money_matrix"),
         ),
         "INDEX_FUNDS",
     )

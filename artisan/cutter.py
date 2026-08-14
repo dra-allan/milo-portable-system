@@ -1,9 +1,35 @@
+import os
+import shutil
 import subprocess
 import json
 from pathlib import Path
 
-FFMPEG_PATH = r"C:\Users\user\Desktop\AGENTIC WORK\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
-FFPROBE_PATH = r"C:\Users\user\Desktop\AGENTIC WORK\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffprobe.exe"
+
+def _find_ffmpeg() -> str:
+    env_path = os.environ.get("MILO_FFMPEG", "").strip()
+    if env_path and Path(env_path).exists():
+        return env_path
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    legacy = Path.home() / "Desktop" / "AGENTIC WORK" / "ffmpeg-2026-05-18-git-b4d11dffbf-full_build" / "ffmpeg-2026-05-18-git-b4d11dffbf-full_build" / "bin" / "ffmpeg.exe"
+    if legacy.exists():
+        return str(legacy)
+    return "ffmpeg"
+
+
+def _find_ffprobe() -> str:
+    env_path = os.environ.get("MILO_FFPROBE", "").strip()
+    if env_path and Path(env_path).exists():
+        return env_path
+    found = shutil.which("ffprobe")
+    if found:
+        return found
+    return _find_ffmpeg().replace("ffmpeg.exe", "ffprobe.exe")
+
+
+FFMPEG_PATH = _find_ffmpeg()
+FFPROBE_PATH = _find_ffprobe()
 
 OUTPUT_DIR = Path(__file__).parent.parent.parent / "output" / "videos"
 

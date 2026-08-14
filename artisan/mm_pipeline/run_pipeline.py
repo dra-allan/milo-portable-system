@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 PROJECTS_DIR = Path(os.environ.get(
     "MILO_MM_PROJECTS",
-    r"C:\Users\user\Desktop\Milo Video Factory\projects\money_matrix",
+    str(Path.home() / "Desktop" / "Milo Video Factory" / "projects" / "money_matrix"),
 ))
 LEGACY_FFMPEG = r"C:\Users\user\Desktop\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
 
