@@ -14,7 +14,7 @@ Two problems fixed here:
 
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 try:
     import yaml
@@ -87,6 +87,25 @@ class Config:
         self.oauth_token_file = str(
             _resolve(os.getenv('YOUTUBE_OAUTH_TOKEN_FILE', 'config/youtube_token.json'))
         )
+        self.oauth_client_secrets_dir = str(
+            _resolve(os.getenv('YOUTUBE_OAUTH_CLIENT_SECRETS_DIR', 'config'))
+        )
+
+    def oauth_client_secrets_for(self, channel: Optional[str] = None) -> Optional[str]:
+        """Resolve the OAuth client-secrets file for a channel.
+
+        Each channel can bind to its own Google Cloud project (and therefore
+        its own daily upload quota) via ``config/youtube_client_secrets_<channel>.json``.
+        Falls back to the shared client-secrets file when no per-channel file
+        exists, then to None.
+        """
+        if channel:
+            per_channel = Path(self.oauth_client_secrets_dir) / f'youtube_client_secrets_{channel}.json'
+            if per_channel.exists():
+                return str(per_channel.resolve())
+        if self.oauth_client_secrets and Path(self.oauth_client_secrets).exists():
+            return self.oauth_client_secrets
+        return None
 
         # --- Processing limits -------------------------------------------
         self.max_concurrent_videos = self._int('MAX_CONCURRENT_VIDEOS', 3, minimum=1)
