@@ -24,7 +24,22 @@ LGRAY  = (200, 200, 200)
 DMID   = (120, 130, 150)
 
 W, H = 1920, 1080
-FFMPEG = r"C:\Users\user\Desktop\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
+LEGACY_FFMPEG = r"C:\Users\user\Desktop\ffmpeg-2026-05-18-git-b4d11dffbf-full_build\bin\ffmpeg.exe"
+
+
+def _find_ffmpeg():
+    env_path = os.environ.get("MILO_FFMPEG", "").strip()
+    if env_path and Path(env_path).exists():
+        return env_path
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    if os.path.exists(LEGACY_FFMPEG):
+        return LEGACY_FFMPEG
+    return "ffmpeg"
+
+
+FFMPEG = _find_ffmpeg()
 
 
 def _font(font_size=32):
@@ -719,6 +734,12 @@ if __name__ == "__main__":
             music = args.pop(i+1)
             args.pop(i)
             break
-    project = args[0] if args else r"C:\Users\user\Desktop\Milo Video Factory\projects\money_matrix\INDEX_FUNDS"
+    project = args[0] if args else os.path.join(
+        os.environ.get(
+            "MILO_MM_PROJECTS",
+            r"C:\Users\user\Desktop\Milo Video Factory\projects\money_matrix",
+        ),
+        "INDEX_FUNDS",
+    )
     out = args[1] if len(args) > 1 else None
     assemble_video(project, out, music)
