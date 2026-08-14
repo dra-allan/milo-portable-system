@@ -3,6 +3,8 @@ output: 05_IMAGES/IMAGE_PROMPTS_BATCH_FINAL.txt
 
 Read exactly 01_SCRIPT_RAW.txt. Write exactly 05_IMAGES/IMAGE_PROMPTS_BATCH_FINAL.txt and create 05_IMAGES if needed. Do not use Glob, recursive search, or any path outside the project. Do not create split files.
 
+The OUTPUT folder already exists and is writable. Do NOT run mkdir or New-Item for it — any directory error means stop and write the file anyway. Use the Write tool with the exact absolute OUTPUT path from the brief. Never report the file as written unless the Write tool result actually confirms it; if it does not, say so instead of claiming success.
+
 Parse the manifest. Create prompts only for IMG=YES BODY and OUTRO segments, one prompt per sentence, maximum five per segment. Create none for TITLE, HEADER, or TRANSITION. Preserve exact IDs such as [NAR-042] and [NAR-042-B].
 
 Start with:
