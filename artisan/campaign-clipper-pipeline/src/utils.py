@@ -214,7 +214,7 @@ def safe_slug(text: str, limit: int = 48) -> str:
     slug = ''.join(c.lower() if c.isalnum() else '_' for c in (text or ''))
     while '__' in slug:
         slug = slug.replace('__', '_')
-    return slug.strip('_')[:limit] or 'untitled'
+    return slug.strip('_')[:limit].strip('_') or 'untitled'
 
 
 def file_fingerprint(path, chunk: int = 1024 * 1024) -> str:

@@ -139,8 +139,9 @@ def render_clip(spec: CampaignSpec, plan: Dict, copy: Dict,
 
     work = ensure_dir(config.campaign_temp_dir(spec.id) /
                       f"{safe_slug(plan['source_name'])}_{int(plan['start'] * 1000)}")
+    fp = (plan.get('fingerprint') or '')[:8]
     out_path = config.campaign_output_dir(spec.id) / (
-        f"{spec.id}_{safe_slug(plan['source_name'], 28)}_{int(plan['start'])}s.mp4")
+        f"{spec.id}_{safe_slug(plan['source_name'], 28)}_{int(plan['start'])}s_{fp}.mp4")
 
     sheets: List[Path] = []
     sheet_reports: List[Dict] = []
