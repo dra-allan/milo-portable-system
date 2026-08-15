@@ -1,25 +1,25 @@
 # Channel routing contract
 
-## Shorts line
+`artisan/yt-secrets/channels.yaml` is the source of truth. The token filename is always `youtube_token_<channel-key>.json`; use the exact registry key, not a display name.
 
-- `capital_mindset` -> Capital Mindset
-- `flick_shorts` -> Flickshots
-- `chop_ug` -> ChopUG
-- `nxs` -> NXS, with the legacy `gta_hype` niche treated as an alias only
-- `wealth_mindset` -> Wealth Mindset
+## Authenticate or inspect one channel
 
-The full sweep chops one fresh source per authenticated lane first. Posting is
-run afterward and is the only step that enforces daily and per-run caps. When a
-cap is exhausted, rendered clips remain in the lane's backlog.
+```text
+cd artisan
+python -m yt_secrets auth --channel capital_mindset
+python -m yt_secrets status --channel capital_mindset
+```
 
-## Ranking line
+## Pipeline targets
 
-- `RankDrop` -> normal ranking topics (TOP-N countdowns)
-- `the other guys` -> contrast `OTHERS VS THIS GUY` clips
+- Shorts: pass the registry key through the pipeline's channel option or `UPLOAD_CHANNEL` setting. The shared uploader looks for `youtube_token_<key>.json`.
+- Ranking: set `RANKING_UPLOAD_CHANNEL=rankdrop` (or another registry key) before the run. The old `RankDrop` default was a bug because it generated a token filename that did not match the registry.
+- Clipper: set `upload_channel` in `config/castle_clipping.yaml` or pass the campaign channel. `capital_mindset` is the current configured destination.
 
-Routing is variant-driven: a normal build publishes to RankDrop, a contrast
-build publishes to The Other Guys. A topic must also set `contrast_mode: true`
-before it can use the `OTHERS VS THIS GUY` copy in the mixed sweep. Ranking
-output is keyed with the channel in the plan metadata and never uses the
-Shorts NXS route. Configure lanes with `RANKING_CHANNEL_PROFILES`, for example
-`RankDrop:normal,the other guys:contrast`.
+Every lane should log both the requested key and the resolved YouTube channel ID. If a key is missing or inactive, fix `channels.yaml` and authenticate that key before posting. Do not create one token copy per pipeline: the registry key is the shared identity.
+
+## Adding a channel
+
+Add a row to `yt-secrets/channels.yaml` with `email`, `slug`, `active`, `pipelines`, and `token_dir`. Add the owner to the relevant Google Cloud consent-screen test users, publish the project, then run the one-channel auth command. This is the only channel onboarding path.
+
+Current active channels are `flick_shorts`, `capital_mindset`, `wealth_mindset`, `NXS`, and `explaination`. `dra_allan_official` and the other rows stay inactive until their project and owner approval are ready.
