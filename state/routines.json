@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786820759.1807885,
+  "updated_at": 1786826786.3563762,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786817308.406178,
+      "last_run": 1786823380.4104505,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     186\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786820930.082313,
-      "runs": 594,
+      "next_run": 1786827016.1217978,
+      "runs": 595,
       "failures": 29
     },
     {
@@ -76,12 +76,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786817330.2544844,
-      "last_status": "ok",
-      "last_output": "[ok] Everything up-to-date",
-      "next_run": 1786820937.2013695,
-      "runs": 588,
-      "failures": 84
+      "last_run": 1786823416.4067357,
+      "last_status": "failed (124)",
+      "last_output": "timed out after 900s",
+      "next_run": 1786828012.5735996,
+      "runs": 589,
+      "failures": 85
     },
     {
       "name": "memory-hygiene",
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1786819720.0480664,
-      "last_status": "failed (124)",
-      "last_output": "timed out after 900s",
-      "next_run": 1786824359.0737238,
-      "runs": 16,
+      "last_run": 1786826731.4328227,
+      "last_status": "ok",
+      "last_output": "------------------------------------------------------------------------------\n sync  ~6918 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
+      "next_run": 1786830368.0224996,
+      "runs": 17,
       "failures": 2
     },
     {
@@ -183,11 +183,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0510957,
-      "last_run": 1786799309.9362657,
+      "last_run": 1786826768.2052257,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1786820936.5999053,
-      "runs": 34,
+      "next_run": 1786848386.1635747,
+      "runs": 35,
       "failures": 6
     }
   ]
