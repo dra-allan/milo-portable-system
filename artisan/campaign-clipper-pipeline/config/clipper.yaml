@@ -14,6 +14,13 @@ defaults:
 
 style:
   text_size: 76
+  # Word-by-word captions burned from the Whisper transcript (same engine and
+  # presets as the Shorts lane). Env vars CAPTION_* win over these values;
+  # these are the shared default look.
+  caption_style: viral        # viral | hormozi | kinetic | single | minimalist | neon
+  caption_font_size: 0        # 0 = engine preset default; e.g. 88 to force
+  caption_max_words: 0        # 0 = engine preset default; cap words per caption
+  caption_punch_ratio: 0.22
 
 # Fallback hooks for when there is no model key or the model call fails.
 # Deliberately generic: a hook that names a game or a streamer would be wrong
