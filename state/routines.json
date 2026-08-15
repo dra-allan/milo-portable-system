@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786788210.01995,
+  "updated_at": 1786788830.8004465,
   "routines": [
     {
       "name": "curate-skills",
@@ -104,11 +104,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786784024.6873784,
+      "last_run": 1786788811.9587114,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1786787628.8782802,
-      "runs": 580,
+      "next_run": 1786792430.2164166,
+      "runs": 581,
       "failures": 84
     },
     {
