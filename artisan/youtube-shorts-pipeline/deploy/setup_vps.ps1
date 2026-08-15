@@ -100,17 +100,22 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '--mode test reported problems. Fix before scheduling.' }
 } finally { Pop-Location }
 
-# [6/6] Install Task Scheduler daemon (runs `--mode schedule` on logon, like the old box)
+# [6/6] Install Task Scheduler daemon (runs `--mode schedule` at every boot,
+#      as SYSTEM, so a reboot never strands the pipeline waiting for an RDP
+#      login. All pipeline paths are read from .env / anchored to the repo, so
+#      SYSTEM is safe here.)
 Step 6 'Install Task Scheduler daemon'
 $action = New-ScheduledTaskAction -Execute "$ROOT\venv\Scripts\python.exe" `
     -Argument "-m src.main --mode schedule" -WorkingDirectory $ROOT
-$trigger = New-ScheduledTaskTrigger -AtLogOn
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5)
 try {
     Unregister-ScheduledTask -TaskName $TASK -Confirm:$false -ErrorAction SilentlyContinue
-    Register-ScheduledTask -TaskName $TASK -Action $action -Trigger $trigger -Settings $settings `
-        -Description 'YouTube Shorts pipeline scheduled sweeps' | Out-Null
-    Write-Host "   scheduled task '$TASK' installed (runs on logon)"
+    Register-ScheduledTask -TaskName $TASK -Action $action -Trigger $trigger `
+        -Principal $principal -Settings $settings `
+        -Description 'YouTube Shorts pipeline scheduled sweeps (runs at boot)' | Out-Null
+    Write-Host "   scheduled task '$TASK' installed (runs at boot as SYSTEM)"
 } catch {
     Write-Warning "   could not register task: $($_.Exception.Message)"
 }
