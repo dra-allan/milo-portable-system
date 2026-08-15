@@ -10,7 +10,7 @@ campaign:
   url: ''
   type: clipping
   niche: finance
-  upload_channel: capitalmindsetshorts
+  upload_channel: capital_mindset
   enabled: true
   rate_per_1m: 3000
   budget_total: 5000

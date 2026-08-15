@@ -48,7 +48,14 @@ def _client_secrets() -> Path:
     if override and Path(override).exists():
         return Path(override).expanduser()
     shared = _shared_dir() / 'credentials.json'
-    return shared if shared.exists() else Path(config.oauth_client_secrets)
+    if shared.exists():
+        return shared
+    # The Shorts/POV/ranking lanes keep their client secrets at the pipeline
+    # root; the clipper shares their token dir, so it shares their secrets too.
+    sibling = _shared_dir().parent / 'credentials.json'
+    if sibling.exists():
+        return sibling
+    return Path(config.oauth_client_secrets)
 
 
 class ClipperPublisher:
