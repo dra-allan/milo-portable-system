@@ -18,3 +18,17 @@ jobs:
       - run: python -m pip install -e '.[dev]'
       - run: python -m pytest
       - run: python -m compileall -q miloctl
+      - name: Guard: every artisan pipeline must be in NEW_MACHINE_SETUP.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for d in artisan/*/; do
+            name="$(basename "$d")"
+            if [[ "$name" == "__pycache__" ]]; then continue; fi
+            if ! grep -qi "$name" NEW_MACHINE_SETUP.md; then
+              echo "::error::artisan/$name is NOT listed in NEW_MACHINE_SETUP.md — add its install row (upgrade accounting rule)."
+              missing=1
+            fi
+          done
+          exit $missing
