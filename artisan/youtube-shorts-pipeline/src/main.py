@@ -877,15 +877,18 @@ class ShortsPipeline:
                   'source_video_id': video_id}
                  for item in created]
         if self.config.upload_backlog:
-            old = [r for r in self.db.unuploaded_shorts(limit=cap * 3)
+            old = [r for r in self.db.unuploaded_shorts(
+                limit=int(cap * 3) if cap != float('inf') else 200,
+            )
                    if not any(
                        r['source_video_id'] == video_id
                        and r['segment_index'] == item['index']
                        for item in created
                    )]
             logger.info(
-                "Upload queue: %d new clip(s), %d backlog clip(s) available, cap %d/run",
-                len(queue), len(old), cap,
+                "Upload queue: %d new clip(s), %d backlog clip(s) available, cap %s/run",
+                len(queue), len(old),
+                'unlimited' if cap == float('inf') else cap,
             )
             for row in old:
                 if len(queue) >= cap:

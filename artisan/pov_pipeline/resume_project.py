@@ -25,6 +25,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Resume POV at the first missing checkpoint")
     ap.add_argument("project", nargs="?", help="project folder name; omit to use newest incomplete project")
     ap.add_argument("--flow-profiles", default=os.getenv("POV_FLOW_PROFILES", ""))
+    ap.add_argument("--flow-browser-profile", default=os.getenv("POV_FLOW_BROWSER_PROFILE", ""))
     args = ap.parse_args()
     try:
         import povconfig
@@ -44,6 +45,8 @@ def main() -> int:
         print(f"[resume] project not found: {project}", file=sys.stderr)
         return 2
     extra = ["--flow-profiles", args.flow_profiles] if args.flow_profiles else []
+    if args.flow_browser_profile:
+        extra += ["--flow-browser-profile", args.flow_browser_profile]
     agents = ["00_RESEARCH_NOTES.txt", "01_SCRIPT_RAW.txt", "05_IMAGES/IMAGE_PROMPTS_BATCH_FINAL.txt", "04_THUMBNAIL/THUMBNAIL_PROMPT.txt", "02_SCRIPT_ELEVENLABS.txt", "07_METADATA.txt", "COMPLETENESS_REPORT.txt"]
     if not all(nonempty(project, f) for f in agents):
         rc = run(project, "agents", extra)

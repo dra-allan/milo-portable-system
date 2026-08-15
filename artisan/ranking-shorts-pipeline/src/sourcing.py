@@ -17,8 +17,15 @@ logger=setup_logger(__name__)
 def _ydl(opts:Dict):
  from yt_dlp import YoutubeDL
  base={'quiet':True,'no_warnings':True,'noprogress':True,'ignoreerrors':True,'retries':3,'extractor_retries':3,'fragment_retries':8,'retry_sleep':lambda n:min(8,2**n),'socket_timeout':30,'concurrent_fragment_downloads':int(config.get('download_concurrency',4) or 4)};base.update(opts)
+ # Player-client selection: the default `web` client ties media URLs to a
+ # session and 403s without login; android_vr/ios return unthrottled URLs.
+ clients=[c.strip() for c in (os.getenv('YTDLP_PLAYER_CLIENTS') or 'android_vr,ios,web_safari').split(',') if c.strip()]
+ base.setdefault('extractor_args',{}).setdefault('youtube',{})['player_client']=clients
  cookies=config.get('yt_cookies') or os.getenv('YT_COOKIES') or ''
- if cookies:base['cookies']=str(cookies)
+ if cookies:base['cookiefile']=str(cookies)
+ else:
+  browser=(os.getenv('YTDLP_COOKIES_FROM_BROWSER') or '').strip()
+  if browser:base['cookiesfrombrowser']=(browser,)
  return YoutubeDL(base)
 
 def _youtube_target(value:str)->str:
