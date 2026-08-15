@@ -41,12 +41,18 @@ def _opencli() -> str:
 
 
 def _default_opencli_profile() -> str:
-    """Fallback profile id: the defaultContextId OpenCLI already declares."""
+    """Profile id for browser routing.
+
+    Reads ``defaultContextId`` from OpenCLI's own config
+    (``~/.opencli/browser-profiles.json``) so the profile follows the machine,
+    never a hardcoded one from another box. Returns "" when nothing is
+    configured so OpenCLI arbitrates against whatever profile is connected.
+    """
     try:
         cfg = Path.home() / ".opencli" / "browser-profiles.json"
-        return json.loads(cfg.read_text(encoding="utf-8")).get("defaultContextId", "g5f9qrts")
+        return json.loads(cfg.read_text(encoding="utf-8")).get("defaultContextId", "") or ""
     except (OSError, ValueError, TypeError):
-        return "g5f9qrts"
+        return ""
 
 
 def _bridge(*parts: str, timeout: int = 120) -> Dict[str, Any]:
@@ -55,7 +61,9 @@ def _bridge(*parts: str, timeout: int = 120) -> Dict[str, Any]:
     argv = [_opencli(), "browser", session, *parts]
     env = os.environ.copy()
     if "OPENCLI_PROFILE" not in env:
-        env["OPENCLI_PROFILE"] = _default_opencli_profile()
+        profile = _default_opencli_profile()
+        if profile:
+            env["OPENCLI_PROFILE"] = profile
     try:
         p = subprocess.run(
             argv, capture_output=True, text=True, timeout=timeout,
