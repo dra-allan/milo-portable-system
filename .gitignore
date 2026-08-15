@@ -23,6 +23,10 @@ venv/
 *_token*.json
 youtube_token*.json
 
+# Per-email Google Cloud credentials (one project per email). Each email's
+# credentials.json is its own OAuth client; never commit any of them.
+artisan/yt-secrets/*/credentials.json
+
 # Pipeline working data + rendered outputs (state, not source).
 artisan/youtube-shorts-pipeline/data/clip_plans/
 artisan/youtube-shorts-pipeline/data/
