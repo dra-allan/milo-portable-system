@@ -12,13 +12,16 @@ campaign:
   enabled: true
   rate_per_1m: 2500
   budget_total: 4200
+  cap_per_post: 2000
+  cap_per_profile: 2000
 
 sources:
   content_folders: []
-  local_folders: []
+  local_folders:
+    - C:\Users\user\Desktop\duel tt + yt
   manual_only: true
-  manual_reason: content folder is published in the campaign Discord
-  brief_url: ''
+  manual_reason: content folder is published in the campaign Discord; assets already downloaded by operator
+  brief_url: 'https://drive.google.com/drive/folders/1mg7quZHDzI4PJfYyLOo5kpMOveNZzh2X'
   discord_url: ''
 
 assets:
@@ -45,11 +48,14 @@ caption:
   max_length: 400
 
 account_gates:
-  audience: []
+  audience:
+    - country: United States
+      operator: '>='
+      percent: 40.0
   # "1% ENGAGEMENT MINIMUM" is a post-publish metric. Nothing local can verify
   # it, so the validator reports it rather than pretending to check it.
   min_engagement_pct: 1.0
-  min_views_for_earnings: 0
+  min_views_for_earnings: 1750
   eligible_accounts: []
   max_linked_accounts: 0
 
@@ -57,6 +63,10 @@ policy:
   keep_live_days: 0
   prohibitions:
     - POST LOW QUALITY / SPAM
+    - NO SEXUAL, GRAPHIC, VIOLENT, DRUG-RELATED, OR DANGEROUS CONTENT
+    - NO MINORS IN FRAME
+    - CENSOR ALL SWEAR WORDS IN AUDIO, ON-SCREEN TEXT, CAPTIONS, AND THUMBNAILS
+    - NO FREE MONEY, GUARANTEED WINS, OR MISLEADING GAMBLING CLAIMS
   banned_topics: []
 
 conflicts: []
@@ -64,3 +74,7 @@ unparsed: []
 manual_steps:
   - Join the campaign Discord, download the content folder, and point
     sources.local_folders at it.
+  - Watch the entire video before uploading, including background audio.
+  - If a clip seems risky, send it for review before posting.
+  - Zoom in closer on the people so YouTube UI elements do not block blackjack
+    details.
