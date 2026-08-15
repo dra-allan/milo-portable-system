@@ -16,14 +16,13 @@ import json
 import secrets
 import sys
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 try:
     import yaml
@@ -52,7 +51,7 @@ def token_path(key: str, info: Dict[str, Any]) -> Path:
     return REPO_ROOT / info["token_dir"] / f"youtube_token_{key}.json"
 
 
-def credentials_path(info: Dict[str, Any], override: str | None = None) -> Path:
+def credentials_path(info: Dict[str, Any], override: Optional[str] = None) -> Path:
     if override:
         return Path(override).expanduser().resolve()
     return LEGACY_DIR / info["slug"] / "credentials.json"
@@ -65,15 +64,12 @@ def installed_client(doc: Dict[str, Any]) -> Dict[str, Any]:
     return client
 
 
-def build_auth_url(client: Dict[str, Any], redirect_uri: str) -> str:
+def build_auth_url(client: Dict[str, Any], redirect_uri: str, state: str) -> str:
     params = {
-        "client_id": client["client_id"],
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": " ".join(SCOPES),
-        "access_type": "offline",
-        "prompt": "consent",
-        "include_granted_scopes": "true",
+        "client_id": client["client_id"], "redirect_uri": redirect_uri,
+        "response_type": "code", "scope": " ".join(SCOPES),
+        "access_type": "offline", "prompt": "consent",
+        "include_granted_scopes": "true", "state": state,
     }
     return client.get("auth_uri", "https://accounts.google.com/o/oauth2/auth") + "?" + urllib.parse.urlencode(params)
 
@@ -104,7 +100,7 @@ def verify(doc: Dict[str, Any]) -> Tuple[str, str]:
     if not access_token:
         raise RuntimeError("Google returned no access token during refresh")
     request = urllib.request.Request(YT_CHANNELS_URI + "?part=snippet&mine=true")
-    request.add_header("Authorization", f"Bearer {access_token}")
+    request.add_header("Authorization", "Bearer " + access_token)
     with urllib.request.urlopen(request, timeout=60) as response:
         items = json.load(response).get("items", [])
     if not items:
@@ -129,7 +125,6 @@ def token_document(client: Dict[str, Any], values: Dict[str, Any]) -> Dict[str, 
 
 def foreground_flow(key: str, info: Dict[str, Any], client: Dict[str, Any], timeout: int) -> Dict[str, Any]:
     result: Dict[str, str] = {}
-    port = 0
     nonce = secrets.token_urlsafe(12)
 
     class Handler(BaseHTTPRequestHandler):
@@ -150,8 +145,7 @@ def foreground_flow(key: str, info: Dict[str, Any], client: Dict[str, Any], time
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     redirect_uri = f"http://127.0.0.1:{port}/oauth2callback"
-    params = {"state": nonce}
-    url = build_auth_url(client, redirect_uri) + "&" + urllib.parse.urlencode(params)
+    url = build_auth_url(client, redirect_uri, nonce)
     print(f"\n[{key}] Sign in as {info['email']} and approve access.")
     print("Opening the URL in your browser. If it does not open, copy this exact URL:\n")
     print(url)
@@ -170,7 +164,7 @@ def foreground_flow(key: str, info: Dict[str, Any], client: Dict[str, Any], time
     return exchange(client, result["code"], redirect_uri)
 
 
-def authenticate(key: str, info: Dict[str, Any], override: str | None, timeout: int) -> None:
+def authenticate(key: str, info: Dict[str, Any], override: Optional[str], timeout: int) -> None:
     creds = credentials_path(info, override)
     if not creds.exists():
         raise FileNotFoundError(f"credentials missing: {creds} (download the {info['slug']} project OAuth JSON)")
@@ -205,7 +199,7 @@ def status(keys: Iterable[str]) -> int:
     return 1 if failures else 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m yt_secrets")
     sub = parser.add_subparsers(dest="command", required=True)
     auth = sub.add_parser("auth", help="authenticate one channel or every active channel")
