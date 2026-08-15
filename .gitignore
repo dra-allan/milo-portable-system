@@ -9,3 +9,7 @@ artisan/ranking-shorts-pipeline/config/youtube_token_*.json
 
 # Browser cookie export -- live session credentials, never commit.
 cookies.txt
+
+# Secrets and interpreter noise anywhere in the tree.
+.env
+__pycache__/
