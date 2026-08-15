@@ -82,7 +82,7 @@ row in the same commit.** Rows marked `auto` are handled by the prompt.
 | 11 | Gemini TTS | `artisan/gemini_tts_pipeline/requirements.txt` | note here |
 | 12 | Flow CLI / opencli | `artisan/flow-cli` (npm) + `npm i -g @jackwener/opencli` (provides the `opencli` bin that `milo-computer` MCP shells out to) | note here |
 | 13 | opencli Chrome extension | `artisan/opencli-extension` — load unpacked in Chrome (Flow automation) | note here |
-| 14 | Composio MCP | `milo sync opencode` emits `composio` server when `COMPOSIO_API_KEY` is in `$MILO_HOME/.env`; runs `npx @composio/mcp@latest` | add key to .env, re-sync |
+| 14 | Composio MCP | `pip install composio` (v3 SDK) + `COMPOSIO_API_KEY` in `$MILO_HOME/.env`; `milo sync opencode` emits a hosted Tool Router MCP endpoint (`miloctl/composio_mcp.py`) | add key to .env, re-sync |
 | 15 | ffmpeg | winget `Gyan.FFmpeg` (setup_vps step 1) | version change only |
 | 16 | YouTube cookies | `cookies.txt` at repo root (bytes exact, not via RDP drag) | re-export after auth changes; note here |
 | 17 | State bundles | per-pipeline `.tar.gz` (tokens, .env, db) | bundle on change, note here |
