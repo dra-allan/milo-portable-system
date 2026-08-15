@@ -195,7 +195,7 @@ class RankingDatabase:
         return int(row['n'] if row else 0)
 
     def uploaded_count_for_channel_since(self, channel: str,
-                                         seconds: float) -> int:
+                                         seconds: float = 0) -> int:
         """Uploads to one channel since the cap boundary.
 
         This is the per-channel cap primitive the upload policy expects. The
