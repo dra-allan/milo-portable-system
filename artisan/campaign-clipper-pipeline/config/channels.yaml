@@ -1,7 +1,8 @@
 # channels.yaml
 # niche -> upload channel. The value is the channel key used to find the OAuth
 # token (youtube_token_<key>.json) in the shared secrets dir the publisher reads
-# (POV_SECRETS_DIR / VIDEO_FACTORY_ROOT/pov/config).
+# (POV_SECRETS_DIR, else VIDEO_FACTORY_ROOT/pov/config, else the clipper's own
+# config dir). Keys must match the Shorts lane's per-channel token filenames.
 #
 # Resolution order for a clip's upload target:
 #   1. campaign spec `upload_channel:` (always wins)
@@ -9,7 +10,8 @@
 #   3. the global CLIPPER_UPLOAD_CHANNEL env value
 #
 # Edit freely: these are YOUR channel bindings, nothing in code depends on the
-# specific values.
+# specific values. Currently-missing tokens on this box: wealth_mindset, NXS
+# (live on the AWS brain where the Shorts pipeline runs).
 
 gambling: chop_ug
 gaming: chop_ug
@@ -17,8 +19,8 @@ podcast: flick_shorts
 entertainment: flick_shorts
 finance: capital_mindset
 crypto: wealth_mindset
-tech: nxs
+tech: NXS
 sports: chop_ug
-news: nxs
-music: nxs
-lifestyle: the_other_guys
+news: NXS
+music: NXS
+lifestyle: wealth_mindset
