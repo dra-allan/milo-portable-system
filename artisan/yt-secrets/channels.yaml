@@ -1,84 +1,78 @@
-# yt-secrets/channels.yaml
-# ---------------------------------------------------------------------------
-# TWO funded Google Cloud projects (each carries its own YouTube Data API
-# daily quota, 10k units/day ~= ~6 uploads/day). Channels are split across
-# them so no single project hits the 400/429 upload wall.
-#
-#   PROJECT A  yt-flick-shorts  (owner draallan0@gmail.com)
-#   PROJECT B  milo-mcp         (owner adrasaltsxxx@gmail.com)
-#
-# Each channel row:
-#   email      - the gmail that OWNS the channel (also: the account that must
-#                approve consent and be on the project's test-user list).
-#   slug       - yt-secrets/<slug>/credentials.json = the OAuth client used to
-#                mint this channel's token (i.e. which project it counts
-#                against). A channel rides its OWNER's project when one is
-#                funded, else the owner must be added as a test user on the
-#                project the slug points at.
-#   token_dir  - where mint writes youtube_token_<key>.json:
-#                shorts  -> artisan/youtube-shorts-pipeline/config
-#                pov     -> artisan/pov_pipeline/config
-#                clipper -> POV_SECRETS_DIR (= shorts config dir on this box)
-#
-# A channel is only uploaded to when its token exists. Delete a row only when
-# the channel is retired for good.
-
+# Single source of truth for YouTube channel keys, owners, projects and token destinations.
+# New channel checklist: add a stable key, owner email, project slug, pipeline list,
+# token_dir, then run `cd artisan && python -m yt_secrets auth --channel <key>`.
 channels:
-  # ============================ PROJECT A (yt-flick-shorts) ================
-  # Funded: yes. Test users on consent screen: draallan0@gmail.com.
   flick_shorts:
     email: draallan0@gmail.com
     slug: draallan0
+    active: true
+    pipelines: [shorts]
     token_dir: artisan/youtube-shorts-pipeline/config
   capital_mindset:
     email: draallan0@gmail.com
     slug: draallan0
+    active: true
+    pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
 
-  # ============================ PROJECT B (milo-mcp) =======================
-  # Funded: yes. Test users on consent screen: adrasaltsxxx@gmail.com,
-  # draallan12@gmail.com.
   wealth_mindset:
     email: adrasaltsxxx@gmail.com
     slug: adrasaltsxxx
+    active: true
+    pipelines: [shorts]
     token_dir: artisan/youtube-shorts-pipeline/config
   dra_allan_official:
     email: adrasaltsxxx@gmail.com
     slug: adrasaltsxxx
+    active: false
+    pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
   NXS:
     email: draallan12@gmail.com
     slug: adrasaltsxxx
+    active: true
+    pipelines: [shorts]
     token_dir: artisan/youtube-shorts-pipeline/config
   explaination:
     email: draallan12@gmail.com
     slug: adrasaltsxxx
+    active: true
+    pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
 
-  # ============================ INACTIVE / NOT YET ROUTED ==================
-  # No funded project yet. Mint later once their owner funds a project or is
-  # added as a test user on A or B. Listed so nothing is lost.
   chop_ug:
     email: daadaallan0@gmail.com
     slug: draallan0
+    active: false
+    pipelines: [shorts]
     token_dir: artisan/youtube-shorts-pipeline/config
   rankdrop:
     email: daadaallan0@gmail.com
     slug: draallan0
+    active: false
+    pipelines: [ranking]
     token_dir: artisan/ranking-shorts-pipeline/config
   money_matrix:
     email: adrasaltsx@gmail.com
     slug: adrasaltsxxx
+    active: false
+    pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
   god_did_fx:
     email: draallan84@gmail.com
     slug: adrasaltsxxx
+    active: false
+    pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
   the_other_guys:
     email: allandaada@gmail.com
     slug: draallan0
+    active: false
+    pipelines: [shorts]
     token_dir: artisan/youtube-shorts-pipeline/config
   moviegasm:
     email: allandaada@gmail.com
     slug: draallan0
+    active: false
+    pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
