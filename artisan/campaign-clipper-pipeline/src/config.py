@@ -112,6 +112,13 @@ class ClipperConfig:
         self.text_max_lines = _i('TEXT_MAX_LINES', 3)
         self.text_side_margin = _f('TEXT_SIDE_MARGIN', 0.06)
 
+        # -- speech captions (ASS, like the Shorts lane) ------------------
+        self.caption_enabled = _b('CAPTION_ENABLED', True)
+        self.caption_style = os.getenv('CAPTION_STYLE', 'viral').lower()
+        self.caption_font_size = _i('CAPTION_FONT_SIZE', 0) or None
+        self.caption_max_words = _i('CAPTION_MAX_WORDS', 0) or None
+        self.caption_punch_ratio = _f('CAPTION_PUNCH_RATIO', 0.22)
+
         # -- clip selection ----------------------------------------------
         self.clips_per_source = max(1, _i('CLIPS_PER_SOURCE', 2))
         self.clips_per_run = max(1, _i('CLIPS_PER_RUN', 3))

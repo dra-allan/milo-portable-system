@@ -27,6 +27,10 @@ _REACTION = re.compile(r'\\b(yes|yeah|no|wow|oh|damn|holy|wait|what|bro|unbeliev
 _MODEL = None
 _MODEL_KEY = None
 
+# Bump when the stored segment shape changes so stale caches re-transcribe.
+# v2: segments now carry word-level timestamps for synced speech captions.
+_CACHE_VERSION = 2
+
 
 def _b(name, default):
     raw = os.getenv(name)
@@ -93,7 +97,18 @@ def _collect(iterator):
     for segment in iterator:
         text = (getattr(segment, 'text', '') or '').strip()
         if text:
-            result.append({'text': text, 'start': float(segment.start), 'end': float(segment.end), 'confidence': float(getattr(segment, 'avg_logprob', 0.0) or 0.0)})
+            words = []
+            for w in getattr(segment, 'words', None) or []:
+                wtext = (getattr(w, 'word', '') or '').strip()
+                wstart = getattr(w, 'start', None)
+                wend = getattr(w, 'end', None)
+                if wtext and wstart is not None and wend is not None:
+                    words.append({'word': wtext, 'start': float(wstart),
+                                  'end': float(wend)})
+            result.append({'text': text, 'start': float(segment.start),
+                           'end': float(segment.end),
+                           'confidence': float(getattr(segment, 'avg_logprob', 0.0) or 0.0),
+                           'words': words})
     return result
 
 
@@ -104,7 +119,8 @@ def transcript_for(source) -> List[Dict]:
     try:
         if path.exists():
             payload = json.loads(path.read_text(encoding='utf-8'))
-            if payload.get('source') == source.get('fingerprint'):
+            if (payload.get('source') == source.get('fingerprint')
+                    and payload.get('v') == _CACHE_VERSION):
                 return payload.get('segments') or []
     except Exception:
         pass
@@ -116,9 +132,11 @@ def transcript_for(source) -> List[Dict]:
         return []
     try:
         language = os.getenv('WHISPER_LANGUAGE', '').strip() or None
-        segments, _info = model.transcribe(str(wav), beam_size=_i('WHISPER_BEAM_SIZE', 1), vad_filter=True, language=language, condition_on_previous_text=False)
+        segments, _info = model.transcribe(str(wav), beam_size=_i('WHISPER_BEAM_SIZE', 1), vad_filter=True, language=language, condition_on_previous_text=False, word_timestamps=True)
         result = _collect(segments)
-        path.write_text(json.dumps({'source': source.get('fingerprint'), 'segments': result}, indent=2), encoding='utf-8')
+        path.write_text(json.dumps({'source': source.get('fingerprint'),
+                                    'v': _CACHE_VERSION, 'segments': result},
+                                   indent=2), encoding='utf-8')
         logger.info('HIGHLIGHT_TRANSCRIPT_READY file=%s segments=%d', source.get('filename'), len(result))
         return result
     except Exception as exc:

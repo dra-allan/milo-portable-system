@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 
 from . import overlay as ov
 from . import smart_crop
+from . import viral_captions as vc
 from .config import config
 from .spec import CampaignSpec
 from .utils import (ensure_dir, probe_media, run_ffmpeg, safe_slug,
@@ -69,6 +70,62 @@ def _encode_args() -> List[str]:
     return args
 
 
+def _escape_filter_path(path: str) -> str:
+    p = str(path).replace('\\', '/')
+    p = p.replace(':', r'\:').replace("'", "''")
+    return p
+
+
+def _build_captions(spec: CampaignSpec, plan: Dict, work: Path) -> Optional[Path]:
+    """Build an ASS caption file from the source transcript for this window.
+
+    Returns None when captions are disabled, no transcript exists, or nothing
+    falls inside the clip window -- the renderer then skips the subtitles
+    filter entirely rather than burning an empty file.
+    """
+    if not config.caption_enabled or not plan.get('has_audio'):
+        return None
+    try:
+        from .highlights import transcript_for
+        segments = transcript_for({'fingerprint': plan.get('fingerprint', ''),
+                                   'local_path': plan.get('source_path', ''),
+                                   'filename': plan.get('source_name', '')})
+    except Exception as exc:
+        logger.warning('CAPTION_TRANSCRIPT_FAILED campaign=%s error=%s',
+                       spec.id, str(exc)[:160])
+        return None
+    if not segments:
+        logger.info('CAPTION_SKIP campaign=%s source=%s no transcript',
+                    spec.id, plan.get('source_name'))
+        return None
+
+    ass_path = work / 'captions.ass'
+    try:
+        document = vc.build_viral_ass(
+            segments,
+            preset_name=config.caption_style,
+            time_offset=float(plan.get('start', 0.0)),
+            clip_duration=float(plan.get('duration', 0.0)),
+            keywords=list(spec.caption.required_keywords),
+            font_size=config.caption_font_size,
+            max_words=config.caption_max_words,
+            play_res=(config.width, config.height),
+            punch_ratio=config.caption_punch_ratio,
+        )
+    except Exception as exc:
+        logger.warning('CAPTION_BUILD_FAILED campaign=%s error=%s',
+                       spec.id, str(exc)[:160])
+        return None
+    if not document:
+        logger.info('CAPTION_SKIP campaign=%s source=%s nothing in window',
+                    spec.id, plan.get('source_name'))
+        return None
+    ass_path.write_text(document, encoding='utf-8')
+    logger.info('CAPTION_BURNED campaign=%s source=%s words in window',
+                spec.id, plan.get('source_name'))
+    return ass_path
+
+
 def render_clip(spec: CampaignSpec, plan: Dict, copy: Dict,
                 logo_path: Optional[Path] = None,
                 stamp_logo: bool = True) -> Optional[Dict]:
@@ -120,6 +177,15 @@ def render_clip(spec: CampaignSpec, plan: Dict, copy: Dict,
                                 opacity=spec.assets.logo_opacity)
         label = 'branded'
         logo_used = True
+    captions_used = False
+    ass_path = _build_captions(spec, plan, work)
+    if ass_path and ass_path.exists():
+        chains.append(
+            f'[{label}]format=yuv444p,'
+            f"subtitles='{_escape_filter_path(str(ass_path))}':alpha=1[captioned]"
+        )
+        label = 'captioned'
+        captions_used = True
     chains.append(f'[{label}]fps={config.fps},format=yuv420p[vout]')
 
     duration = float(plan['duration'])
@@ -152,6 +218,7 @@ def render_clip(spec: CampaignSpec, plan: Dict, copy: Dict,
                 media['has_audio'], logo_used, resolve_encoder())
     return {'path': str(out_path), 'work_dir': str(work),
             'sheets': sheet_reports, 'logo_stamped': logo_used,
+            'captions': captions_used,
             'logo_path': str(logo_path) if logo_path else '',
             'smart_crop': crop is not None, 'crop': crop,
             'encoder': resolve_encoder(), 'media': media}
