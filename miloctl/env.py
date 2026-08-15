@@ -56,6 +56,7 @@ FIELDS: List[Tuple[str, str, bool, bool]] = [
     ("ENGRAM_API_KEY", "Engram API key", False, True),
     ("BRAVE_API_KEY", "Brave Search API key", False, True),
     ("ELEVENLABS_API_KEY", "ElevenLabs API key", False, True),
+    ("COMPOSIO_API_KEY", "Composio API key (app.composio.dev)", False, True),
     # Voice (STT / streaming TTS / wake word)
     ("GEMINI_API_KEYS", "Gemini API key(s), comma-separated", False, True),
     ("GEMINI_API_KEY", "Gemini API key (single)", False, True),

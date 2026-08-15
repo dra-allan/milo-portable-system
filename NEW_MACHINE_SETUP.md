@@ -80,11 +80,12 @@ row in the same commit.** Rows marked `auto` are handled by the prompt.
 | 9 | Money Matrix pipeline | `artisan/mm_pipeline` / `artisan/mm_agents` | note here when provisioned |
 | 10 | Campaign clipper | `artisan/campaign-clipper-pipeline` — README + requirements.txt | update README, note here |
 | 11 | Gemini TTS | `artisan/gemini_tts_pipeline/requirements.txt` | note here |
-| 12 | Flow CLI / opencli | `artisan/flow-cli` (npm) | note here |
+| 12 | Flow CLI / opencli | `artisan/flow-cli` (npm) + `npm i -g @jackwener/opencli` (provides the `opencli` bin that `milo-computer` MCP shells out to) | note here |
 | 13 | opencli Chrome extension | `artisan/opencli-extension` — load unpacked in Chrome (Flow automation) | note here |
-| 14 | ffmpeg | winget `Gyan.FFmpeg` (setup_vps step 1) | version change only |
-| 15 | YouTube cookies | `cookies.txt` at repo root (bytes exact, not via RDP drag) | re-export after auth changes; note here |
-| 16 | State bundles | per-pipeline `.tar.gz` (tokens, .env, db) | bundle on change, note here |
+| 14 | Composio MCP | `milo sync opencode` emits `composio` server when `COMPOSIO_API_KEY` is in `$MILO_HOME/.env`; runs `npx @composio/mcp@latest` | add key to .env, re-sync |
+| 15 | ffmpeg | winget `Gyan.FFmpeg` (setup_vps step 1) | version change only |
+| 16 | YouTube cookies | `cookies.txt` at repo root (bytes exact, not via RDP drag) | re-export after auth changes; note here |
+| 17 | State bundles | per-pipeline `.tar.gz` (tokens, .env, db) | bundle on change, note here |
 
 ## Upgrade accounting rule
 

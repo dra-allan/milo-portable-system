@@ -159,6 +159,17 @@ def mcp_servers(secrets: Optional[Dict[str, str]] = None) -> Dict[str, dict]:
             "enabled": True,
             "environment": {"BRAVE_API_KEY": "{{BRAVE_API_KEY}}"},
         }
+    # Composio: 500+ app integrations with OAuth connections managed in one
+    # dashboard (composio.dev). Connections are bound to the account behind the
+    # API key, not the machine, so the same Gmail/Maps/etc. accounts follow the
+    # key to any box. Requires a key in `.env`.
+    if s.get("COMPOSIO_API_KEY"):
+        out["composio"] = {
+            "type": "local",
+            "command": ["npx", "-y", "@composio/mcp@latest"],
+            "enabled": True,
+            "environment": {"COMPOSIO_API_KEY": "{{COMPOSIO_API_KEY}}"},
+        }
     # Filesystem access to the vault, scoped — no key needed.
     if paths.vault_dir().is_dir():
         out["vault"] = {
