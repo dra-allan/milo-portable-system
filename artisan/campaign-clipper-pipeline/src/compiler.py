@@ -90,6 +90,56 @@ _LANGUAGES = {'english': 'en', 'spanish': 'es', 'portuguese': 'pt',
               'french': 'fr', 'german': 'de', 'hindi': 'hi',
               'luganda': 'lg', 'arabic': 'ar'}
 
+# Content niches, detected from the requirements text. The key is also used as
+# the per-niche upload-channel map key (config/channels.yaml) and as the title
+# frame key when it matches the Shorts lane's NICHE_FRAMES. Detection is a
+# keyword count, not a classifier: the operator's manual `niche:` value in the
+# compiled YAML always wins over whatever this guesses.
+_NICHE_TABLE = {
+    'gambling': ('casino', 'bingo', 'roobet', 'betting', 'slot', 'jackpot',
+                 'roulette', 'wager', 'bookmaker', 'odds'),
+    'gaming': ('gameplay', 'gaming', 'esports', 'clash', 'battle royale',
+               'player', 'level up', 'gg', 'multiplayer', 'strategy game',
+               'mobile game', 'duel', 'arena'),
+    'podcast': ('podcast', 'interview', 'conversation', 'guest', 'episode',
+                'host', 'roundtable', 'fireside', 'talk show'),
+    'entertainment': ('movie', 'film', 'tv show', 'celebrity', 'entertainment',
+                      'trailer', 'series', 'actor', 'reaction'),
+    'finance': ('finance', 'financial', 'money', 'invest', 'investment',
+                'capital', 'trading', 'forex', 'bank', 'interest rate',
+                'wealth', 'credit', 'savings', 'budget', 'revenue'),
+    'crypto': ('crypto', 'bitcoin', 'blockchain', 'web3', 'token', 'nft',
+               'ethereum', 'wallet', 'defi'),
+    'tech': ('tech', 'artificial intelligence', ' ai ', 'software', 'saas',
+             'startup', 'robot', 'automation', 'app update', 'gadget',
+             'innovative'),
+    'sports': ('football', 'soccer', 'basketball', 'ufc', 'boxing', 'nfl',
+               'nba', 'cricket', 'tennis', 'esports league', 'sports'),
+    'news': ('news', 'breaking', 'headline', 'report', 'update today',
+             'election', 'global'),
+    'music': ('music', 'artist', 'beat', 'song', 'album', 'rap', 'hip hop',
+              'singer', 'producer'),
+    'lifestyle': ('lifestyle', 'luxury', 'fashion', 'travel', 'fitness',
+                  'wellness', 'daily routine', 'vlog'),
+}
+
+
+def _detect_niche(raw: str) -> str:
+    """Guess a campaign's niche from its requirements text.
+
+    Word-boundary matching, best keyword count wins, ties break to the earlier
+    table entry. Returns '' when nothing matches so the operator's manual value
+    is the only source of truth.
+    """
+    low = f' {re.sub(r"[^a-z0-9 ]+", " ", (raw or "").lower())} '
+    best, best_count = '', 0
+    for niche, keywords in _NICHE_TABLE.items():
+        count = sum(1 for word in keywords
+                    if re.search(r'\b' + re.escape(word) + r'\b', low))
+        if count > best_count:
+            best, best_count = niche, count
+    return best
+
 
 def _decimal(raw: str) -> float:
     """Parse a number whose separator could be either convention.
@@ -181,7 +231,7 @@ def compile_requirements(raw: str, campaign_id: str = '', name: str = '',
 
     data: Dict = {
         'campaign': {'id': cid, 'name': name or cid, 'url': url,
-                     'type': CLIPPING},
+                     'type': CLIPPING, 'niche': _detect_niche(text)},
         'sources': {}, 'assets': {}, 'render': {}, 'caption': {},
         'account_gates': {}, 'policy': {},
         'raw_requirements': text,

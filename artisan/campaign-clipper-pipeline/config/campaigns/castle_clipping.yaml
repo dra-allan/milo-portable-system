@@ -9,6 +9,8 @@ campaign:
   name: Castle [CLIPPING]
   url: ''
   type: clipping
+  niche: finance
+  upload_channel: capitalmindsetshorts
   enabled: true
   rate_per_1m: 3000
   budget_total: 5000

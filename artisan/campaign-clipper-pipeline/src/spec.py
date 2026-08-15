@@ -173,6 +173,13 @@ class CampaignSpec:
     name: str = ''
     url: str = ''
     type: str = CLIPPING
+    # Content niche (gaming, podcast, entertainment, finance, ...). Drives the
+    # per-niche title frames and the upload channel choice. Detected from the
+    # requirements at compile time; a value written into the YAML always wins.
+    niche: str = ''
+    # Which of the operator's channels this campaign's clips get posted to.
+    # Falls back to the niche map, then to the global CLIPPER_UPLOAD_CHANNEL.
+    upload_channel: str = ''
     enabled: bool = True
     rate_per_1m: float = 0.0
     budget_total: float = 0.0
@@ -222,6 +229,8 @@ class CampaignSpec:
             name=str(campaign.get('name') or cid),
             url=str(campaign.get('url') or ''),
             type=str(campaign.get('type') or CLIPPING).lower(),
+            niche=str(campaign.get('niche') or '').strip().lower(),
+            upload_channel=str(campaign.get('upload_channel') or '').strip(),
             enabled=bool(campaign.get('enabled', True)),
             rate_per_1m=float(campaign.get('rate_per_1m') or 0),
             budget_total=float(campaign.get('budget_total') or 0),
@@ -305,7 +314,9 @@ class CampaignSpec:
         return {
             'campaign': {
                 'id': self.id, 'name': self.name, 'url': self.url,
-                'type': self.type, 'enabled': self.enabled,
+                'type': self.type, 'niche': self.niche,
+                'upload_channel': self.upload_channel,
+                'enabled': self.enabled,
                 'rate_per_1m': self.rate_per_1m,
                 'budget_total': self.budget_total,
                 'cap_per_post': self.cap_per_post,
@@ -367,6 +378,8 @@ class CampaignSpec:
 
     def normalize(self) -> None:
         self.type = self.type if self.type in (CLIPPING, UGC) else CLIPPING
+        self.niche = re.sub(r'[^a-z0-9_]+', '', self.niche
+                            .replace('-', '_').replace(' ', '_')).strip('_')
         if self.render.music not in (MUSIC_NONE, MUSIC_SOURCE, MUSIC_NATIVE):
             self.render.music = MUSIC_NONE
         if self.render.max_duration <= self.render.min_duration:
@@ -429,10 +442,13 @@ class CampaignSpec:
     def describe(self) -> str:
         bits = [f'{self.name} [{self.id}]',
                 f'type={self.type}',
+                f'niche={self.niche or "?"}',
                 f'{self.render.min_duration:g}-'
                 f'{self.render.max_duration:g}s',
                 f'platforms={"/".join(self.render.platforms)}',
                 f'lang={self.render.language}']
+        if self.upload_channel:
+            bits.append(f'channel={self.upload_channel}')
         if self.assets.logo_required:
             bits.append(f'logo={self.assets.logo_mode}')
         if self.render.own_text_required:

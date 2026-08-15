@@ -14,6 +14,7 @@ campaign:
   name: Gamepoint Bingo [CLIPPING] 2
   url: ''
   type: clipping
+  niche: gambling
   enabled: true
   rate_per_1m: 1500
   budget_total: 3000

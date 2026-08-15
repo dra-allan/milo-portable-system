@@ -8,6 +8,7 @@ campaign:
   name: Roobet [CLIPPING] 3
   url: ''
   type: clipping
+  niche: gambling
   enabled: true
   rate_per_1m: 2500
   budget_total: 4800

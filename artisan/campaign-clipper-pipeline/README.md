@@ -34,11 +34,28 @@ python -m src.main --mode add --id castle_clipping --file castle.txt
 python -m src.main --mode build --id castle_clipping --count 3
 python -m src.main --mode upload --id castle_clipping --clip <id>
 python -m src.main --mode submit --id castle_clipping --clip <id>
+python -m src.main --mode links
+python -m src.main --mode record-link --id castle_clipping --clip <id> --url <youtube_url>
 ```
 
 `build` publishes nothing. Watch the passing MP4s first. Use `--fill-only` on
 submit if you want the browser to fill the Clipster field while you press the
 button yourself.
+
+## Titles, niches and channel routing
+
+Each clip gets a rule-based optimized title (vendored from the Shorts lane's
+`title_optimizer`): filler is stripped, non-English hooks are rejected, and a
+curiosity frame keyed on the campaign niche is applied. The title is shown in
+`build` output and stored with the clip.
+
+A campaign's niche is detected from its requirements at compile time and written
+into the spec; a manual `niche:` in the YAML always wins. The upload target
+resolves as: spec `upload_channel:` -> `config/channels.yaml` by niche ->
+`CLIPPER_UPLOAD_CHANNEL`. `--mode links` prints and writes `data/clip_links.csv`
+with every published link (campaign, niche, account, title, url) for campaign
+submission and tracking. `--mode record-link` attaches a URL to a clip that was
+uploaded by hand, so manually posted clips stay in the same ledger.
 
 ## What the campaign spec controls
 

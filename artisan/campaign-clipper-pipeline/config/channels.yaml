@@ -1,0 +1,24 @@
+# channels.yaml
+# niche -> upload channel. The value is the channel key used to find the OAuth
+# token (youtube_token_<key>.json) in the shared secrets dir the publisher reads
+# (POV_SECRETS_DIR / VIDEO_FACTORY_ROOT/pov/config).
+#
+# Resolution order for a clip's upload target:
+#   1. campaign spec `upload_channel:` (always wins)
+#   2. this map, keyed by the spec's `niche:`
+#   3. the global CLIPPER_UPLOAD_CHANNEL env value
+#
+# Edit freely: these are YOUR channel bindings, nothing in code depends on the
+# specific values.
+
+gambling: chop_ug
+gaming: chop_ug
+podcast: flick_shorts
+entertainment: flick_shorts
+finance: capital_mindset
+crypto: wealth_mindset
+tech: nxs
+sports: chop_ug
+news: nxs
+music: nxs
+lifestyle: the_other_guys

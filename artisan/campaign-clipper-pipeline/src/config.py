@@ -188,6 +188,10 @@ class ClipperConfig:
         self.banned_words = [str(w).lower()
                              for w in (raw.get('banned_words') or [])]
 
+        # niche -> channel key map (config/channels.yaml). A campaign's own
+        # upload_channel field beats this; this beats the global env value.
+        self.channel_map = self._load_channels()
+
         # YAML overrides for the knobs that are style, not machine setup.
         if not os.getenv('TARGET_DURATION') and self.get('target_duration'):
             self.target_duration = float(self.get('target_duration'))
@@ -228,6 +232,24 @@ class ClipperConfig:
         except Exception as exc:
             logger.error('clipper.yaml load failed: %s', exc)
             return {}
+
+    def _load_channels(self):
+        path = PROJECT_ROOT / 'config' / 'channels.yaml'
+        if not path.exists():
+            return {}
+        try:
+            import yaml
+            raw = yaml.safe_load(path.read_text(encoding='utf-8')) or {}
+            return {str(k).strip().lower(): str(v).strip()
+                    for k, v in raw.items()
+                    if str(k).strip() and str(v).strip()}
+        except Exception as exc:
+            logger.error('channels.yaml load failed: %s', exc)
+            return {}
+
+    def channel_for_niche(self, niche: str) -> str:
+        """Channel key for a niche, or '' when unbound."""
+        return self.channel_map.get(str(niche or '').strip().lower(), '')
 
     def get(self, key, default=None):
         return self.defaults.get(key, default)
