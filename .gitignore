@@ -15,6 +15,10 @@ state/
 *.pem
 *.key
 
+# Python virtualenvs + build artifacts.
+venv/
+*.egg-info/
+
 # Per-channel OAuth tokens / account secrets anywhere in the tree.
 *_token*.json
 youtube_token*.json
