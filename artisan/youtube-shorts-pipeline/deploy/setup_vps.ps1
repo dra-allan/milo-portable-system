@@ -46,6 +46,12 @@ if ($Bundle -and (Test-Path $Bundle)) {
 # [4/6] Fix .env paths for this machine
 Step 4 'Fix .env paths for this machine'
 $ENVFILE = "$ROOT\.env"
+# Old bundles restored the env as config/.env; promote it so the pipeline
+# (which reads $ROOT/.env) picks it up even without re-transferring.
+if (-not (Test-Path $ENVFILE) -and (Test-Path "$ROOT\config\.env")) {
+    Copy-Item "$ROOT\config\.env" $ENVFILE
+    Write-Host '   promoted config/.env -> .env'
+}
 if (Test-Path $ENVFILE) {
     $content = Get-Content $ENVFILE -Raw
     $replaced = 0
