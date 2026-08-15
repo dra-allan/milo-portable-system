@@ -359,7 +359,51 @@ def run_tts(project_dir: Path) -> bool:
     return result.returncode == 0
 
 
-def run_flow_images(project_dir: Path, profiles: str = "") -> bool:
+def _resolve_browser_profile(explicit: str = ""):
+    """Pick the Browser Bridge profile for opencli's global ``--profile``.
+
+    Google Flow only works through one connected Chrome Browser Bridge
+    profile at a time; when several are connected, opencli fails with
+    BROWSER_CONNECT ("Multiple Browser Bridge profiles are connected") unless
+    a profile is selected. ``explicit`` (from POV_FLOW_BROWSER_PROFILE or
+    --flow-browser-profile) wins; otherwise the first connected profile is
+    chosen so the images stage never dies on the ambiguity error.
+    """
+    explicit = (explicit or "").strip()
+    if explicit:
+        return explicit
+    opencli = shutil.which("opencli")
+    if not opencli:
+        return None
+    try:
+        result = subprocess.run([opencli, "profile", "list"],
+                                capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+# "  n83jffs4 flow-3 — connected v1.0.0" -> prefer the alias, else the id.
+    # Split on whitespace and find the token right before "connected": that is
+    # the profile id, or the alias when one precedes the id.
+    for line in (result.stdout or "").splitlines():
+        tokens = line.split()
+        idx = next((i for i, t in enumerate(tokens)
+                    if t.lower() == "connected"), -1)
+        if idx < 1 or tokens[idx - 1].lower() == "not":
+            continue  # headers or "not connected" lines
+        name = None
+        for candidate in tokens[idx - 1::-1]:
+            if len(candidate) > 1 and candidate.lower() != "connected":
+                name = candidate
+                break
+        if name:
+            return name
+    return None
+
+
+def run_flow_images(project_dir: Path, profiles: str = "",
+                    browser_profile: str = "") -> bool:
     """Generate all segment images via Google Flow (opencli flow images)."""
     print("\n" + "=" * 60)
     print("  IMAGE GENERATION (Google Flow)")
@@ -375,8 +419,14 @@ def run_flow_images(project_dir: Path, profiles: str = "") -> bool:
         return False
 
     cmd = [opencli, "flow", "images", "--file", str(batch)]
+    bridge = _resolve_browser_profile(browser_profile)
+    if bridge:
+        cmd = [opencli, "--profile", bridge, "flow", "images",
+               "--file", str(batch)]
     if profiles:
         cmd += ["--profiles", profiles]
+    if bridge:
+        print(f"[images] browser bridge profile: {bridge}")
 
     print("[images] " + " ".join(str(c) for c in cmd[:4]) + " ...")
     result = subprocess.run(cmd, capture_output=True, text=True,
@@ -471,7 +521,7 @@ def check_flow_profiles(expected: str = "") -> bool:
     return True
 
 
-def run_thumbnail(project_dir: Path) -> bool:
+def run_thumbnail(project_dir: Path, browser_profile: str = "") -> bool:
     """Generate the thumbnail via Google Flow (opencli flow image-gen)."""
     print("\n" + "=" * 60)
     print("  THUMBNAIL GENERATION (Google Flow)")
@@ -492,6 +542,7 @@ def run_thumbnail(project_dir: Path) -> bool:
         return False
 
     out_file = project_dir / "04_THUMBNAIL" / "thumbnail.png"
+    bridge = _resolve_browser_profile(browser_profile)
     cmd = [
         opencli, "flow", "image-gen",
         "--prompt", prompt,
@@ -499,6 +550,15 @@ def run_thumbnail(project_dir: Path) -> bool:
         "--out", str(out_file),
         "--yes",
     ]
+    if bridge:
+        cmd = [
+            opencli, "--profile", bridge, "flow", "image-gen",
+            "--prompt", prompt,
+            "--aspect", "16:9",
+            "--out", str(out_file),
+            "--yes",
+        ]
+        print(f"[thumb] browser bridge profile: {bridge}")
     print("[thumb] " + " ".join(str(c) for c in cmd[:3]) + " ...")
     result = subprocess.run(cmd, capture_output=True, text=True,
                             encoding="utf-8", errors="replace", timeout=600)
@@ -608,6 +668,8 @@ def main():
     ap.add_argument("--skip-tts", action="store_true", help="Run gate only, stop before TTS")
     ap.add_argument("--flow-profiles", default=None,
                     help="Google Flow profiles to rotate through on rate limits (e.g. flow-1,flow-2)")
+    ap.add_argument("--flow-browser-profile", default=None,
+                    help="Chrome Browser Bridge profile for opencli --profile (default: POV_FLOW_BROWSER_PROFILE or first connected)")
     # Agent-chain controls (M1).
     ap.add_argument("--model", default=None,
                     help="Model for the headless agent runs, as provider/model")
@@ -711,7 +773,8 @@ def main():
         opts = dict(
             skip_upload=a.skip_upload,
             dry_run_upload=a.dry_run_upload,
-            agent_opts={**agent_opts, "flow_profiles": a.flow_profiles or ""},
+            agent_opts={**agent_opts, "flow_profiles": a.flow_profiles or "",
+                        "flow_browser_profile": a.flow_browser_profile or ""},
         )
         if a.privacy:
             opts["privacy"] = a.privacy
@@ -811,7 +874,8 @@ def main():
             sys.exit(1)
 
     if a.stage in ("images", "video"):
-        ok = run_flow_images(project_dir, profiles=a.flow_profiles or "")
+        ok = run_flow_images(project_dir, profiles=a.flow_profiles or "",
+                             browser_profile=a.flow_browser_profile or "")
         if not ok:
             notifier("images.failed",
                      f"POV {project_dir.name}: image generation incomplete "
@@ -821,7 +885,7 @@ def main():
         notifier("images.done", f"POV {project_dir.name}: all segment images generated")
 
     if a.stage in ("thumb", "video"):
-        ok = run_thumbnail(project_dir)
+        ok = run_thumbnail(project_dir, browser_profile=a.flow_browser_profile or "")
         if not ok:
             eprint("[error] Thumbnail generation failed (check above).")
             sys.exit(1)

@@ -261,7 +261,9 @@ def process_one(item: dict, *, db: PovDB, notify: Notify | None = None,
     if stopping():
         return _stop_here("images")
     profiles = agent_opts.pop("flow_profiles", "") if agent_opts else ""
-    if not rp.run_flow_images(project_dir, profiles=profiles or ""):
+    browser_profile = agent_opts.pop("flow_browser_profile", "") if agent_opts else ""
+    if not rp.run_flow_images(project_dir, profiles=profiles or "",
+                              browser_profile=browser_profile or ""):
         # The Chrome bridge is the known VPS risk: fail loudly, never silently.
         return _failed("images",
                        "Google Flow image generation incomplete (is the Chrome "
@@ -272,7 +274,7 @@ def process_one(item: dict, *, db: PovDB, notify: Notify | None = None,
     # -- thumbnail ---------------------------------------------------------
     if stopping():
         return _stop_here("thumb")
-    if not rp.run_thumbnail(project_dir):
+    if not rp.run_thumbnail(project_dir, browser_profile=browser_profile or ""):
         # Non-fatal: the upload stage warns and posts without a thumbnail.
         log_line("daemon.warn", f"{project}: thumbnail generation failed",
                  level="error")

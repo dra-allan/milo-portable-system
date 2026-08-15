@@ -53,7 +53,7 @@ class RankingConfig:
         # which silently dropped every run back to the template writer, so the
         # default is a rolling alias with a fallback chain behind it.
         self.script_model = os.getenv('SCRIPT_MODEL', 'gemini-flash-latest')
-        self.script_model_fallbacks = _list('SCRIPT_MODEL_FALLBACKS', 'gemini-3.6-flash,gemini-3.5-flash-lite,gemini-2.5-flash')
+        self.script_model_fallbacks = _list('SCRIPT_MODEL_FALLBACKS', 'gemini-3.6-flash,gemini-3.5-flash-lite')
         self.script_api_key = os.getenv('GEMINI_API_KEY') or (os.getenv('GEMINI_API_KEYS', '').split(',')[0] or '').strip()
         self.oauth_client_secrets = self._resolve_path(os.getenv('RANKING_OAUTH_CLIENT_SECRETS', str(PROJECT_ROOT / 'credentials.json')))
         self.oauth_token_file = self._resolve_path(os.getenv('RANKING_OAUTH_TOKEN_FILE', str(self.runtime_root / 'config' / 'youtube_token_ranking.json')))
