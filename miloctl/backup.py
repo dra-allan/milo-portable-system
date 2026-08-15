@@ -330,21 +330,97 @@ def _git(repo: Path, *args: str, timeout: int = 180) -> subprocess.CompletedProc
     )
 
 
-def _commit_and_push(repo: Path, message: str, push: bool) -> Tuple[bool, str]:
+def _machine_id() -> str:
+    """Which Milo machine this is. brain = AWS/VPS, pc = Allan's main box.
+
+    Derived from the hostname first (the EC2/VPS instances are named after
+    AWS), then falls back to the git identity configured for the checkout.
+    Used to pick this machine's private backup branch (``backup/brain`` /
+    ``backup/pc``) so two machines never write to the same branch.
+    """
+    node = (platform.node() or "").upper()
+    if "EC2" in node or "AWS" in node or "VPS" in node or "MILO-BRAIN" in node:
+        return "brain"
+    email = ""
+    try:
+        r = _git(paths.repo_root(), "config", "user.email")
+        email = (r.stdout or "").strip().lower()
+    except Exception:
+        pass
+    if "brain" in email:
+        return "brain"
+    if "pc" in email or "local" in email:
+        return "pc"
+    return "pc"
+
+
+def _backup_branch() -> str:
+    return f"backup/{_machine_id()}"
+
+
+def _ensure_backup_worktree(repo: Path) -> Tuple[Path, str]:
+    """Create (or attach) the worktree that owns this machine's backup branch.
+
+    Returns ``(worktree_path, branch)``. The backup branch is single-writer:
+    only this machine commits and pushes to it, so ``git pull`` on the main
+    checkout never collides with another machine's snapshot. ``main`` stays
+    portable code only.
+    """
+    machine = _machine_id()
+    branch = _backup_branch()
+    work = repo / ".backup" / machine
+    work.parent.mkdir(parents=True, exist_ok=True)
+
+    if (work / ".git").exists():
+        return work, branch
+
+    # Branch may already exist on the remote from a previous run.
+    has_remote = False
+    r = _git(repo, "ls-remote", "--heads", "origin", branch)
+    if r.returncode == 0 and branch in (r.stdout or ""):
+        has_remote = True
+
+    if has_remote:
+        _git(repo, "fetch", "origin", branch)
+        _git(repo, "worktree", "add", str(work), branch)
+    else:
+        _git(repo, "worktree", "add", "-b", branch, str(work), "main")
+    return work, branch
+
+
+def _commit_and_push_state(
+    repo: Path, message: str, push: bool
+) -> Tuple[bool, str]:
+    """Commit the state/ snapshot to THIS machine's backup branch and push.
+
+    The snapshot files stay in ``repo/state`` (untracked on main, so the main
+    checkout never sees them change); the backup branch is owned by exactly one
+    machine, so two Milol instances cannot fight over it.
+    """
     if not (repo / ".git").exists():
         return False, f"{repo} is not a git repo — snapshot written but not pushed"
+    work, branch = _ensure_backup_worktree(repo)
     logs: List[str] = []
-    pull = _git(repo, "pull", "--rebase", "--autostash")
-    logs.append((pull.stdout + pull.stderr).strip())
-    status = _git(repo, "status", "--porcelain")
-    if not status.stdout.strip():
-        return True, "nothing changed since last backup"
-    _git(repo, "add", "-A")
-    commit = _git(repo, "commit", "-m", message)
+
+    src = repo / "state"
+    dst = work / "state"
+    if dst.exists():
+        shutil.rmtree(dst, ignore_errors=True)
+    if src.exists():
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns(".git"))
+    if not dst.exists():
+        return True, "nothing to snapshot"
+
+    _git(work, "add", "-A")
+    commit = _git(work, "commit", "-m", message)
     logs.append((commit.stdout + commit.stderr).strip())
+    if commit.returncode != 0 and "nothing to commit" not in (
+        commit.stdout + commit.stderr
+    ):
+        return False, "\n".join(x for x in logs if x)
     if not push:
         return True, "\n".join(x for x in logs if x)
-    p = _git(repo, "push")
+    p = _git(work, "push", "origin", branch)
     logs.append((p.stdout + p.stderr).strip())
     return p.returncode == 0, "\n".join(x for x in logs if x)
 
@@ -378,7 +454,7 @@ def backup(
         f"{datetime.now():%Y-%m-%d %H:%M} "
         f"({res.counts.get('memories', 0)}m/{res.counts.get('skills', 0)}s)"
     )
-    ok, log = _commit_and_push(repo, msg, push)
+    ok, log = _commit_and_push_state(repo, msg, push)
     res.pushed = ok and push
     res.git_log = log
 

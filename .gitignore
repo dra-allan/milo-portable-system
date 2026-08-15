@@ -1,15 +1,35 @@
-artisan/youtube-shorts-pipeline/data/clip_plans/
+# Secrets and interpreter noise anywhere in the tree.
+.env
+.env.*
+!*.env.template
+!*.env.example
+__pycache__/
 
-# Ranking shorts pipeline: machine-local working data + outputs (same policy
-# as the shorts pipeline above). plan JSONs, rendered mp4s and the SQLite
-# tracking DB are state, not source. Per-channel OAuth tokens: never commit.
+# Machine-local runtime state. Each Milo machine keeps its own; `main` is
+# portable code only. state/ policy is in WORK_CLAIMS.md.
+state/
+.backup/
+*.log
+*.db
+*.db-*
+*.pem
+*.key
+
+# Per-channel OAuth tokens / account secrets anywhere in the tree.
+*_token*.json
+youtube_token*.json
+
+# Pipeline working data + rendered outputs (state, not source).
+artisan/youtube-shorts-pipeline/data/clip_plans/
+artisan/youtube-shorts-pipeline/data/
+artisan/youtube-shorts-pipeline/output/
 artisan/ranking-shorts-pipeline/data/
 artisan/ranking-shorts-pipeline/output/
 artisan/ranking-shorts-pipeline/config/youtube_token_*.json
+artisan/campaign-clipper-pipeline/data/
+artisan/campaign-clipper-pipeline/output/
+artisan/campaign-clipper-pipeline/config/*.env
+artisan/pov_pipeline/scripts/transcripts/
 
 # Browser cookie export -- live session credentials, never commit.
 cookies.txt
-
-# Secrets and interpreter noise anywhere in the tree.
-.env
-__pycache__/
