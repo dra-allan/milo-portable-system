@@ -1,23 +1,23 @@
 {
   "version": 2,
   "agent": "Milo",
-  "created_at": "2026-08-15T09:55:18",
-  "created_epoch": 1786776918.7280605,
+  "created_at": "2026-08-15T10:12:23",
+  "created_epoch": 1786788743.9418755,
   "platform": "windows",
-  "python": "3.13.14",
+  "python": "3.12.10",
   "milo_version": "2.0.0",
-  "hostname": "WIN-NFRLBARNJ6I",
+  "hostname": "EC2AMAZ-LG34Q0I",
   "counts": {
-    "memories": 183,
+    "memories": 180,
     "sessions": 0,
     "traits": 0,
     "skills": 3,
     "notes": 8,
-    "env_keys": 5
+    "env_keys": 14
   },
   "paths": {
-    "skills": "C:\\Users\\user\\AppData\\Local\\milo\\skills",
-    "vault": "C:\\Users\\user\\Desktop\\dra-brains",
-    "workspace": "C:\\Users\\user\\milo-workspace"
+    "skills": "C:\\Users\\Administrator\\AppData\\Local\\milo\\skills",
+    "vault": "C:\\Users\\Administrator\\Desktop\\dra-brains",
+    "workspace": "C:\\Users\\Administrator\\milo-workspace"
   }
 }
