@@ -52,9 +52,12 @@ $ENVFILE = "$ROOT\config\.env"
 if (Test-Path $ENVFILE) {
     $content = Get-Content $ENVFILE -Raw
     $changed = 0
-    # Factory root -> this box's repo (all runtime dirs derive from it).
+    # Factory root -> this box. NOTE: config derives runtime_root as
+    # <VIDEO_FACTORY_ROOT>/ranking-shorts-pipeline, so point this at the
+    # PARENT of the repo (artisan/), not the repo itself.
+    $factory = Split-Path $ROOT -Parent
     if ($content -match "(?m)^VIDEO_FACTORY_ROOT=.*") {
-        $content = $content -replace "(?m)^VIDEO_FACTORY_ROOT=.*", "VIDEO_FACTORY_ROOT=$ROOT"
+        $content = $content -replace "(?m)^VIDEO_FACTORY_ROOT=.*", "VIDEO_FACTORY_ROOT=$factory"
         $changed++
     }
     # OAuth client secrets -> the shorts pipeline's credentials.json on this box.
