@@ -15,6 +15,7 @@ campaign:
   name: Kingdom Clash [UGC]
   url: ''
   type: ugc
+  niche: gaming
   enabled: true
   rate_per_1m: 1500
   budget_total: 3000

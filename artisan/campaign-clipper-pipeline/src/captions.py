@@ -189,8 +189,24 @@ def build_copy(spec: CampaignSpec, plan: Dict,
             'highlight': highlight}
 
 
-def build_title(spec: CampaignSpec, copy: Dict) -> str:
-    """YouTube title. Shorts titles are short; the caption carries the tokens."""
-    base = (copy.get('overlay_text') or spec.name).strip()
-    base = re.sub(r'\s+', ' ', base)[:80]
+def build_title(spec: CampaignSpec, copy: Dict, clip_id: int = 0) -> str:
+    """YouTube title. Shorts titles are short; the caption carries the tokens.
+
+    The raw overlay hook is passed through the Shorts lane's rule-based title
+    optimizer (vendored as :mod:`title_optimizer`), which strips filler, rejects
+    non-English/hallucinated hooks, and shapes curiosity-gap frames keyed on the
+    campaign's niche. The result is deterministic per (hook, niche, clip).
+    """
+    hook = (copy.get('overlay_text') or spec.name).strip()
+    hook = re.sub(r'\s+', ' ', hook)[:80]
+    try:
+        from .title_optimizer import optimize_title
+        base = optimize_title(hook, niche=spec.niche,
+                              keywords=spec.caption.all_required(),
+                              clip_index=clip_id, max_len=72)
+    except Exception as exc:
+        logger.warning('TITLE_OPTIMIZER_FAILED campaign=%s error=%s',
+                       spec.id, str(exc)[:120])
+        base = hook
+    base = (base or hook).strip()
     return f'{base} #shorts' if '#shorts' not in base.lower() else base

@@ -17,6 +17,7 @@ exactly what it would have published.
 
 import argparse
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -227,8 +228,10 @@ def build(spec: CampaignSpec, db, count: Optional[int] = None,
             continue
 
         plan_row = {**plan, 'caption': copy['caption'],
-                    'overlay_text': copy['overlay_text']}
+                    'overlay_text': copy['overlay_text'], 'niche': spec.niche}
         clip_id = db.record_clip(spec.id, plan_row, report['path'])
+        title = captions.build_title(spec, copy, clip_id=clip_id)
+        db.update_title(clip_id, title)
 
         verdict = validation.validate(spec, report['path'], copy, report)
         db.record_validation(clip_id, {**verdict, 'render': report},
@@ -240,7 +243,7 @@ def build(spec: CampaignSpec, db, count: Optional[int] = None,
                                 plan['end'])
             renderer.cleanup_work(report)
         results.append({'clip_id': clip_id, 'path': report['path'],
-                        'copy': copy, 'verdict': verdict})
+                        'copy': copy, 'verdict': verdict, 'title': title})
     cleanup.after_build(spec.id)
     return results
 
@@ -265,6 +268,7 @@ def _print_results(results: List[Dict]) -> None:
         verdict = item['verdict']
         state = 'PASS' if verdict['passed'] else 'FAIL'
         print(f"[{state}] clip {item['clip_id']}  {Path(item['path']).name}")
+        print(f"       title  : {item['title']}")
         print(f"       text   : {item['copy']['overlay_text']}")
         print(f"       caption: {item['copy']['caption']}")
         for problem in verdict['errors']:
@@ -276,6 +280,19 @@ def _print_results(results: List[Dict]) -> None:
 
 
 # -- publish -----------------------------------------------------------
+def _channel_for(spec: CampaignSpec) -> str:
+    """The channel key a campaign's clips upload to.
+
+    Explicit spec field wins, then the niche map, then the global env value.
+    """
+    if spec.upload_channel:
+        return spec.upload_channel
+    mapped = config.channel_for_niche(spec.niche)
+    if mapped:
+        return mapped
+    return config.upload_channel
+
+
 def upload_clip(spec: CampaignSpec, db, clip_id: int,
                 privacy: Optional[str] = None) -> Optional[Dict]:
     row = db.clip_row(clip_id)
@@ -296,8 +313,10 @@ def upload_clip(spec: CampaignSpec, db, clip_id: int,
         return None
 
     from .publisher import ClipperPublisher
-    publisher = ClipperPublisher(privacy_status=privacy)
-    title = captions.build_title(spec, {'overlay_text': row['overlay_text']})
+    channel = _channel_for(spec)
+    publisher = ClipperPublisher(channel=channel, privacy_status=privacy)
+    title = (row.get('title') or '').strip() or captions.build_title(
+        spec, {'overlay_text': row['overlay_text']}, clip_id=clip_id)
     result = publisher.upload(row['local_path'], title, row['caption'] or '',
                               tags=spec.caption.all_required())
     if not result:
@@ -395,11 +414,70 @@ def mode_status() -> int:
         print(f'\n{len(pending)} submission(s) waiting for a human:')
         for item in pending:
             print(f"  {item['campaign_id']}: {item['video_url']}")
-    for status in ('validated', 'uploaded', 'rejected'):
+    for status in ('validated', 'uploaded', 'submitted', 'rejected'):
         for row in db.clips_by_status(status, limit=10):
             name = Path(row['local_path'] or '').name
-            print(f"  [{status}] clip {row['id']} {row['campaign_id']} {name}")
+            url = row.get('video_url') or ''
+            print(f"  [{status}] clip {row['id']} {row['campaign_id']} {name}"
+                  + (f'  {url}' if url else ''))
     cleanup.disk_report()
+    return 0
+
+
+def mode_links(campaign_id: str) -> int:
+    """Print and write out every clip that has a published link.
+
+    This is the tracking list: campaign, niche, account, title and the URL you
+    submit to the board. Written to ``data/clip_links.csv`` and printed.
+    """
+    db = _db()
+    rows = db.clips_export(campaign_id=campaign_id or None)
+    if not rows:
+        print('No published links recorded yet.')
+        return 0
+    header = ('clip_id,campaign,niche,account,title,video_url,uploaded_at,'
+              'status')
+    lines = [header]
+    print(f'{"clip":>6}  {"campaign":<24} {"niche":<14} {"account":<22} '
+          f'{"title":<44} url')
+    for row in rows:
+        title = (row.get('title') or row.get('overlay_text') or '').replace(
+            ',', ' ').strip()
+        uploaded = time.strftime('%Y-%m-%d %H:%M',
+                                 time.localtime(row.get('uploaded_at') or 0))
+        print(f'{row["id"]:>6}  {(row["campaign_id"] or "")[:24]:<24} '
+              f'{(row.get("niche") or ""):<14} '
+              f'{(row.get("account") or ""):<22} '
+              f'{title[:44]:<44} {row.get("video_url") or ""}')
+        lines.append(','.join(str(row.get(k) or '')
+                              for k in ('id', 'campaign_id', 'niche',
+                                        'account', 'video_url'))
+                    + f',{uploaded},{row.get("status") or ""}')
+    path = config.data_dir / 'clip_links.csv'
+    path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    print(f'\nWrote {path} ({len(rows)} link(s))')
+    return 0
+
+
+def mode_record_link(campaign_id: str, clip_id: int, url: str) -> int:
+    """Record a link for a clip that was uploaded by hand.
+
+    Exists because not every post goes through the pipeline: the first two clips
+    were posted manually. Attaching their URLs keeps the ledger complete so the
+    campaign submission and tracking are one list, not two.
+    """
+    if not url:
+        print('--mode record-link needs --url')
+        return 1
+    spec = _spec(campaign_id)
+    if not spec:
+        return 1
+    if not _db().record_manual_link(clip_id, url):
+        row = _db().clip_row(clip_id)
+        print('Could not record the link. clip row status must be '
+              f'"validated" or "built" (got: {row["status"] if row else "none"}).')
+        return 1
+    print(f'recorded: clip {clip_id} -> {url}')
     return 0
 
 
@@ -420,7 +498,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         description='Clip campaign content into compliant vertical shorts.')
     parser.add_argument('--mode', required=True, choices=[
         'test', 'login', 'campaigns', 'pull', 'add', 'specs', 'sources',
-        'build', 'upload', 'submit', 'run', 'status', 'cleanup'])
+        'build', 'upload', 'submit', 'run', 'links', 'record-link',
+        'status', 'cleanup'])
     parser.add_argument('--id', default='',
                         help='campaign id (the spec filename)')
     parser.add_argument('--url', default='', help='campaign page URL')
@@ -482,6 +561,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         return mode_submit(args.id, args.clip, args.fill_only)
     if args.mode == 'status':
         return mode_status()
+    if args.mode == 'links':
+        return mode_links(args.id)
+    if args.mode == 'record-link':
+        if not (args.id and args.clip):
+            parser.error('--mode record-link needs --id and --clip')
+        return mode_record_link(args.id, args.clip, args.url)
     if args.mode == 'cleanup':
         return mode_cleanup(args.id, args.drop_sources, args.drop_submitted)
     return 1

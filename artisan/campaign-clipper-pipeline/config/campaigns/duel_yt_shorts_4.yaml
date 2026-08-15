@@ -9,6 +9,7 @@ campaign:
   name: Duel [CLIPPING - YT SHORTS] 4
   url: ''
   type: clipping
+  niche: gaming
   enabled: true
   rate_per_1m: 2500
   budget_total: 4200

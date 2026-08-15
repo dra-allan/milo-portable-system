@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS clips (
     local_path    TEXT,
     caption       TEXT,
     overlay_text  TEXT,
+    title         TEXT,
+    niche         TEXT,
     plan_json     TEXT,
     report_json   TEXT,
     status        TEXT NOT NULL DEFAULT 'built',
@@ -89,6 +91,7 @@ class ClipperDatabase:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
 
     @contextmanager
     def _connect(self):
@@ -99,6 +102,16 @@ class ClipperDatabase:
             conn.commit()
         finally:
             conn.close()
+
+    @staticmethod
+    def _migrate(conn) -> None:
+        """Add columns that older DBs created before a feature landed."""
+        cols = {row['name'] for row in
+                conn.execute('PRAGMA table_info(clips)').fetchall()}
+        for name, ddl in (('title', 'ALTER TABLE clips ADD COLUMN title TEXT'),
+                          ('niche', 'ALTER TABLE clips ADD COLUMN niche TEXT')):
+            if name not in cols:
+                conn.execute(ddl)
 
     # -- campaigns -------------------------------------------------------
     def upsert_campaign(self, campaign_id: str, name: str, url: str,
@@ -192,14 +205,19 @@ class ClipperDatabase:
             cur = conn.execute(
                 'INSERT INTO clips (campaign_id, fingerprint, source_name, '
                 'start_s, duration, local_path, caption, overlay_text, '
-                'plan_json, status, created_at) '
-                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                'niche, plan_json, status, created_at) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 (campaign_id, plan.get('fingerprint'),
                  plan.get('source_name'), plan.get('start'),
                  plan.get('duration'), local_path, plan.get('caption'),
-                 plan.get('overlay_text'),
+                 plan.get('overlay_text'), plan.get('niche'),
                  json.dumps(plan, default=str), 'built', time.time()))
             return int(cur.lastrowid)
+
+    def update_title(self, clip_id: int, title: str) -> None:
+        with self._connect() as conn:
+            conn.execute('UPDATE clips SET title=? WHERE id=?',
+                         (title, clip_id))
 
     def set_status(self, clip_id: int, status: str) -> None:
         with self._connect() as conn:
@@ -238,6 +256,39 @@ class ClipperDatabase:
         with self._connect() as conn:
             conn.execute('UPDATE clips SET status=? WHERE id=?',
                          (f'failed:{reason[:80]}', clip_id))
+
+    def record_manual_link(self, clip_id: int, video_url: str,
+                           account: Optional[str] = None) -> bool:
+        """Attach a URL to a clip that was uploaded by hand.
+
+        The pipeline keeps a ledger of *every* published clip so a mix of
+        automatic and manual posts still produces one complete link list for the
+        operator to submit and track.
+        """
+        video_url = (video_url or '').strip()
+        if not video_url:
+            return False
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE clips SET status='uploaded', video_url=?, "
+                'account=COALESCE(?, account), uploaded_at=? '
+                "WHERE id=? AND (status='validated' OR status='built' "
+                "OR status LIKE 'failed:%')",
+                (video_url, account, time.time(), clip_id))
+            return cur.rowcount > 0
+
+    def clips_export(self, campaign_id: Optional[str] = None) -> List[Dict]:
+        """Clips with a published link, oldest first, for the links report."""
+        sql = ("SELECT * FROM clips WHERE video_url IS NOT NULL "
+               "AND video_url != ''")
+        args: List = []
+        if campaign_id:
+            sql += ' AND campaign_id=?'
+            args.append(campaign_id)
+        sql += ' ORDER BY uploaded_at ASC'
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(args)).fetchall()
+        return [dict(r) for r in rows]
 
     def clip_row(self, clip_id: int) -> Optional[Dict]:
         with self._connect() as conn:
