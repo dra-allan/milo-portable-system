@@ -325,11 +325,18 @@ class YouTubeDownloader:
         clients = [c.strip() for c in
                    (os.getenv('YTDLP_PLAYER_CLIENTS')
                     or 'android_vr,ios,web_safari').split(',') if c.strip()]
+        runtimes = [rt.strip() for rt in
+                    (os.getenv('YTDLP_JS_RUNTIMES') or 'node').split(',') if rt.strip()]
         opts: Dict = {
             'extractor_args': {'youtube': {'player_client': clients}},
             # Fail over to the next client quickly instead of retrying a client
             # that is structurally blocked.
             'extractor_retries': 3,
+            # YouTube's `n` challenge needs a JS runtime; node ships with this
+            # machine (deno does not). Without one, only storyboard formats
+            # resolve and every download fails with "Requested format is not
+            # available".
+            'js_runtimes': {rt: {} for rt in runtimes},
         }
 
         cookies_file = (os.getenv('YTDLP_COOKIES_FILE') or '').strip()

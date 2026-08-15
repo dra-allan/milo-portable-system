@@ -35,6 +35,9 @@ defaults:
   # Optional path to a yt-dlp cookies.txt/Netscape export. When set, downloads
   # use it (fixes "Sign in to confirm you're not a bot"). Empty = default.
   yt_cookies: ""
+  # JS runtime for YouTube's `n` challenge (node ships with this machine;
+  # without one only storyboard formats resolve and downloads fail).
+  js_runtime: node
   min_motion_score: 0.02
   phash_distance: 6
   rank_colors:
