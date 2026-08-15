@@ -47,7 +47,7 @@ def _seed_transcript(source_path: Path) -> None:
     for token in ['wait', 'for', 'it', 'this', 'is', 'the', 'one']:
         words.append({'word': token, 'start': cursor, 'end': cursor + 0.35})
         cursor += 0.45
-    payload = {'source': identity, 'version': 2,
+    payload = {'source': identity, 'v': 2,
                'segments': [{'text': 'wait for it this is the one',
                              'start': 0.0, 'end': cursor,
                              'confidence': -0.3, 'words': words}]}
@@ -79,13 +79,13 @@ class TestE2ECaptionBurn(unittest.TestCase):
         report = renderer.render_clip(spec, plan, copy, logo_path=None,
                                       stamp_logo=False)
         self.assertIsNotNone(report)
-        self.assertTrue(report['captions_burned'],
+        self.assertTrue(report['captions'],
                         'captions should be burned into the render')
         out = Path(report['path'])
         self.assertTrue(out.exists(), 'render output missing')
         media = probe_media(str(out))
         self.assertGreater(media['duration'], 0)
-        print(f'RENDER_OK {out.name} captions_burned=True '
+        print(f'RENDER_OK {out.name} captions=True '
               f'{media["width"]}x{media["height"]} {media["duration"]:.2f}s')
 
 

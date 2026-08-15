@@ -195,6 +195,17 @@ class ClipperConfig:
             self.clips_per_run = int(self.get('clips_per_run'))
         if not os.getenv('TEXT_SIZE') and self.style.get('text_size'):
             self.text_size = int(self.style['text_size'])
+        if not os.getenv('CAPTION_ENABLED') and self.style.get('caption_enabled') is not None:
+            self.caption_enabled = bool(self.style['caption_enabled'])
+        if not os.getenv('CAPTION_STYLE') and self.style.get('caption_style'):
+            self.caption_style = str(self.style['caption_style']).strip().lower()
+        if not os.getenv('CAPTION_FONT_SIZE') and self.style.get('caption_font_size'):
+            self.caption_font_size = (int(self.style['caption_font_size']) or None)
+        if not os.getenv('CAPTION_MAX_WORDS') and self.style.get('caption_max_words'):
+            self.caption_max_words = (int(self.style['caption_max_words']) or None)
+        if not os.getenv('CAPTION_PUNCH_RATIO') \
+                and self.style.get('caption_punch_ratio') is not None:
+            self.caption_punch_ratio = float(self.style['caption_punch_ratio'])
 
     # -- path helpers ---------------------------------------------------
     def _path(self, env, default, create=True):
