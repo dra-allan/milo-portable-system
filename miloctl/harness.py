@@ -162,14 +162,22 @@ def mcp_servers(secrets: Optional[Dict[str, str]] = None) -> Dict[str, dict]:
     # Composio: 500+ app integrations with OAuth connections managed in one
     # dashboard (composio.dev). Connections are bound to the account behind the
     # API key, not the machine, so the same Gmail/Maps/etc. accounts follow the
-    # key to any box. Requires a key in `.env`.
+    # key to any box. Exposed over a hosted per-session Tool Router MCP
+    # endpoint resolved from the ``composio`` SDK; requires ``COMPOSIO_API_KEY``
+    # in ``.env`` and the ``composio`` python package installed.
     if s.get("COMPOSIO_API_KEY"):
-        out["composio"] = {
-            "type": "local",
-            "command": ["npx", "-y", "@composio/mcp@latest"],
-            "enabled": True,
-            "environment": {"COMPOSIO_API_KEY": "{{COMPOSIO_API_KEY}}"},
-        }
+        try:
+            from .composio_mcp import resolve as _composio_resolve
+            endpoint = _composio_resolve(s.get("COMPOSIO_API_KEY"))
+        except Exception:
+            endpoint = None
+        if endpoint:
+            out["composio"] = {
+                "type": "remote",
+                "url": endpoint[0],
+                "headers": endpoint[1],
+                "enabled": True,
+            }
     # Filesystem access to the vault, scoped — no key needed.
     if paths.vault_dir().is_dir():
         out["vault"] = {
@@ -531,11 +539,14 @@ class OpenCodeHarness(Harness):
                 config["model"] = model
             rendered = env.render(json.dumps(config, indent=2), secrets)
             target = cfg_dir / "opencode.json"
-            merged = _deep_merge(
-                json.loads(_strip_jsonc(target.read_text(encoding="utf-8")))
-                if target.is_file() else {},
-                json.loads(rendered),
-            )
+            existing = json.loads(_strip_jsonc(target.read_text(encoding="utf-8"))) \
+                if target.is_file() else {}
+            merged = _deep_merge(existing, json.loads(rendered))
+            # Servers the generator emits are owned wholesale: a changed server
+            # shape must replace the old entry (e.g. composio went from a local
+            # npx process to a remote URL) instead of leaving stale keys behind.
+            for name, value in config.get("mcp", {}).items():
+                merged.setdefault("mcp", {})[name] = value
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
             res.written.append(target)
