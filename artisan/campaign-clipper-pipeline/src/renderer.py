@@ -101,12 +101,14 @@ def _build_captions(spec: CampaignSpec, plan: Dict, work: Path) -> Optional[Path
 
     ass_path = work / 'captions.ass'
     try:
+        keywords = list(spec.caption.required_keywords) \
+            + list(spec.render.must_appear_in_video)
         document = vc.build_viral_ass(
             segments,
             preset_name=config.caption_style,
             time_offset=float(plan.get('start', 0.0)),
             clip_duration=float(plan.get('duration', 0.0)),
-            keywords=list(spec.caption.required_keywords),
+            keywords=keywords,
             font_size=config.caption_font_size,
             max_words=config.caption_max_words,
             play_res=(config.width, config.height),
