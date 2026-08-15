@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786788830.8004465,
+  "updated_at": 1786791079.4085045,
   "routines": [
     {
       "name": "curate-skills",
@@ -27,34 +27,6 @@
       "last_output": "curator not due yet",
       "next_run": 1786852800.0,
       "runs": 9,
-      "failures": 0
-    },
-    {
-      "name": "daily-backup",
-      "prompt": "",
-      "command": "milo backup -m 'routine: daily backup'",
-      "schedule": {
-        "kind": "daily",
-        "hour": 23,
-        "minute": 30
-      },
-      "enabled": true,
-      "harness": "",
-      "model": "",
-      "timeout": 900,
-      "output": "log",
-      "skip_missed": false,
-      "tags": [
-        "maintenance",
-        "critical"
-      ],
-      "builtin": true,
-      "created_at": 1785745900.0421934,
-      "last_run": 1786740910.7682254,
-      "last_status": "ok",
-      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     173\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786825800.0,
-      "runs": 10,
       "failures": 0
     },
     {
@@ -171,9 +143,8 @@
       "prompt": "",
       "command": "milo sync",
       "schedule": {
-        "kind": "daily",
-        "hour": 5,
-        "minute": 0
+        "kind": "interval",
+        "seconds": 3600
       },
       "enabled": true,
       "harness": "",
@@ -189,7 +160,7 @@
       "last_run": 1786772444.06761,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~6579 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1786856400.0,
+      "next_run": 1786794653.3822756,
       "runs": 9,
       "failures": 0
     },
