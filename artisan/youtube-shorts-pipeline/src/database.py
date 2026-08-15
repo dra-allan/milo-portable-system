@@ -265,11 +265,13 @@ class PipelineDatabase:
 
     def uploaded_count_for_source_since(self, source_video_id: str,
                                         hours: int = 24) -> int:
-        """How many Shorts from a source video were uploaded in the last N hours.
+        """How many Shorts from a source video were uploaded today.
 
         Drives the per-source daily cap (Allan's cadence rule: max 3 clips per
-        source video per day). Counts rows where uploaded_at is within the
-        window, so the cap holds across runs, not just within one sweep.
+        source video per day). Counts rows uploaded since the start of the
+        current local day, so the cap resets every day at midnight -- a fixed
+        boundary, not a sliding 24h window (a sliding window kept the cap
+        looking full because runs fire at the same wall-clock time each day).
         """
         try:
             with self._connect() as conn:
@@ -278,8 +280,9 @@ class PipelineDatabase:
                        WHERE source_video_id = ?
                          AND youtube_short_id IS NOT NULL
                          AND uploaded_at IS NOT NULL
-                         AND uploaded_at >= datetime('now', ?)""",
-                    (source_video_id, f'-{int(hours)} hours'),
+                         AND datetime(uploaded_at, 'localtime')
+                             >= datetime('now', 'localtime', 'start of day')""",
+                    (source_video_id,),
                 ).fetchone()
             return int(row[0]) if row else 0
         except Exception as exc:
@@ -289,12 +292,14 @@ class PipelineDatabase:
 
     def uploaded_count_for_channel_since(self, channel: str,
                                          hours: int = 24) -> int:
-        """How many Shorts a channel has published in the last N hours.
+        """How many Shorts a channel has published today.
 
         Drives the per-channel daily cap (Allan's rule: max 5 shorts per
         channel per day). Counts rows where youtube_short_id is set AND
-        upload_channel matches, so the cap is enforced across runs -- not just
-        within one sweep -- and per channel, not per source video.
+        upload_channel matches, since the start of the current local day. The
+        cap therefore resets at every local midnight -- a fixed boundary, so a
+        daily 09:00 run always sees a fresh budget instead of yesterday's
+        uploads still inside a sliding 24h window.
         """
         if not channel:
             return 0
@@ -305,8 +310,9 @@ class PipelineDatabase:
                        WHERE upload_channel = ?
                          AND youtube_short_id IS NOT NULL
                          AND uploaded_at IS NOT NULL
-                         AND uploaded_at >= datetime('now', ?)""",
-                    (channel, f'-{int(hours)} hours'),
+                         AND datetime(uploaded_at, 'localtime')
+                             >= datetime('now', 'localtime', 'start of day')""",
+                    (channel,),
                 ).fetchone()
             return int(row[0]) if row else 0
         except Exception as exc:
