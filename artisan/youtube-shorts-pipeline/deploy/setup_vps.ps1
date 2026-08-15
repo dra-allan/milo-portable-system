@@ -54,11 +54,17 @@ if (-not (Test-Path $ENVFILE) -and (Test-Path "$ROOT\config\.env")) {
 }
 if (Test-Path $ENVFILE) {
     $content = Get-Content $ENVFILE -Raw
+    # Unconditionally point the four output dirs at this box's data\ dirs.
+    # The old value could be a Windows path, a *nix path, or the
+    # {{VIDEO_FACTORY_ROOT}} placeholder from a template — all are wrong here.
     $replaced = 0
     $map = @{ 'SHORTS_DIR' = 'data\shorts'; 'TEMP_DIR' = 'data\temp'; 'LOG_DIR' = 'data\logs'; 'MUSIC_DIR' = 'data\music' }
     foreach ($key in $map.Keys) {
-        if ($content -match "(?m)^$key=.*[A-Za-z]:/") {
+        if ($content -match "(?m)^$key=") {
             $content = $content -replace "(?m)^$key=.*", "$key=$ROOT\$($map[$key])"
+            $replaced++
+        } else {
+            $content += "`r`n$key=$ROOT\$($map[$key])"
             $replaced++
         }
     }
