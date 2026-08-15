@@ -86,7 +86,9 @@ def _fetch_gdown(url: str, dest: Path) -> bool:
     folder = '/folders/' in (url or '')
     cmd = [config.gdown_bin]
     if folder:
-        cmd += ['--folder', '--remaining-ok']
+        # gdown 6.x dropped --remaining-ok; a single failed file then fails the
+        # whole run. Call gdown per-folder and let callers decide on exit code.
+        cmd += ['--folder', '--continue']
     cmd += ['-O', str(dest) if folder else str(dest / 'download'), url]
     return _run(cmd, timeout=config.download_timeout)
 
