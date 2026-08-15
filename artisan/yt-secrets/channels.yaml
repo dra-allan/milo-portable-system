@@ -1,0 +1,85 @@
+# yt-secrets/channels.yaml
+# ---------------------------------------------------------------------------
+# One Google Cloud project per owning email. Every channel under an email uses
+# that email's project (one OAuth client, per-channel tokens) so each project
+# carries its own YouTube Data API daily quota (10k units/day) instead of all
+# channels sharing the single shorts-pipeline project's quota. That shared
+# project is what hit the 400/429 upload wall.
+#
+# key: the channel key used in pipeline config (upload_channels / niche /
+#   campaign spec upload_channel). Token files are named youtube_token_<key>.json
+#   next to that email's credentials.json in yt-secrets/<email-slug>/.
+# email: the gmail that OWNS the channel and runs the Google Cloud project.
+#
+# The value in `token_dir` is where mint writes the finished token. Pipelines
+# already resolve tokens there:
+#   shorts  -> artisan/youtube-shorts-pipeline/config
+#   pov     -> artisan/pov_pipeline/config
+#   clipper -> POV_SECRETS_DIR (= shorts config dir on this machine)
+#
+# Keys/emails below cover every channel we have ever minted or planned to
+# post from. A channel is only uploaded to when its token exists; delete a row
+# here only when you are certain the channel is retired for good.
+
+channels:
+  # --- draallan0@gmail.com  (project: milo-draallan0) ---
+  flick_shorts:
+    email: draallan0@gmail.com
+    slug: draallan0
+    token_dir: artisan/youtube-shorts-pipeline/config
+  capital_mindset:
+    email: draallan0@gmail.com
+    slug: draallan0
+    token_dir: artisan/youtube-shorts-pipeline/config
+
+  # --- adrasaltsxxx@gmail.com  (project: milo-adrasaltsxxx) ---
+  wealth_mindset:
+    email: adrasaltsxxx@gmail.com
+    slug: adrasaltsxxx
+    token_dir: artisan/youtube-shorts-pipeline/config
+  dra_allan_official:
+    email: adrasaltsxxx@gmail.com
+    slug: adrasaltsxxx
+    token_dir: artisan/pov_pipeline/config
+
+  # --- draallan12@gmail.com  (project: milo-draallan12) ---
+  explaination:
+    email: draallan12@gmail.com
+    slug: draallan12
+    token_dir: artisan/pov_pipeline/config
+  NXS:
+    email: draallan12@gmail.com
+    slug: draallan12
+    token_dir: artisan/youtube-shorts-pipeline/config
+
+  # --- daadaallan0@gmail.com  (project: milo-daadaallan0) ---
+  chop_ug:
+    email: daadaallan0@gmail.com
+    slug: daadaallan0
+    token_dir: artisan/youtube-shorts-pipeline/config
+  rankdrop:
+    email: daadaallan0@gmail.com
+    slug: daadaallan0
+    token_dir: artisan/ranking-shorts-pipeline/config
+
+  # --- adrasaltsx@gmail.com  (project: milo-adrasaltsx) ---
+  money_matrix:
+    email: adrasaltsx@gmail.com
+    slug: adrasaltsx
+    token_dir: artisan/pov_pipeline/config
+
+  # --- draallan84@gmail.com  (project: milo-draallan84) ---
+  god_did_fx:
+    email: draallan84@gmail.com
+    slug: draallan84
+    token_dir: artisan/pov_pipeline/config
+
+  # --- allandaada@gmail.com  (project: milo-allandaada) ---
+  the_other_guys:
+    email: allandaada@gmail.com
+    slug: allandaada
+    token_dir: artisan/youtube-shorts-pipeline/config
+  moviegasm:
+    email: allandaada@gmail.com
+    slug: allandaada
+    token_dir: artisan/pov_pipeline/config
