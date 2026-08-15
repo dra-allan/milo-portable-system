@@ -45,7 +45,11 @@ def main() -> int:
 
     files = []
     files += sorted(config_dir.glob('youtube_token_*.json'))
-    files += [config_dir / 'niches.yaml', config_dir / '.env']
+    files += [config_dir / 'niches.yaml']
+    if (ROOT / '.env').exists():
+        files.append(ROOT / '.env')
+    else:
+        files.append(config_dir / '.env')
     if (ROOT / 'credentials.json').exists():
         files.append(ROOT / 'credentials.json')
     if (data_dir / 'processed_videos.db').exists():
