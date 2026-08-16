@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786876059.9896326,
+  "updated_at": 1786880514.1822598,
   "routines": [
     {
       "name": "curate-skills",
@@ -50,9 +50,9 @@
       "builtin": true,
       "created_at": 1785745900.0449665,
       "last_run": 1786871101.3081179,
-      "last_status": "failed (1)",
+      "last_status": "skipped",
       "last_output": "run again with -v for the full traceback\n  [x] TimeoutExpired: Command '['git', '-C', 'C:\\\\milo-portable-system\\\\.backup\\\\brain', 'push', 'origin', 'backup/brain']' timed out after 180 seconds",
-      "next_run": 1786875181.6406367,
+      "next_run": 1786884114.1070821,
       "runs": 607,
       "failures": 30
     },
@@ -77,9 +77,9 @@
       "builtin": true,
       "created_at": 1785745900.054286,
       "last_run": 1786871583.520022,
-      "last_status": "failed (124)",
+      "last_status": "skipped",
       "last_output": "timed out after 900s",
-      "next_run": 1786876268.746292,
+      "next_run": 1786884114.1070821,
       "runs": 601,
       "failures": 86
     },
