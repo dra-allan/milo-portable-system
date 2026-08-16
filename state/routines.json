@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786870689.5801833,
+  "updated_at": 1786876059.9896326,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,12 +49,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786867109.1757941,
-      "last_status": "ok",
-      "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     186\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786870769.9504468,
-      "runs": 606,
-      "failures": 29
+      "last_run": 1786871101.3081179,
+      "last_status": "failed (1)",
+      "last_output": "run again with -v for the full traceback\n  [x] TimeoutExpired: Command '['git', '-C', 'C:\\\\milo-portable-system\\\\.backup\\\\brain', 'push', 'origin', 'backup/brain']' timed out after 180 seconds",
+      "next_run": 1786875181.6406367,
+      "runs": 607,
+      "failures": 30
     },
     {
       "name": "frequent-vault-sync",
@@ -76,12 +76,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786867170.1305842,
-      "last_status": "ok",
-      "last_output": "[ok] Everything up-to-date",
-      "next_run": 1786870780.837421,
-      "runs": 600,
-      "failures": 85
+      "last_run": 1786871583.520022,
+      "last_status": "failed (124)",
+      "last_output": "timed out after 900s",
+      "next_run": 1786876268.746292,
+      "runs": 601,
+      "failures": 86
     },
     {
       "name": "memory-hygiene",
@@ -157,12 +157,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1786869534.8365245,
+      "last_run": 1786875011.1067138,
       "last_status": "failed (124)",
       "last_output": "timed out after 900s",
-      "next_run": 1786874272.6957746,
-      "runs": 28,
-      "failures": 3
+      "next_run": 1786879547.5427206,
+      "runs": 29,
+      "failures": 4
     },
     {
       "name": "vault-sync",
@@ -183,12 +183,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0510957,
-      "last_run": 1786848508.8800163,
-      "last_status": "ok",
-      "last_output": "[ok] Everything up-to-date",
-      "next_run": 1786870120.6888516,
-      "runs": 36,
-      "failures": 6
+      "last_run": 1786875948.5831242,
+      "last_status": "failed (1)",
+      "last_output": "[x] Everything up-to-date",
+      "next_run": 1786897659.690517,
+      "runs": 37,
+      "failures": 7
     }
   ]
 }
