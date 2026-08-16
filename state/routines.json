@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786861746.7767825,
+  "updated_at": 1786865623.2353785,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786859337.3499043,
+      "last_run": 1786863249.8439734,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     186\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786863024.4266932,
-      "runs": 604,
+      "next_run": 1786866934.8505454,
+      "runs": 605,
       "failures": 29
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786859424.7594783,
+      "last_run": 1786863335.350542,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1786863100.1491044,
-      "runs": 598,
+      "next_run": 1786866998.2395718,
+      "runs": 599,
       "failures": 85
     },
     {
@@ -131,11 +131,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1786777407.0368686,
+      "last_run": 1786863829.4864204,
       "last_status": "ok",
-      "last_output": "Morning, Dra. Short version:\n\n**Biggest news: AWS brain is live.** t3.small in Stockholm, Windows Server 2025, launched overnight. RDP password is at `C:\\Users\\user\\.ssh\\aws-brain\\admin-password.txt`. Two things before it takes real work: set the billing alarm (~$29/mo burn off credits), then we deploy the YouTube pipeline + reporting onto it. Alibaba ECS trial clears in ~3 days — that's the fallback/heavy box.\n\n**YouTube:** capital_mindset is still the earner (~18.5k views, 11 subs, doubling). Chop UG spiked hard — latest uploads pulling 975/847/310 views same day. Feed it.\n\n**Three fires, in order:**\n1. **flick_shorts token revoked** — invalid_grant, can't upload. Also dead weight (90 videos, 76 views). My take: idle it, don't fix it.\n2. **wealth_mindset broken uploads** — garbled per-language gibberish titles went live. Needs a quality gate before the next batch.\n3. **daadaallan0@gmail.com (Chop UG + RankDrop) has no Flow profile** — can't rotate images for those until one's signed in.\n\nThe two-week underperformer trial runs to ~26 Aug — flick/wealth/NXS/ExplaiNation get their verdict then. Nothing else new since 05:40. Want me to start on the billing alarm, or knock out the wealth_mindset quality gate first?",
-      "next_run": 1786863600.0,
-      "runs": 8,
+      "last_output": "\n> milo · deepseek-v4-flash-free\n\n⚙ milo_mem_context {\"budget\":8,\"query\":\"active priorities open work today 2026-08-16\"}\n⚙ milo_vault_search {\"query\":\"Active Priorities\",\"limit\":3}\n! permission requested: external_directory (C:\\Users\\Administrator\\Desktop\\dra-brains\\*); auto-rejecting\n✗ Read C:/Users/Administrator/Desktop/dra-brains/Active Priorities.md failed\nError: The user rejected permission to use this specific tool call.",
+      "next_run": 1786950000.0,
+      "runs": 9,
       "failures": 1
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1786861719.9619315,
+      "last_run": 1786865607.9841616,
       "last_status": "ok",
-      "last_output": "------------------------------------------------------------------------------\n sync  ~6605 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1786865346.7298172,
-      "runs": 26,
+      "last_output": "------------------------------------------------------------------------------\n sync  ~6883 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
+      "next_run": 1786869223.2058716,
+      "runs": 27,
       "failures": 2
     },
     {
