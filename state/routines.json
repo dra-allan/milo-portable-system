@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786858547.3625333,
+  "updated_at": 1786858652.4098184,
   "routines": [
     {
       "name": "curate-skills",
@@ -50,11 +50,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0421934,
-      "last_run": 1786740910.7682254,
+      "last_run": 1786858547.3657842,
       "last_status": "ok",
-      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     173\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786825800.0,
-      "runs": 10,
+      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     183\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
+      "next_run": 1786912200.0,
+      "runs": 11,
       "failures": 0
     },
     {
@@ -78,9 +78,9 @@
       "builtin": true,
       "created_at": 1785745900.0449665,
       "last_run": 1786820109.9230673,
-      "last_status": "ok",
+      "last_status": "skipped",
       "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     183\n  notes        8\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1786823719.2612054,
+      "next_run": 1786862147.3614702,
       "runs": 589,
       "failures": 32
     },
@@ -105,9 +105,9 @@
       "builtin": true,
       "created_at": 1785745900.054286,
       "last_run": 1786820119.2698133,
-      "last_status": "failed (1)",
+      "last_status": "skipped",
       "last_output": "[x] vault clean, nothing to commit",
-      "next_run": 1786823720.8652387,
+      "next_run": 1786862147.3614702,
       "runs": 583,
       "failures": 90
     },
@@ -133,9 +133,9 @@
       "builtin": true,
       "created_at": 1785745900.0488555,
       "last_run": 1786234510.5304742,
-      "last_status": "ok",
+      "last_status": "skipped",
       "last_output": "[ok] expired 0 memory(ies)",
-      "next_run": 1786838400.0,
+      "next_run": 1787443200.0,
       "runs": 1,
       "failures": 0
     },
@@ -159,11 +159,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1786769814.3168697,
+      "last_run": 1786858566.6683586,
       "last_status": "ok",
-      "last_output": "\n> milo · deepseek-v4-flash-free\n\n⚙ milo_mem_context {\"query\":\"yesterday decisions open work time-sensitive\",\"budget\":10}\n⚙ milo_vault_search {\"query\":\"2026-08-14\"}\n⚙ milo_sessions_search {\"query\":\"yesterday session outcomes\"}\n! permission requested: external_directory (C:\\Users\\user\\Desktop\\dra-brains\\*); auto-rejecting\n✗ Glob \"01 - Daily Notes/*2026-08-1*\" failed in C:/Users/user/Desktop/dra-brains\nError: The user rejected permission to use this specific tool call.\n! permission requested: external_directory (C:\\Users\\user\\Desktop\\dra-brains\\00 - Inbox\\*); auto-rejecting\n✗ Read C:/Users/user/Desktop/dra-brains/00 - Inbox/2026-08-14-08-14-0919-upload-run-oauth-prompt-appeared-fo.md failed\nError: The user rejected permission to use this specific tool call.",
-      "next_run": 1786852800.0,
-      "runs": 7,
+      "last_output": "\n> milo · nvidia/nemotron-3-ultra-550b-a55b\n\n⚙ milo_mem_recall {\"query\":\"yesterday decision unfinished\",\"limit\":5}\n⚙ milo_vault_search {\"query\":\"2026-08-15 daily note\",\"limit\":1}\n⚙ milo_vault_search {\"limit\":1,\"query\":\"2026-08-15\"}\n⚙ milo_mem_recall {\"limit\":3,\"query\":\"time sensitive urgent deadline\"}\n! permission requested: external_directory (C:\\Users\\user\\Desktop\\dra-brains\\01 - Daily Notes\\*); auto-rejecting\n✗ Read C:/Users/user/Desktop/dra-brains/01 - Daily Notes/2026-08-15.md failed\nError: The user rejected permission to use this specific tool call.",
+      "next_run": 1786939200.0,
+      "runs": 8,
       "failures": 1
     },
     {
@@ -186,12 +186,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1786762541.621161,
-      "last_status": "ok",
-      "last_output": "dc, ui-designer.mdc, ui-finish-gate-reviewer.mdc, uswds-developer.mdc, ux-architect.mdc, ux-researcher.mdc, video-optimization-specialist.mdc, video-streaming-engineer.mdc, visual-storyteller.mdc, voice-ai-integration-engineer.mdc, webassembly-engineer.mdc, wechat-mini-program-developer.mdc, wechat-official-account-manager.mdc, weibo-strategist.mdc, whimsy-injector.mdc, wordpress-performance-engineer.mdc, wordpress-shopping-cart-engineer.mdc, x-twitter-intelligence-analyst.mdc, xiaohongshu-specialist.mdc, zhihu-strategist.mdc\n    gemini         GEMINI.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, account-strategist.md, aeo-foundations-architect.md, agentic-search-optimizer.md, ai-citation-strategist.md, ai-data-remediation-engineer.md, ai-engineer.md, api-platform-engineer.md, app-store-optimizer.md, autonomous-optimization-architect.md, backend-architect.md, baidu-seo-specialist.md, behavioral-nudge-engine.md, bilibili-content-strategist.md, book-co-author.md, bookkeeper-controller.md, brand-guardian.md, carousel-growth-engine.md, china-e-commerce-operator.md, china-market-localization-strategist.md, cms-developer.md, code-reviewer.md, codebase-onboarding-engineer.md, content-creator.md, cross-border-e-commerce-specialist.md, data-engineer.md, data-visualization-engineer.md, database-optimizer.md, database-reliability-engineer.md, deal-strategist.md, desktop-app-engineer.md, developer-tooling-engineer.md, devops-automator.md, discovery-coach.md, douyin-strategist.md, drupal-performance-engineer.md, drupal-shopping-cart-engineer.md, email-intelligence-engineer.md, email-marketing-strategist.md, embedded-firmware-engineer.md, feedback-synthesizer.md, feishu-integration-developer.md, filament-optimization-specialist.md, financial-analyst.md, finops-engineer.md, fp-a-analyst.md, frontend-developer.md, gaussdb-expert-engineer.md, git-workflow-master.md, global-podcast-strategist.md, growth-hacker.md, identity-access-engineer.md, image-prompt-engineer.md, incident-response-commander.md, inclusive-visuals-specialist.md, instagram-curator.md, internationalization-engineer.md, investment-researcher.md, iot-fleet-engineer.md, it-service-manager.md, kuaishou-strategist.md, linkedin-content-creator.md, livestream-commerce-coach.md, llm-post-training-engineer.md, minimal-change-engineer.md, mobile-app-builder.md, mobile-release-engineer.md, multi-agent-systems-architect.md, multi-platform-publisher.md, network-engineer.md, offer-lead-gen-strategist.md, orgscript-engineer.md, outbound-strategist.md, payments-billing-engineer.md, persona-walkthrough-specialist.md, pipeline-analyst.md, podcast-strategist.md, pr-communications-manager.md, privacy-engineer.md, private-domain-operator.md, product-manager.md, prompt-engineer.md, proposal-strategist.md, rag-pipeline-engineer.md, rapid-prototyper.md, realtime-collaboration-engineer.md, reddit-community-builder.md, rust-refactoring-specialist.md, sales-coach.md, sales-engineer.md, search-relevance-engineer.md, section-508-accessibility-specialist.md, senior-developer.md, seo-specialist.md, short-video-editing-coach.md, social-media-strategist.md, software-architect.md, solidity-smart-contract-engineer.md, sprint-prioritizer.md, sre-site-reliability-engineer.md, tax-strategist.md, technical-writer.md, tiktok-strategist.md, trend-researcher.md, twitter-engager.md, ui-designer.md, ui-finish-gate-reviewer.md, uswds-developer.md, ux-architect.md, ux-researcher.md, video-optimization-specialist.md, video-streaming-engineer.md, visual-storyteller.md, voice-ai-integration-engineer.md, webassembly-engineer.md, wechat-mini-program-developer.md, wechat-official-account-manager.md, weibo-strategist.md, whimsy-injector.md, wordpress-performance-engineer.md, wordpress-shopping-cart-engineer.md, x-twitter-intelligence-analyst.md, xiaohongshu-specialist.md, zhihu-strategist.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 6 harness(es) in sync",
-      "next_run": 1786845600.0,
-      "runs": 8,
-      "failures": 0
+      "last_run": 1786858648.377019,
+      "last_status": "failed (3221225786)",
+      "last_output": "",
+      "next_run": 1786932000.0,
+      "runs": 9,
+      "failures": 1
     },
     {
       "name": "vault-sync",
@@ -213,9 +213,9 @@
       "builtin": true,
       "created_at": 1785745900.0510957,
       "last_run": 1786805715.6530886,
-      "last_status": "failed (3221225786)",
+      "last_status": "skipped",
       "last_output": "",
-      "next_run": 1786827316.9111092,
+      "next_run": 1786880147.3614702,
       "runs": 34,
       "failures": 8
     }
