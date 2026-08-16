@@ -110,21 +110,52 @@ def make_project_name(url_or_name: str) -> str:
 
 
 def scrape_transcript(url: str, project_dir: Path) -> Path:
-    """Scrape a YouTube transcript. No video download."""
+    """Scrape a YouTube transcript (captions), falling back to whisper ASR
+    when captions are missing or the caption scraper is bot-blocked."""
+    src = project_dir / "00_SOURCE_SCRIPT.txt"
+
+    text = _scrape_captions(url)
+    if text:
+        src.write_text(text, encoding="utf-8")
+        # Remember where this came from: the agent-runner manifest, the discovery
+        # dedupe (M2) and the uploader (M3) all want the source URL.
+        (project_dir / "00_SOURCE_URL.txt").write_text(url.strip() + "\n", encoding="utf-8")
+        print(f"[scrape] OK - {len(text)} chars -> {src.name} (captions)")
+        return src
+
+    eprint("[scrape] No captions (missing or bot-blocked); falling back to whisper ASR...")
+    text = _scrape_asr(url)
+    if not text:
+        eprint("[error] Transcript scrape failed (captions and whisper ASR).")
+        return None
+
+    src.write_text(text, encoding="utf-8")
+    (project_dir / "00_SOURCE_URL.txt").write_text(url.strip() + "\n", encoding="utf-8")
+    print(f"[scrape] OK - {len(text)} chars -> {src.name} (whisper ASR)")
+    return src
+
+
+def _scrape_captions(url: str) -> str:
+    """Try the node yt-transcript-kit scraper. Returns '' on any failure."""
     scraper = SCRIPTS_DIR / "youtube-transcript.cjs"
     if not scraper.exists():
-        sys.exit(f"[error] Scraper not found: {scraper}")
+        eprint(f"[scrape] Scraper not found: {scraper}")
+        return ""
     node = shutil.which("node")
     if not node:
-        sys.exit("[error] node not on PATH (needed for the transcript scraper)")
+        eprint("[scrape] node not on PATH (needed for the transcript scraper)")
+        return ""
 
-    src = project_dir / "00_SOURCE_SCRIPT.txt"
     print(f"[scrape] {url}")
-    result = subprocess.run(
-        [node, str(scraper), url, "en"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-        timeout=180,
-    )
+    try:
+        result = subprocess.run(
+            [node, str(scraper), url, "en"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=180,
+        )
+    except subprocess.TimeoutExpired:
+        eprint("[scrape] caption scraper timed out")
+        return ""
     # The scraper writes the transcript to stdout and a save note to stderr.
     text = (result.stdout or "").strip()
     if not text and result.returncode == 0:
@@ -132,18 +163,39 @@ def scrape_transcript(url: str, project_dir: Path) -> Path:
         text = (result.stderr or "").strip()
     # Strip the "[saved] ..." preamble if it leaked into stdout capture.
     text = re.sub(r"^\[saved\][^\n]*\n?", "", text).strip()
-
     if not text or result.returncode != 0:
-        eprint("[error] Transcript scrape failed:")
-        eprint((result.stderr or result.stdout or "no output")[:600])
-        return None
+        eprint("[scrape] caption scrape failed: "
+               f"{(result.stderr or result.stdout or 'no output')[:400]}")
+        return ""
+    return text
 
-    src.write_text(text, encoding="utf-8")
-    # Remember where this came from: the agent-runner manifest, the discovery
-    # dedupe (M2) and the uploader (M3) all want the source URL.
-    (project_dir / "00_SOURCE_URL.txt").write_text(url.strip() + "\n", encoding="utf-8")
-    print(f"[scrape] OK - {len(text)} chars -> {src.name}")
-    return src
+
+def _scrape_asr(url: str) -> str:
+    """Transcribe audio with faster-whisper via scripts/transcribe_asr.py."""
+    asr = SCRIPTS_DIR / "transcribe_asr.py"
+    if not asr.exists():
+        eprint(f"[scrape] ASR helper not found: {asr}")
+        return ""
+    py = shutil.which("python") or shutil.which("python.exe")
+    if not py:
+        eprint("[scrape] python not on PATH (needed for whisper ASR)")
+        return ""
+    print(f"[scrape] whisper ASR: {url}")
+    try:
+        result = subprocess.run(
+            [py, str(asr), url],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=3600,
+        )
+    except subprocess.TimeoutExpired:
+        eprint("[scrape] whisper ASR timed out")
+        return ""
+    text = (result.stdout or "").strip()
+    if not text or result.returncode != 0:
+        eprint("[scrape] whisper ASR failed: "
+               f"{(result.stderr or result.stdout or 'no output')[:400]}")
+        return ""
+    return text
 
 
 def copy_transcript_file(path: Path, project_dir: Path) -> Path:
