@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786838611.274482,
+  "updated_at": 1786842228.106825,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786835008.7774215,
+      "last_run": 1786838908.134985,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     186\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786838627.6473374,
-      "runs": 598,
+      "next_run": 1786842532.69876,
+      "runs": 599,
       "failures": 29
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786835908.877568,
+      "last_run": 1786839808.19503,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1786839521.4234757,
-      "runs": 592,
+      "next_run": 1786843417.8216572,
+      "runs": 593,
       "failures": 85
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1786838324.856299,
+      "last_run": 1786842212.213356,
       "last_status": "ok",
-      "last_output": "------------------------------------------------------------------------------\n sync  ~6918 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1786841990.2053268,
-      "runs": 20,
+      "last_output": "------------------------------------------------------------------------------\n sync  ~6605 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
+      "next_run": 1786845828.0497072,
+      "runs": 21,
       "failures": 2
     },
     {
