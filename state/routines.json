@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786944022.2984738,
+  "updated_at": 1786950477.3187888,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786943313.8733168,
+      "last_run": 1786947221.8439114,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     188\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786947040.5759854,
-      "runs": 616,
+      "next_run": 1786950889.9941292,
+      "runs": 617,
       "failures": 30
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786943440.8042104,
+      "last_run": 1786947290.5907106,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1786947058.83101,
-      "runs": 610,
+      "next_run": 1786950915.9055676,
+      "runs": 611,
       "failures": 87
     },
     {
@@ -131,11 +131,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1786863829.4864204,
+      "last_run": 1786950210.1299686,
       "last_status": "ok",
-      "last_output": "\n> milo · deepseek-v4-flash-free\n\n⚙ milo_mem_context {\"budget\":8,\"query\":\"active priorities open work today 2026-08-16\"}\n⚙ milo_vault_search {\"query\":\"Active Priorities\",\"limit\":3}\n! permission requested: external_directory (C:\\Users\\Administrator\\Desktop\\dra-brains\\*); auto-rejecting\n✗ Read C:/Users/Administrator/Desktop/dra-brains/Active Priorities.md failed\nError: The user rejected permission to use this specific tool call.",
-      "next_run": 1786950000.0,
-      "runs": 9,
+      "last_output": "\n> milo · deepseek-v4-flash-free\n\n⚙ milo_mem_context {\"budget\":12,\"query\":\"current open work priorities today\"}\n⚙ milo_vault_search {\"query\":\"Active Priorities\",\"limit\":3}\n⚙ milo_vault_search {\"query\":\"2026-08-17\",\"limit\":3}\n! permission requested: external_directory (C:\\Users\\Administrator\\Desktop\\dra-brains\\*); auto-rejecting\n✗ Read C:/Users/Administrator/Desktop/dra-brains/Active Priorities.md failed\nError: The user rejected permission to use this specific tool call.",
+      "next_run": 1787036400.0,
+      "runs": 10,
       "failures": 1
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1786943973.0399067,
+      "last_run": 1786947825.4342701,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~6577 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1786947622.1563885,
-      "runs": 38,
+      "next_run": 1786951459.1226254,
+      "runs": 39,
       "failures": 4
     },
     {
