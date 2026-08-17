@@ -99,6 +99,7 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
 
     try:
         import yt_dlp
+        from _ytdlp import NoWritebackYDL as YoutubeDL
     except ImportError as exc:
         logger.error("yt-dlp is not available for music auto-sync: %s", exc)
         return existing
@@ -122,7 +123,7 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
         list_opts['cookiefile'] = cookies_file
 
     try:
-        with yt_dlp.YoutubeDL(list_opts) as ydl:
+        with YoutubeDL(list_opts) as ydl:
             info = ydl.extract_info(source_query, download=False)
     except Exception as exc:
         logger.warning("Failed to list music tracks from %s: %s", source_query, exc)
@@ -190,7 +191,7 @@ def sync_ncs_music(music_dir: Optional[str | Path] = None, min_tracks: int = 5, 
         video_url = f"https://www.youtube.com/watch?v={vid}"
         try:
             logger.info("Downloading instrumental bed: %s (%s)", _safe_str(raw_title), vid)
-            with yt_dlp.YoutubeDL(dl_opts) as ydl:
+            with YoutubeDL(dl_opts) as ydl:
                 ydl.download([video_url])
             downloaded += 1
             time.sleep(1.5)

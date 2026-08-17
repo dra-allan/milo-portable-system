@@ -78,7 +78,7 @@ def main() -> int:
             # invalid `lg` hint and let Whisper detect what it can.
             cfg = config.niches.get(raw) or {}
             cfg['whisper_language'] = ''
-            cfg['language'] = 'lg'
+            cfg['language'] = ''
         started = pipeline.run_niche(raw, max_videos=1)
         if started < 1:
             chop_failures += 1

@@ -1602,10 +1602,10 @@ chop_ug:
   # this niche. Bonus: this also skips the word-level caption pass and the
   # subtitles filter in ffmpeg, the two most expensive per-clip steps.
   captions: false
-  # Tell Whisper the language outright instead of letting it autodetect (and
-  # guess English). Highlight detection still needs *some* transcript to rank
-  # moments; 'lg' keeps it from hallucinating fluent English.
-  whisper_language: lg
+  # Whisper has no Luganda ('lg') language code -- passing it fails every
+  # window ("'lg' is not a valid language code"). Let it autodetect instead so
+  # some transcript exists for highlight ranking. Captions stay off regardless.
+  whisper_language: ""
   channels:
     # --- New & Requested Channels ---
     - "@KOJJAKABAAYAOFFICIAL"     # Kojja Kabaya
@@ -1666,7 +1666,7 @@ chop_ug:
     - "Ugandan celebrities"
     - "Uganda interviews"
   negative_keywords: ["#shorts", "shorts", "clip", "clips", "podcast clips", "compilation", "reaction", "trailer", "teaser", "livestream", "music video", "official audio", "lyrics", "fan edit", "meme", "music", "dance", "concert", "church service", "preaching", "choir"]
-  language: lg
+  language: ""
   min_duration: 300
   max_duration: 10800  
   min_score: 0.50
