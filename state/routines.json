@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1786979328.0890322,
+  "updated_at": 1786992724.7773001,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1786979019.467395,
-      "last_status": "ok",
+      "last_run": 1786982909.625636,
+      "last_status": "skipped",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     189\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1786982653.440675,
-      "runs": 625,
+      "next_run": 1786996324.6842859,
+      "runs": 626,
       "failures": 31
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1786979053.5307882,
-      "last_status": "ok",
+      "last_run": 1786982944.1952434,
+      "last_status": "skipped",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1786982664.2537467,
-      "runs": 619,
+      "next_run": 1786996324.6842859,
+      "runs": 620,
       "failures": 87
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1786979311.2956538,
-      "last_status": "ok",
+      "last_run": 1786983210.9772184,
+      "last_status": "skipped",
       "last_output": "------------------------------------------------------------------------------\n sync  ~6776 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1786982928.0668561,
-      "runs": 47,
+      "next_run": 1786996324.6842859,
+      "runs": 48,
       "failures": 4
     },
     {
