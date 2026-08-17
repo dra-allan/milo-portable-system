@@ -34,7 +34,7 @@ defaults:
   blur_detected_text: true
   # Optional path to a yt-dlp cookies.txt/Netscape export. When set, downloads
   # use it (fixes "Sign in to confirm you're not a bot"). Empty = default.
-  yt_cookies: ""
+  yt_cookies: "C:/milo-portable-system/cookies.txt"
   # JS runtime for YouTube's `n` challenge (node ships with this machine;
   # without one only storyboard formats resolve and downloads fail).
   js_runtime: node
