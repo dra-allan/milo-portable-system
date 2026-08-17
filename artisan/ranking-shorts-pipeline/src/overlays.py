@@ -217,20 +217,14 @@ def _line_width(runs: List[tuple], text_path: str, emoji_path: Optional[str],
 
 
 def fill_chain(in_label: str, out_label: str) -> List[str]:
-    """Fit a landscape clip into 9:16 over a blurred copy of itself.
+    """Fit a landscape clip into 9:16 by cropping to fill the frame.
 
-    Cropping to fill is the obvious alternative and it is wrong here: these are
-    wide handheld clips where the action is often near an edge, and a centre
-    crop throws away the thing the clip is ranked for. The blurred bed also
-    leaves clean space top and bottom for the video title and the clip title.
+    Scale to cover and centre-crop so there are no bars and no blurred bed.
     """
     w, h = config.width, config.height
     return [
-        f'[{in_label}]scale={w}:-2:force_original_aspect_ratio=decrease,'
-        'setsar=1[fgv]',
         f'[{in_label}]scale={w}:{h}:force_original_aspect_ratio=increase,'
-        f'crop={w}:{h},boxblur=luma_radius=40:luma_power=2,setsar=1[bgv]',
-        f'[bgv][fgv]overlay=(W-w)/2:(H-h)/2:shortest=1[{out_label}]',
+        f'crop={w}:{h},setsar=1[{out_label}]',
     ]
 
 
