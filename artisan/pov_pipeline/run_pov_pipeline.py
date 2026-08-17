@@ -185,7 +185,7 @@ def _scrape_asr(url: str) -> str:
         result = subprocess.run(
             [py, str(asr), url],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=3600,
+            timeout=10800,
         )
     except subprocess.TimeoutExpired:
         eprint("[scrape] whisper ASR timed out")

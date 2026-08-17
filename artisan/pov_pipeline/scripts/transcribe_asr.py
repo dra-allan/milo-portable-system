@@ -32,8 +32,8 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]
 COOKIES_CANDIDATES = [
-    Path(os.environ.get("YT_COOKIES", "").strip()),
-    Path(os.environ.get("YTDLP_COOKIES_FILE", "").strip()),
+    *(Path(v) for v in (os.environ.get("YT_COOKIES", "").strip(),
+                        os.environ.get("YTDLP_COOKIES_FILE", "").strip()) if v),
     REPO_ROOT / "cookies.txt",
 ]
 
