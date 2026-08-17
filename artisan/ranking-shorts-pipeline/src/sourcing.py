@@ -15,7 +15,7 @@ from .utils import ensure_dir,safe_slug,setup_logger
 logger=setup_logger(__name__)
 
 def _ydl(opts:Dict):
- from yt_dlp import YoutubeDL
+ from _ytdlp import NoWritebackYDL as YoutubeDL
  base={'quiet':True,'no_warnings':True,'noprogress':True,'ignoreerrors':True,'retries':3,'extractor_retries':3,'fragment_retries':8,'retry_sleep':lambda n:min(8,2**n),'socket_timeout':30,'concurrent_fragment_downloads':int(config.get('download_concurrency',4) or 4)};base.update(opts)
  cookies=config.get('yt_cookies') or os.getenv('YT_COOKIES') or ''
  if cookies:base['cookiefile']=str(cookies)
