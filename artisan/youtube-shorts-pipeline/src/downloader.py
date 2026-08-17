@@ -743,6 +743,7 @@ class YouTubeDownloader:
 
         try:
             import yt_dlp
+            from _ytdlp import NoWritebackYDL as YoutubeDL
         except ImportError as exc:
             logger.error("yt-dlp is not installed: %s (pip install yt-dlp)", exc)
             return None
@@ -757,7 +758,7 @@ class YouTubeDownloader:
         subs_attempted = self._subtitles_requested()
 
         try:
-            with yt_dlp.YoutubeDL(self._audio_opts()) as ydl:
+            with YoutubeDL(self._audio_opts()) as ydl:
                 info = ydl.extract_info(url, download=True)
             # Subtitle fetch (if attempted) succeeded -- clear any 429 streak.
             if subs_attempted:
@@ -777,7 +778,7 @@ class YouTubeDownloader:
                     video_id,
                 )
                 try:
-                    with yt_dlp.YoutubeDL(
+                    with YoutubeDL(
                             self._audio_opts(with_subs=False)) as ydl:
                         info = ydl.extract_info(url, download=True)
                 except Exception as retry_exc:
@@ -897,6 +898,45 @@ class YouTubeDownloader:
                 return p
         return None
 
+    def _cut_section_locally(self, local: Path, video_id: str,
+                             req_start: float, req_end: float) -> Optional[Path]:
+        """Stream-copy [req_start, req_end] out of an already-downloaded file.
+
+        Fallback for when the remote section fetch is blocked (bot-check on a
+        specific video). Cuts exactly the padded range with ``-ss`` before the
+        input so ffmpeg seeks fast; the keyframe lead-in is still measured by
+        ``_describe_section`` afterwards, so cut/caption sync stays exact.
+        """
+        import subprocess
+
+        span = float(req_end) - float(req_start)
+        stem = f"{video_id}{ID_SEPARATOR}sec_{int(round(req_start))}_{int(round(req_end))}"
+        out_path = self.sections_dir / f"{stem}.mp4"
+
+        cmd = [
+            os.getenv('MILO_FFMPEG') or shutil.which('ffmpeg') or 'ffmpeg',
+            '-y', '-hide_banner', '-loglevel', 'error',
+            '-ss', f"{req_start:.3f}", '-i', str(local),
+            '-t', f"{span:.3f}", '-c', 'copy', str(out_path),
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        except Exception as exc:
+            logger.error("Local section cut failed to run for %s: %s", video_id, exc)
+            return None
+        if result.returncode != 0 or not out_path.exists() or out_path.stat().st_size == 0:
+            logger.error("Local section cut produced no usable file for %s: %s",
+                         video_id, result.stderr.strip()[:300] or 'empty output')
+            try:
+                out_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return None
+
+        logger.info("Local section cut ready: %s (%.1f MB)",
+                    out_path.name, out_path.stat().st_size / (1024 * 1024))
+        return out_path
+
     def download_section(self, video_id: str, start: float, end: float,
                          padding: Optional[float] = None,
                          force_redownload: bool = False) -> Optional[Dict]:
@@ -946,6 +986,7 @@ class YouTubeDownloader:
 
         try:
             import yt_dlp
+            from _ytdlp import NoWritebackYDL as YoutubeDL
         except ImportError as exc:
             logger.error("yt-dlp is not installed: %s (pip install yt-dlp)", exc)
             return None
@@ -984,7 +1025,7 @@ class YouTubeDownloader:
             else:
                 opts = section_opts
             try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
+                with YoutubeDL(opts) as ydl:
                     ydl.extract_info(url, download=True)
                 break
             except Exception as exc:
@@ -996,6 +1037,23 @@ class YouTubeDownloader:
                 )
         else:
             logger.error("Section download failed for %s [%.1f-%.1f]: %s",
+                         video_id, start, end, last_exc)
+            # Fall back to cutting the range from the already-downloaded full
+            # audio when the remote fetch is blocked (e.g. YouTube bot-check
+            # on a specific video even with valid cookies). Stream-copy the
+            # padded range out of the local file; the lead-in measurement in
+            # _describe_section keeps the cut/caption sync exact.
+            local = self.find_local_audio(video_id)
+            if local:
+                logger.info(
+                    "Trying local-cut fallback from %s for %s [%.1f-%.1f]",
+                    local.name, video_id, start, end,
+                )
+                path = self._cut_section_locally(local, video_id, req_start, req_end)
+                if path:
+                    return self._describe_section(path, start, end, req_start, req_end,
+                                                  pad_before)
+            logger.error("Section download failed for %s [%.1f-%.1f] (no local fallback): %s",
                          video_id, start, end, last_exc)
             return None
 
@@ -1113,6 +1171,7 @@ class YouTubeDownloader:
         # --- download path ----------------------------------------------
         try:
             import yt_dlp
+            from _ytdlp import NoWritebackYDL as YoutubeDL
         except ImportError as exc:
             logger.error("yt-dlp is not installed: %s (pip install yt-dlp)", exc)
             return None
@@ -1121,7 +1180,7 @@ class YouTubeDownloader:
         logger.info("Downloading %s", url)
 
         try:
-            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
+            with YoutubeDL(self.ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
         except Exception as exc:
             logger.error("Download failed for %s: %s", video_id, exc)
@@ -1280,6 +1339,7 @@ class YouTubeDownloader:
         """
         try:
             import yt_dlp
+            from _ytdlp import NoWritebackYDL as YoutubeDL
         except ImportError as exc:
             logger.error("yt-dlp is not installed: %s", exc)
             return []
@@ -1317,7 +1377,7 @@ class YouTubeDownloader:
         })
 
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
+            with YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
         except Exception as exc:
             # Transient network faults (DNS resolution, timeouts, connection
@@ -1343,7 +1403,7 @@ class YouTubeDownloader:
                     )
                     time.sleep(wait)
                     try:
-                        with yt_dlp.YoutubeDL(opts) as ydl:
+                        with YoutubeDL(opts) as ydl:
                             info = ydl.extract_info(url, download=False)
                         break
                     except Exception as retry_exc:
