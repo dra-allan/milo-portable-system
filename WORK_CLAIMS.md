@@ -18,7 +18,7 @@ Coordination ledger for the two Milo machines sharing this repo.
 
 ## OPEN
 
-- [brain] 2026-08-18 bake external_directory permission fix into harness sync (Windows backslash path matching) so fresh installs stop prompting
+(claim format: `- [<machine>] YYYY-MM-DD <task>`)
 
 ## Actions the main PC must take (from the AWS brain, 2026-08-15)
 
@@ -37,4 +37,5 @@ Coordination ledger for the two Milo machines sharing this repo.
 ## DONE
 
 - [brain] 2026-08-15 multi-machine sync setup: git identity, work-claims ledger, git-sync.ps1, per-machine backup branches. Decision: state/ untracked from main; `milo backup` now pushes each machine's snapshot to its own branch (`backup/brain` / `backup/pc`) via a git worktree at `.backup/<machine>`. Main = portable code only. Redacted a live COMPOSIO API key that had leaked into memory.
+- [brain] 2026-08-18 bake external_directory permission fix into harness sync (Windows backslash path matching, upstream #7279/#11042/#36681) — landed cf5f447
 - [brain] 2026-08-15 reconcile caption burn after merge with AWS brain (1eca44c, 2d58d0a) — kept AWS base, re-applied tests/YAML knobs/keyword sourcing
