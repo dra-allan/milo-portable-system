@@ -6,7 +6,7 @@ channels:
     email: draallan0@gmail.com
     slug: draallan0
     active: true
-    pipelines: [shorts]
+    pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
   capital_mindset:
     email: draallan0@gmail.com
@@ -19,7 +19,7 @@ channels:
     email: adrasaltsxxx@gmail.com
     slug: adrasaltsxxx
     active: true
-    pipelines: [shorts]
+    pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
   dra_allan_official:
     email: adrasaltsxxx@gmail.com
@@ -31,7 +31,7 @@ channels:
     email: draallan12@gmail.com
     slug: adrasaltsxxx
     active: true
-    pipelines: [shorts]
+    pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
   explaination:
     email: draallan12@gmail.com
@@ -73,6 +73,6 @@ channels:
   moviegasm:
     email: allandaada@gmail.com
     slug: draallan0
-    active: false
-    pipelines: [pov]
-    token_dir: artisan/pov_pipeline/config
+    active: true
+    pipelines: [shorts, clipper]
+    token_dir: artisan/youtube-shorts-pipeline/config

@@ -122,7 +122,8 @@ def main(argv=None) -> int:
         print(f'AUTH_ERROR: {error["error"]}')
         return 1
 
-    creds = flow.fetch_token(code=code_holder['code'])
+    flow.fetch_token(code=code_holder['code'])
+    creds = flow.credentials
     token_file.parent.mkdir(parents=True, exist_ok=True)
     token_file.write_text(creds.to_json(), encoding='utf-8')
     print(f'\nTOKEN_SAVED -> {token_file}')
