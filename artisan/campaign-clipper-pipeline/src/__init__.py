@@ -12,4 +12,4 @@ campaign, so there is no search, no yt-dlp, and no candidate ranking.
 
 __all__ = ['config', 'spec', 'database', 'sources', 'segmenter', 'overlay',
            'renderer', 'validator', 'captions', 'publisher', 'clipster',
-           'compiler', 'cleanup', 'main']
+           'compiler', 'cleanup', 'intake', 'opencli_bridge', 'main']
