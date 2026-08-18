@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787054965.193997,
+  "updated_at": 1787061337.4897056,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787054630.429603,
+      "last_run": 1787058544.3855884,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     191\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1787058322.2110343,
-      "runs": 642,
+      "next_run": 1787062188.31077,
+      "runs": 643,
       "failures": 31
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787054722.5537784,
+      "last_run": 1787058588.4502935,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787058350.7011778,
-      "runs": 636,
+      "next_run": 1787062203.0004246,
+      "runs": 637,
       "failures": 87
     },
     {
@@ -113,7 +113,7 @@
     },
     {
       "name": "morning-briefing",
-      "prompt": "Good morning. Give Allan a short briefing for today:\n1. What was decided or left unfinished yesterday (check memory and the vault daily note).\n2. Anything time-sensitive you know about.\n3. One thing worth his attention that he hasn't asked about.\nBe brief. No preamble, no filler. If there is nothing meaningful to report, say so in one line.",
+      "prompt": "Good morning. Give Allan a short briefing for today:\n1. What was decided or left unfinished yesterday (check memory and the vault daily note).\n2. Anything time-sensitive you know about.\n3. One thing worth his attention that he hasn't asked about.\nBe brief. No preamble, no filler. If there is nothing meaningful to report, say so in one line.\n\nVault access: read the vault ONLY through the milo_vault_search tool (query yesterday's date). NEVER use the raw read/filesystem tools on vault paths — this is a headless run and those calls are auto-denied, which kills the briefing. If a tool call is denied or returns nothing, do NOT stop: write the briefing from memory alone and still deliver it. The briefing must always be produced.",
       "command": "",
       "schedule": {
         "kind": "daily",
@@ -131,11 +131,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1787036620.6663394,
+      "last_run": 1787061193.2334797,
       "last_status": "ok",
-      "last_output": "\n> milo · deepseek-v4-flash-free\n\n⚙ milo_mem_context {\"query\":\"active work today priorities pipelines YouTube website-flip\"}\n⚙ milo_vault_search {\"query\":\"2026-08-17\"}\n! permission requested: external_directory (C:\\Users\\Administrator\\Desktop\\dra-brains\\01 - Daily Notes\\*); auto-rejecting\n✗ Read C:/Users/Administrator/Desktop/dra-brains/01 - Daily Notes/2026-08-17.md failed\nError: The user rejected permission to use this specific tool call.\n⚙ milo_vault_search {\"query\":\"2026-08-18\"}",
+      "last_output": "Morning briefing — Tue 18 Aug 2026.\n\n**Pipelines are healthy.** Cookies file intact at 3243 bytes (good auth, no clobber since the fix). Latest commits on main: `dbe56b3` ranking crop-to-fill, `bc481ac` ranking cookie fix, `b6df6ed` shorts cookie/local-cut fix. Nothing broken overnight that I can see.\n\n**Where things stand:**\n- **Shorts engine** — running. Capital Mindset is the earner (~18.5k views, doubled recently); Chop UG spiking on latest uploads; NXS/Wealth alive. Uploads after the fix: capital 12, flick 12, NXS 10, wealth 6, chop 3.\n- **Ranking pipeline** — fixed 08-17, swept 3 backlog niches + built 1 fresh. Working.\n\n**Open items on your plate:**\n1. **flick_shorts token** — still revoked (`invalid_grant`), needs re-auth whenever you want that channel posting again.\n2. **Per-channel Google Cloud projects** — the plan to kill the shared upload-quota wall. Needs you to create projects under each owning gmail, or point me at which to do first.\n3. **wealth_mindset quality gate** — last batch had garbled per-language titles; pipeline needs a check so it never uploads gibberish again.\n4. **daadaallan0@gmail.com** (Chop UG + RankDrop) has no connected Flow profile — add one when you're near Chrome.\n\n**One operational note:** if any video starts throwing \"Sign in to confirm you're not a bot\", re-export cookies via CDP first — they rotate. That's what cost us 6 hours on the 17th.\n\nWant me to start on any of the four? The Google Cloud per-channel quota project is the one that unblocks upload volume long-term.",
       "next_run": 1787122800.0,
-      "runs": 11,
+      "runs": 12,
       "failures": 1
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787054919.755417,
+      "last_run": 1787058833.7244513,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~6805 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787058564.969756,
-      "runs": 64,
+      "next_run": 1787062478.9654758,
+      "runs": 65,
       "failures": 4
     },
     {
