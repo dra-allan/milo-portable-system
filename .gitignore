@@ -41,3 +41,5 @@ artisan/pov_pipeline/scripts/transcripts/
 
 # Browser cookie export -- live session credentials, never commit.
 cookies.txt
+# OAuth client secrets (per-channel Google Cloud projects)
+youtube_client_secrets_*.json
