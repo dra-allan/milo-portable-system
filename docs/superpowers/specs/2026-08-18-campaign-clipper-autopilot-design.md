@@ -1,8 +1,20 @@
 # Campaign Clipper Autopilot — Design
 
 Date: 2026-08-18
-Status: Approved by Allan (sections presented and accepted)
+Status: LOCKED by Allan (2026-08-18, after Opus review). Autonomy design stands.
 Owner: Milo
+
+> **DECISION (Allan, 2026-08-18):** Campaign lane is deferred, not dead. All 21
+> posted campaign clips (duel_yt_shorts_4, posted 08-15, capital_mindset 11 /
+> wealth_mindset 5 / flick_shorts 5) measured **0 views, 0 likes, 0 comments**
+> three days after upload — zero algorithmic push, plus the Roobet 1000-sub
+> follower gate makes every board submission Ineligible. Opus's review
+> recommended freezing the lane. **Allan overrides: keep this autopilot design
+> and its autonomy exactly as envisioned — do NOT build the robot to run it
+> now. Embark on campaigns only once the shorts channels have enough traffic.**
+> Until then the shorts/ranking pipelines are the active lane and the goal is
+> growing numbers (subs + views). This doc stays as the ready-to-run blueprint
+> for when traffic unlocks the gate.
 
 ## Problem
 
