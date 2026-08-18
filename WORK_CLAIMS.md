@@ -18,7 +18,7 @@ Coordination ledger for the two Milo machines sharing this repo.
 
 ## OPEN
 
-(claim format: `- [<machine>] YYYY-MM-DD <task>`)
+- [brain] 2026-08-18 bake external_directory permission fix into harness sync (Windows backslash path matching) so fresh installs stop prompting
 
 ## Actions the main PC must take (from the AWS brain, 2026-08-15)
 
