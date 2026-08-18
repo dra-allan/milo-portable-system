@@ -423,7 +423,15 @@ def _builtin_specs() -> List[Dict[str, Any]]:
                 "2. Anything time-sensitive you know about.\n"
                 "3. One thing worth his attention that he hasn't asked about.\n"
                 "Be brief. No preamble, no filler. If there is nothing "
-                "meaningful to report, say so in one line."
+                "meaningful to report, say so in one line.\n"
+                "\n"
+                "Vault access: read the vault ONLY through the "
+                "milo_vault_search tool (query yesterday's date). NEVER use "
+                "the raw read/filesystem tools on vault paths — this is a "
+                "headless run and those calls are auto-denied, which kills "
+                "the briefing. If a tool call is denied or returns nothing, "
+                "do NOT stop: write the briefing from memory alone and still "
+                "deliver it. The briefing must always be produced."
             ),
             "schedule": "daily at 07:00",
             "output": "vault,telegram",
