@@ -529,10 +529,23 @@ class OpenCodeHarness(Harness):
 
             # 3. MCP + defaults, merged into any existing config.
             secrets = env.load()
+            # opencode on Windows matches external_directory against backslash
+            # paths (upstream bugs #7279/#11042/#36681), so every root is emitted
+            # in both slash forms plus `~` — otherwise fresh installs constantly
+            # prompt for the workspace/vault/repo even when allow-listed.
+            _roots = {str(p) for p in (
+                paths.HOME, paths.workspace_dir(), paths.milo_home(),
+                paths.repo_root(),
+            )}
+            external = {"*": "ask", "~/**": "allow"}
+            for _root in sorted(_roots):
+                external[f"{_root}/**"] = "allow"
+                external[f"{_root}\\**"] = "allow"
             config = {
                 "$schema": "https://opencode.ai/config.json",
                 "mcp": mcp_servers(secrets),
                 "agent": {slug: {"mode": "primary"}},
+                "permission": {"external_directory": external},
             }
             model = secrets.get("MILO_MODEL", "").strip()
             if model:
