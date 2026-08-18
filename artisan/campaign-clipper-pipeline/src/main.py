@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from . import captions, cleanup, clipster, compiler, overlay as ov
-from . import renderer, sources
+from . import intake, renderer, sources
 from . import validator as validation
 from .config import config
 from .database import ClipperDatabase
@@ -121,6 +121,28 @@ def mode_campaigns(platform: str) -> int:
         print(f"{card['id']:<32} {card.get('type', '?'):<9} "
               f"{rate_text:<12} {card['url']}")
     write_json(config.data_dir / f'campaigns_{platform}.json', cards)
+    return 0
+
+
+def mode_intake(platform: str) -> int:
+    """Autopilot discovery: add every fresh, ungated campaign on the board.
+
+    Prints the full report including rejections and their reasons. An empty add
+    list is a normal outcome, not a failure: on most days every candidate is
+    either gated or already known.
+    """
+    report = intake.run(_db(), platform=platform)
+    print(report.describe())
+    for spec in report.added:
+        print(f'  + {spec.id}: {spec.describe()}')
+    for item in report.rejected:
+        print(f'  - {item["id"]}: ' + '; '.join(item['reasons']))
+    for cid in report.waiting_content:
+        print(f'  [waiting content] {cid}')
+    for cid in report.skipped:
+        print(f'  [known] {cid}')
+    for problem in report.errors:
+        print(f'  [ERROR] {problem}')
     return 0
 
 
@@ -281,16 +303,14 @@ def _print_results(results: List[Dict]) -> None:
 
 # -- publish -----------------------------------------------------------
 def _channel_for(spec: CampaignSpec) -> str:
-    """The channel key a campaign's clips upload to.
+    """The channel key a campaign's clips upload to, or '' to skip.
 
-    Explicit spec field wins, then the niche map, then the global env value.
+    Delegates to :meth:`ClipperConfig.resolve_channel`, which owns both the
+    resolution order (explicit spec field, niche map, unknown-niche catch-all,
+    global env value) and the campaign-channel guard. An empty result means the
+    campaign resolved to a channel the ranking pipeline owns and must be skipped.
     """
-    if spec.upload_channel:
-        return spec.upload_channel
-    mapped = config.channel_for_niche(spec.niche)
-    if mapped:
-        return mapped
-    return config.upload_channel
+    return config.resolve_channel(spec.upload_channel, spec.niche)
 
 
 def upload_clip(spec: CampaignSpec, db, clip_id: int,
@@ -312,8 +332,17 @@ def upload_clip(spec: CampaignSpec, db, clip_id: int,
                      config.upload_max_per_campaign_per_day)
         return None
 
-    from .publisher import ClipperPublisher
     channel = _channel_for(spec)
+    if not channel:
+        # Resolving to nothing means the niche maps to a shorts/ranking channel.
+        # Falling through would hand the publisher an empty channel key and post
+        # to whatever the global default happens to be.
+        logger.error('UPLOAD_NO_CHANNEL campaign=%s niche=%s no eligible '
+                     'campaign channel; skipping', spec.id,
+                     spec.niche or '?')
+        return None
+
+    from .publisher import ClipperPublisher
     publisher = ClipperPublisher(channel=channel, privacy_status=privacy)
     title = (row.get('title') or '').strip() or captions.build_title(
         spec, {'overlay_text': row['overlay_text']}, clip_id=clip_id)
@@ -497,8 +526,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         prog='campaign-clipper',
         description='Clip campaign content into compliant vertical shorts.')
     parser.add_argument('--mode', required=True, choices=[
-        'test', 'login', 'campaigns', 'pull', 'add', 'specs', 'sources',
-        'build', 'upload', 'submit', 'run', 'links', 'record-link',
+        'test', 'login', 'campaigns', 'intake', 'pull', 'add', 'specs',
+        'sources', 'build', 'upload', 'submit', 'run', 'links', 'record-link',
         'status', 'cleanup'])
     parser.add_argument('--id', default='',
                         help='campaign id (the spec filename)')
@@ -530,6 +559,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0 if clipster.login() else 1
     if args.mode == 'campaigns':
         return mode_campaigns(args.platform)
+    if args.mode == 'intake':
+        return mode_intake(args.platform)
     if args.mode == 'specs':
         return mode_specs()
     if args.mode == 'pull':
