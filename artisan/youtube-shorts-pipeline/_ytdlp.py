@@ -201,17 +201,22 @@ def plugin_dirs() -> List[str]:
     BUT: when the provider is already importable by THIS interpreter (the
     common case -- pip install lands in the same interpreter the daemon runs),
     passing ``plugin_dirs`` makes yt-dlp register it TWICE -- once from the
-    explicit dirs, once from entry-point discovery -- and yt-dlp's registry
-    asserts on the duplicate (``PoTokenProvider BgUtilHTTP already
-    registered``). So explicit dirs are only handed over when entry-point
-    discovery cannot have found the plugin already.
+    explicit dirs, once from its own discovery -- and yt-dlp's registry asserts
+    on the duplicate (``PoTokenProvider BgUtilHTTP already registered``). So
+    explicit dirs are only handed over when the plugin cannot be found already.
+
+    NOTE: importability is probed with ``importlib.util.find_spec``, never by
+    importing the module. A real import EXECUTES it, which registers the
+    provider into yt-dlp's registry; yt-dlp's own later discovery then loads
+    the same file as a fresh module and the duplicate registration asserts.
     """
     try:
+        import importlib.util
         import yt_dlp_plugins  # noqa: F401
-        import yt_dlp_plugins.extractor.getpot_bgutil_http  # noqa: F401
-        # Importable through the interpreter's own path: yt-dlp's default
-        # discovery will find it. Explicit dirs would only duplicate it.
-        return []
+        if importlib.util.find_spec('yt_dlp_plugins.extractor.getpot_bgutil_http'):
+            # Discoverable through the interpreter's own path: yt-dlp's default
+            # discovery will find it. Explicit dirs would only duplicate it.
+            return []
     except Exception:
         pass
     candidates: List[str] = []
@@ -397,16 +402,22 @@ def pot_plugin_importable() -> Tuple[bool, str]:
     The distinction between "installed" and "importable by the process that
     actually runs the pipeline" is the whole bug: ``pip show`` said yes while
     yt-dlp said ``PO Token Providers: none``.
+
+    Probed with ``find_spec``, not a real import: importing would EXECUTE the
+    module and register its provider, which yt-dlp's own later discovery then
+    duplicates (assert ``BgUtilHTTP already registered``).
     """
     try:
+        import importlib.util
         import yt_dlp_plugins  # noqa: F401
     except ImportError as exc:
         return False, f'yt_dlp_plugins not importable: {exc}'
     try:
-        __import__('yt_dlp_plugins.extractor.getpot_bgutil_http')
-        return True, 'getpot_bgutil_http importable'
-    except ImportError as exc:
-        return False, f'yt_dlp_plugins found but provider missing: {exc}'
+        if importlib.util.find_spec('yt_dlp_plugins.extractor.getpot_bgutil_http'):
+            return True, 'getpot_bgutil_http importable'
+        return False, 'yt_dlp_plugins found but provider module missing'
+    except Exception as exc:
+        return False, f'provider probe failed: {exc}'
 
 
 def _version_of(module_name: str) -> str:
