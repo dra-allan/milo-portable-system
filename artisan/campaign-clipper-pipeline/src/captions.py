@@ -2,7 +2,9 @@
 
 The division of labour here is the whole point:
 
-* **the model writes the hook** - the part that has to be interesting;
+* **the footage writes the hook** when it can - a line the viewer is about to
+  hear;
+* **the model writes the hook** when the footage cannot;
 * **the code enforces the requirements** - the part that has to be exact.
 
 A model asked to "write a caption including #roobet" will drop the hashtag some
@@ -12,10 +14,18 @@ So required keywords, mentions and brand phrases are appended and verified
 *after* generation, and the model's output is treated as a suggestion for the
 creative half only.
 
-Phrases a campaign requires to appear *in the video* (not the caption) are
-forced into the burned-in text. Without a voice track that is the only lever the
-pipeline has, and it satisfies the requirement literally: the words are on
-screen for the duration of the clip.
+WHY A LIFTED HOOK BEATS A GENERATED ONE
+---------------------------------------
+The overlay text used to come from a six-entry fallback pool -- "WAIT FOR IT",
+"THIS IS INSANE" -- which says nothing about the clip and is interchangeable
+across every campaign. When :mod:`story_edit` has restructured the clip to open
+on a question, that question is already the best possible on-screen hook: it is
+specific, it creates a real curiosity gap, and the audio confirms it two seconds
+later instead of contradicting it. So a lifted hook wins, and the templates stay
+as the fallback they were always meant to be.
+
+Phrases a campaign requires to appear *in the video* (not the caption) are still
+forced into the burned-in text afterwards, whichever source the hook came from.
 """
 
 import random
@@ -52,6 +62,25 @@ Return strict JSON:
 
 Rules: no emoji in overlay_text. Do not mention being an advertisement.
 JSON only, no prose, no code fence."""
+
+
+def _lifted_hook(plan: Dict) -> Tuple[str, str]:
+    """``(hook, source)`` from the clip's edit plan, or ``('', 'none')``.
+
+    Imported lazily so this module stays usable in contexts where the edit
+    engine is not needed (the copy path is exercised by tests that never build a
+    plan).
+    """
+    if not config.hook_prefer_transcript:
+        return '', 'none'
+    try:
+        from . import story_edit
+        edit = story_edit.plan_from(plan)
+    except Exception as exc:  # pragma: no cover - never block copy on this
+        logger.debug('could not read the edit plan for a hook: %s', exc)
+        return '', 'none'
+    hook = (edit.title_hook or '').strip()
+    return (hook, edit.hook_source) if hook else ('', 'none')
 
 
 def _model_copy(spec: CampaignSpec, plan: Dict) -> Optional[Dict]:
@@ -159,15 +188,28 @@ def banned_hits(text: str, spec: CampaignSpec) -> List[str]:
 
 def build_copy(spec: CampaignSpec, plan: Dict,
                use_model: bool = True) -> Dict:
-    """Produce ``{overlay_text, caption, caption_added, banned}`` for one clip."""
+    """Produce ``{overlay_text, caption, caption_added, banned, hook_source}``.
+
+    Hook precedence: the transcript-lifted hook, then the model, then the
+    deterministic template pool. The caption body still comes from the model
+    (or the template) regardless, because a spoken question makes a good
+    on-screen hook and a poor platform caption.
+    """
     copy = (_model_copy(spec, plan) if use_model else None) \
         or _template_copy(spec, plan)
 
     overlay = str(copy.get('overlay_text') or '').strip()
     caption = str(copy.get('caption') or '').strip()
 
+    lifted, hook_source = _lifted_hook(plan)
+    if lifted:
+        overlay = lifted
+        logger.info('HOOK_LIFTED campaign=%s source=%s text=%r', spec.id,
+                    hook_source, lifted)
+
     if spec.render.own_text_required and not overlay:
         overlay = _template_copy(spec, plan)['overlay_text']
+        hook_source = 'none'
 
     # Requirements that live in the video, not the caption.
     overlay = _inject_phrases(overlay, spec.render.must_appear_in_video)
@@ -186,6 +228,7 @@ def build_copy(spec: CampaignSpec, plan: Dict,
                  if spec.render.must_appear_in_video else '')
     return {'overlay_text': overlay, 'caption': caption,
             'caption_added': added, 'banned': banned,
+            'hook_source': hook_source,
             'highlight': highlight}
 
 
