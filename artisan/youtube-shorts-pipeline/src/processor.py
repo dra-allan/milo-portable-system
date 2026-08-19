@@ -13,7 +13,7 @@ the candidates are valid Shorts by construction.
 """
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 try:  # package-relative first (python -m src.main)
     from .utils import setup_logger
@@ -41,11 +41,6 @@ FILLER_WORDS = ("um", "uh", "erm", "hmm", "like", "you know", "i mean", "kinda",
 
 # ----------------------------------------------------------------------
 # Ranking / countdown signals.
-#
-# A list video's value is concentrated at the *item boundaries*: the moment
-# the narrator says "coming in at number three" is the moment a self-contained
-# clip can start. A clip that begins mid-item has no context and no payoff, so
-# we reward clips that open on an enumeration cue and contain a complete item.
 # ----------------------------------------------------------------------
 
 # "number 3", "number three", "no. 3", "#3", "at 3:", "3." at a clause start.
@@ -61,12 +56,34 @@ ENUMERATION_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Countdown position cues that mark a payoff moment ("and the number one...").
+# Fixed setup / payoff / reaction / question lexicons (from campaign clipper)
 PAYOFF_RE = re.compile(
-    r"\b(?:number one|no\.?\s*1|#\s*1|top spot|first place|"
-    r"the winner|our winner|takes the crown|best of the bunch)\b",
+    r"\b(wait|watch|look|no way|oh my|finally|actually|literally|unbelievable|"
+    r"insane|crazy|wow|did he|did she|i can'?t believe|there it is|here we go|"
+    r"let'?s go|got him|that was|plot twist|victory|win|won|clutch|"
+    r"number one|no\.?\s*1|#\s*1|top spot|first place|the winner|our winner|takes the crown|best of the bunch)\b",
     re.IGNORECASE,
 )
+
+SETUP_RE = re.compile(
+    r"\b(because|so|but|if|when|then|first|next|about to|watch this|listen|"
+    r"the plan|going to|gonna|trying to|challenge|unless|before)\b",
+    re.IGNORECASE,
+)
+
+REACTION_RE = re.compile(
+    r"\b(yes|yeah|no|wow|oh|damn|holy|wait|what|bro|unbelievable|crazy|"
+    r"insane|let'?s go)\b",
+    re.IGNORECASE,
+)
+
+QUESTION_RE = re.compile(
+    r"\?|\b(are|is|was|were|do|does|did|can|could|will|would|should|have|has|"
+    r"why|what|when|where|who|which|how)\b\s+\w+",
+    re.IGNORECASE,
+)
+
+WORD_RE = re.compile(r"[\w']+")
 
 # Comparative / superlative language that carries a ranking claim.
 SUPERLATIVE_RE = re.compile(
@@ -80,6 +97,27 @@ SUPERLATIVE_RE = re.compile(
 )
 
 
+def score_text(text: str, required: Optional[List[str]] = None) -> Tuple[float, float, float, float]:
+    """(setup, payoff, relevance, density) in 0..1 for a block of speech."""
+    low = (text or '').lower()
+    words = WORD_RE.findall(low)
+    if not words:
+        return 0.0, 0.0, 0.0, 0.0
+    setup = min(1.0, len(SETUP_RE.findall(low)) / 2.0)
+    payoff = min(1.0, (len(PAYOFF_RE.findall(low))
+                       + 0.5 * len(REACTION_RE.findall(low))) / 3.0)
+    relevance = min(1.0, sum(1 for token in (required or []) if token.lower() in low)
+                    / max(1, len(required or []))) if required else 0.0
+    density = min(1.0, len(words) / 70.0)
+    return setup, payoff, relevance, density
+
+
+def question_score(text: str) -> float:
+    """How much question-shaped hook material this speech contains (0..1)."""
+    hits = len(QUESTION_RE.findall(text or ''))
+    return min(1.0, hits / 2.0)
+
+
 def ranking_signals(text: str) -> Dict[str, int]:
     """Count enumeration, payoff and superlative cues in ``text``."""
     body = text or ''
@@ -91,11 +129,7 @@ def ranking_signals(text: str) -> Dict[str, int]:
 
 
 def opens_on_enumeration(text: str, window: int = 60) -> bool:
-    """True if an enumeration cue appears in the first ``window`` characters.
-
-    A ranking clip that opens with "Coming in at number four..." is
-    self-contained; one that opens halfway through item four is not.
-    """
+    """True if an enumeration cue appears in the first ``window`` characters."""
     head = (text or '')[:window]
     return bool(ENUMERATION_RE.search(head))
 
@@ -112,16 +146,16 @@ class ContentProcessor:
     def score_segment(self, segment: Dict, prev_segment: Optional[Dict] = None,
                       next_segment: Optional[Dict] = None,
                       niche_keywords: Optional[List[str]] = None,
-                      ranking_mode: bool = False) -> float:
+                      ranking_mode: bool = False,
+                      story_mode: bool = False) -> float:
         """Score one candidate region for "interestingness".
 
         Returns a non-negative score. Kept backwards compatible with the
         previous signature because tests and callers rely on it.
 
         Args:
-            ranking_mode: enable countdown/list scoring (enumeration cues,
-                the #1 payoff, superlatives). Off by default so existing
-                niches score exactly as before.
+            ranking_mode: enable countdown/list scoring.
+            story_mode: enable question/setup/payoff text scoring for hook->story->payoff restructure.
         """
         if niche_keywords is None:
             niche_keywords = []
@@ -148,16 +182,11 @@ class ContentProcessor:
         else:
             score += max(0.0, 6.0 - (wps - 4.5) * 2)
 
-        # 2. Niche keywords. Normalised per-clip so a 60s clip full of the
-        #    same keyword cannot dwarf a tight 20s clip.
-        #    Word-boundary matched: substring matching credited "vs" inside
-        #    "versus"/"Vsauce" and "last" inside "plastic", inflating the
-        #    score of clips that never used the keyword at all.
+        # 2. Niche keywords.
         keyword_hits = len(matched_keywords(text, niche_keywords))
         score += min(keyword_hits, 6) * 2.5
 
-        # 3. Hook phrases -- the strongest retention signal we can detect
-        #    from text alone.
+        # 3. Hook phrases.
         hook_hits = sum(1 for phrase in HOOK_PHRASES if phrase in text)
         score += min(hook_hits, 4) * 4.0
 
@@ -191,8 +220,7 @@ class ContentProcessor:
         unique_words = len(set(re.findall(r"[a-z']+", text)))
         score += (unique_words / word_count) * 3.0
 
-        # 8. Filler penalty (token-accurate, not substring counting -- the old
-        #    version matched "like" inside "unlike" and "so" inside "also").
+        # 8. Filler penalty.
         tokens = re.findall(r"[a-z']+", text)
         filler_count = sum(1 for t in tokens if t in FILLER_WORDS)
         filler_count += sum(text.count(p) for p in FILLER_WORDS if ' ' in p)
@@ -205,34 +233,24 @@ class ContentProcessor:
             score -= 2.0
 
         # 10. Ranking / countdown structure (opt-in per niche).
-        #     A list video is only clippable at item boundaries, so this
-        #     rewards clips that open on an enumeration cue and carry a
-        #     complete ranked item, and it strongly rewards the #1 payoff.
         if ranking_mode:
             signals = ranking_signals(raw_text)
-
-            # Opening on "coming in at number four" makes the clip
-            # self-contained -- the single most valuable property here.
             if opens_on_enumeration(raw_text):
                 score += 7.0
             elif signals['enumerations']:
-                # Cue present but not at the top: still useful, less so.
                 score += 2.0
             else:
-                # No enumeration at all: likely mid-item narration with no
-                # setup and no payoff.
                 score -= 3.0
-
-            # The #1 reveal is the retention peak of any countdown.
             score += min(signals['payoffs'], 2) * 5.0
-
-            # Superlatives carry the actual ranking claim.
             score += min(signals['superlatives'], 5) * 1.2
-
-            # Exactly one item per clip reads best; a clip spanning many
-            # boundaries is a compilation, which loses the payoff structure.
             if signals['enumerations'] > 3:
                 score -= (signals['enumerations'] - 3) * 1.5
+
+        # 11. Story / restructure signals (opt-in per niche via story_mode / edit_story flag).
+        if story_mode:
+            setup, payoff, relevance, _ = score_text(raw_text, niche_keywords)
+            q_val = question_score(raw_text)
+            score += setup * 4.0 + payoff * 5.0 + q_val * 4.0 + relevance * 2.0
 
         return max(0.0, score)
 
@@ -241,22 +259,11 @@ class ContentProcessor:
     # ------------------------------------------------------------------
     def _build_candidates(self, transcript: List[Dict], niche_keywords: List[str],
                           min_len: float, max_len: float,
-                          ranking_mode: bool = False) -> List[Dict]:
-        """Grow candidate clips from every transcript boundary.
-
-        A candidate starts at transcript[i] and absorbs following segments
-        until its duration reaches ``min_len``; every extension that still
-        fits inside ``max_len`` is emitted. This guarantees the duration
-        filter downstream can actually be satisfied.
-        """
+                          ranking_mode: bool = False,
+                          story_mode: bool = False) -> List[Dict]:
+        """Grow candidate clips from every transcript boundary."""
         candidates: List[Dict] = []
         n = len(transcript)
-
-        # Emitting *every* valid extension of every start point is O(n * k)
-        # and produced >20k candidates on a 30-minute source. We only need a
-        # few well-spaced lengths per start point, so keep the first
-        # MAX_LENGTHS_PER_START valid extensions (shortest ones, which are
-        # the tightest cuts) and move on.
         MAX_LENGTHS_PER_START = 4
 
         for i in range(n):
@@ -290,6 +297,7 @@ class ContentProcessor:
                 candidate['score'] = self.score_segment(
                     candidate, prev_seg, next_seg, niche_keywords,
                     ranking_mode=ranking_mode,
+                    story_mode=story_mode,
                 )
                 candidates.append(candidate)
                 emitted += 1
@@ -304,31 +312,9 @@ class ContentProcessor:
                                 max_clips: int = 8,
                                 min_score: float = 0.0,
                                 max_candidates: Optional[int] = None,
-                                ranking_mode: bool = False) -> List[Dict]:
-        """Select the best non-overlapping Shorts candidates.
-
-        Args:
-            transcript: Whisper segments with 'text', 'start', 'end'.
-            niche_keywords: Keywords that boost a clip's score.
-            min_segment_length: Shortest acceptable clip, seconds.
-            max_segment_length: Longest acceptable clip, seconds.
-            min_gap_between: Minimum spacing between two chosen clips.
-            max_clips: Hard cap on clips returned per source video.
-            min_score: Score floor; ignored if it would return nothing.
-            max_candidates: Select this many ranked clips instead of
-                ``max_clips``. Used to build a deep plan: transcription is the
-                expensive stage, so once it is done, ranking 30 clips costs
-                nothing extra and "give me 10 more" needs no re-download and no
-                re-transcribe. Rendering is still capped separately by the
-                caller.
-            ranking_mode: score for countdown/list content (enumeration cues,
-                #1 payoff, superlatives). Driven by the niche's
-                ``ranking_mode`` flag in niches.yaml.
-
-        Returns:
-            Chronologically sorted list of clips with start/end/text/score/rank.
-            The ``rank`` field reflects priority order (1 = highest score).
-        """
+                                ranking_mode: bool = False,
+                                story_mode: bool = False) -> List[Dict]:
+        """Select the best non-overlapping Shorts candidates."""
         if niche_keywords is None:
             niche_keywords = []
         if not transcript:
@@ -351,7 +337,6 @@ class ContentProcessor:
 
         total_span = float(transcript[-1]['end']) - float(transcript[0]['start'])
         if total_span < min_len:
-            # Source is shorter than one clip; relax so short sources still work.
             min_len = max(3.0, total_span * 0.6)
             logger.info(
                 "Source span %.1fs is shorter than min clip length; relaxing min to %.1fs",
@@ -361,6 +346,7 @@ class ContentProcessor:
         candidates = self._build_candidates(
             transcript, niche_keywords, min_len, max_len,
             ranking_mode=ranking_mode,
+            story_mode=story_mode,
         )
         if not candidates:
             logger.warning(
@@ -370,11 +356,8 @@ class ContentProcessor:
             )
             return []
 
-        # Prefer higher score, then longer clip as tie-break.
         candidates.sort(key=lambda c: (c['score'], c['end'] - c['start']), reverse=True)
 
-        # How many clips to actually select. The deep plan wants every clip the
-        # source can support; a plain run wants only what it will render.
         wanted = int(max_candidates) if max_candidates else int(max_clips)
         wanted = max(1, wanted)
 
@@ -382,9 +365,6 @@ class ContentProcessor:
             candidates, min_gap_between, wanted, min_score
         )
 
-        # Never return zero clips just because the score floor was too strict:
-        # a run that downloads and transcribes a 30-minute video and then
-        # produces nothing is the failure mode we are fixing.
         if not selected and min_score > 0:
             logger.warning(
                 "No clip cleared min_score=%.2f; falling back to top-scoring clips",
@@ -394,9 +374,6 @@ class ContentProcessor:
                 candidates, min_gap_between, wanted, 0.0
             )
 
-        # Rank order is the plan's priority order and must survive the
-        # chronological sort below -- otherwise "render the top 5" would mean
-        # "render the 5 earliest", which is not the same thing at all.
         for position, clip in enumerate(
             sorted(selected, key=lambda c: (-c['score'], c['start'])), start=1
         ):
@@ -428,7 +405,6 @@ class ContentProcessor:
 
             conflict = False
             for chosen in selected:
-                # Reject if the clips overlap, or sit closer than min_gap.
                 if (cand['start'] < chosen['end'] + min_gap
                         and chosen['start'] < cand['end'] + min_gap):
                     conflict = True

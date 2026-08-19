@@ -39,18 +39,20 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 try:  # package-relative first (python -m src.main)
     from .utils import setup_logger, sanitize_filename
     from .config import config
     from . import captions as captions_mod
     from . import smart_crop
+    from . import story_edit
 except ImportError:  # pragma: no cover - direct script execution
     from utils import setup_logger, sanitize_filename
     from config import config
     import captions as captions_mod
     import smart_crop
+    import story_edit
 
 logger = setup_logger(__name__)
 
@@ -68,7 +70,8 @@ CHEAP_BACKDROP_DIVISOR = 8
 
 def build_background_filters(mode: str, width: int = SHORT_WIDTH,
                              height: int = SHORT_HEIGHT,
-                             scaler: Optional[str] = None):
+                             scaler: Optional[str] = None,
+                             in_label: str = '0:v'):
     """Build the scale/pad filter graph, returning (filters, output_label).
 
     Why this is worth its own function: ``gblur=sigma=28`` over a full
@@ -100,16 +103,18 @@ def build_background_filters(mode: str, width: int = SHORT_WIDTH,
     fg = (f"[fg]scale={width}:{height}:force_original_aspect_ratio=decrease"
           f":flags={fg_flags}[fgs]")
 
+    src_label = in_label if in_label.startswith('[') else f'[{in_label}]'
+
     if mode == 'black':
         # No backdrop at all: flat bars. Fastest (2.01x) but a different look.
-        return ([f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease"
+        return ([f"{src_label}scale={width}:{height}:force_original_aspect_ratio=decrease"
                  f":flags={fg_flags},"
                  f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[padded]"],
                 'padded')
 
     if mode == 'crop':
         # Fill the frame by cropping the sides. No bars, but loses the edges.
-        return ([f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase"
+        return ([f"{src_label}scale={width}:{height}:force_original_aspect_ratio=increase"
                  f":flags={fg_flags},crop={width}:{height},setsar=1[padded]"],
                 'padded')
 
@@ -120,12 +125,12 @@ def build_background_filters(mode: str, width: int = SHORT_WIDTH,
         # so a stray direct call degrades to a sane centre-fill instead of
         # raising. (It used to return letterboxed bars, which silently looked
         # nothing like the mode the user asked for.)
-        return build_background_filters('crop', width, height, scaler=fg_flags)
+        return build_background_filters('crop', width, height, scaler=fg_flags, in_label=in_label)
 
     if mode == 'blur':
         # The original, kept as the reference look for anyone who wants it.
         return ([
-            "[0:v]split=2[bg][fg]",
+            f"{src_label}split=2[bg][fg]",
             f"[bg]scale={width}:{height}:force_original_aspect_ratio=increase"
             f":flags={bg_flags},"
             f"crop={width}:{height},gblur=sigma={REFERENCE_BLUR_SIGMA:g}[bgb]",
@@ -139,7 +144,7 @@ def build_background_filters(mode: str, width: int = SHORT_WIDTH,
     bh = max(2, (height // k) // 2 * 2)
     sigma = REFERENCE_BLUR_SIGMA / k
     return ([
-        "[0:v]split=2[bg][fg]",
+        f"{src_label}split=2[bg][fg]",
         f"[bg]scale={bw}:{bh}:force_original_aspect_ratio=increase"
         f":flags={bg_flags},crop={bw}:{bh},gblur=sigma={sigma:g},"
         f"scale={width}:{height}:flags={bg_flags}[bgb]",
@@ -603,6 +608,78 @@ class VideoEditor:
         p = p.replace(':', r'\:').replace("'", "''")
         return p
 
+    def _render_title_hook_sheet(self, text: str, out_path: Path,
+                                 y_ratio: Optional[float] = None) -> Optional[Path]:
+        """Render the title hook text at top of frame clear of speech captions."""
+        if not text:
+            return None
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+        except ImportError:
+            logger.warning("PIL not available; skipping title hook text sheet")
+            return None
+
+        width, height = SHORT_WIDTH, SHORT_HEIGHT
+        font_path = None
+        for candidate in (
+            'C:/Windows/Fonts/impact.ttf',
+            'C:/Windows/Fonts/arialbd.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+            '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+            '/System/Library/Fonts/Supplemental/Impact.ttf',
+        ):
+            if Path(candidate).exists():
+                font_path = candidate
+                break
+
+        base_size = 76
+        try:
+            font = ImageFont.truetype(font_path, base_size) if font_path else ImageFont.load_default()
+        except Exception:
+            font = ImageFont.load_default()
+
+        sheet = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(sheet)
+
+        words = text.split()
+        lines = []
+        current = ''
+        max_w = int(width * 0.88)
+        for word in words:
+            candidate = f"{current} {word}".strip()
+            if hasattr(font, 'getlength'):
+                line_w = font.getlength(candidate)
+            else:
+                line_w = draw.textlength(candidate, font=font) if hasattr(draw, 'textlength') else len(candidate) * 25
+            if line_w <= max_w or not current:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+
+        stroke = max(2, int(base_size * 0.08))
+        line_height = int(base_size * 1.22)
+        target_y_ratio = y_ratio if y_ratio is not None else getattr(config, 'hook_y_ratio', 0.11)
+        top = int(height * target_y_ratio)
+
+        for index, line in enumerate(lines):
+            if hasattr(font, 'getlength'):
+                line_w = font.getlength(line)
+            else:
+                line_w = draw.textlength(line, font=font) if hasattr(draw, 'textlength') else len(line) * 25
+            cursor = (width - line_w) / 2
+            y = top + index * line_height
+            draw.text((cursor + 4, y + 4), line, font=font, fill='#000000',
+                      stroke_width=stroke, stroke_fill='#000000')
+            draw.text((cursor, y), line, font=font, fill='#FFFFFF',
+                      stroke_width=stroke, stroke_fill='#000000')
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        sheet.save(out_path)
+        return out_path
+
     # ------------------------------------------------------------------
     def create_short_from_segment(self, video_path: str, start_time: float,
                                   end_time: float, transcript_segments: List[Dict],
@@ -611,7 +688,8 @@ class VideoEditor:
                                   captions_are_clip_relative: bool = False,
                                   threads: Optional[int] = None,
                                   keywords: Optional[List[str]] = None,
-                                  caption_style: Optional[str] = None) -> bool:
+                                  caption_style: Optional[str] = None,
+                                  edit_plan: Optional[Any] = None) -> bool:
         """Render one vertical Short in a single FFmpeg pass.
 
         Pipeline: seek -> scale/pad to 1080x1920 -> burn captions ->
@@ -625,6 +703,9 @@ class VideoEditor:
                 being rendered and must not be shifted again.
             threads: cap libx264 threads. Used when several renders run
                 concurrently so they do not each try to claim every core.
+            edit_plan: optional EditPlan for reordered/multi-span cuts. When
+                provided and reordered, uses read_window + build_filtergraph,
+                burns title hook if present, and keeps single-span cuts byte-identical.
         """
         src = Path(video_path)
         if not src.exists():
@@ -654,45 +735,70 @@ class VideoEditor:
         # keeps its original name.
         safe_stem = sanitize_filename(out.stem).replace("'", '').replace('"', '')
         ass_path = temp_dir / f"{safe_stem}.ass"
+        sheet_path = temp_dir / f"{safe_stem}_hook.png"
         # Render to a temp file next to the destination so the final move is
         # always same-filesystem (fixes the cross-device rename failure).
         staging = out.with_name(f".{out.stem}.partial.mp4")
 
-        # --- video filter chain ------------------------------------------
-        # Scale to fit inside 1080x1920 and fill the bars behind it. Nothing is
-        # cropped out, and the result is exactly the resolution YouTube Shorts
-        # expects. The backdrop strategy is configurable because the original
-        # full-resolution gblur cost more than the video encode itself.
+        # --- edit plan reorder handling -----------------------------------
+        is_reordered = bool(edit_plan and getattr(edit_plan, 'is_reordered', False))
+        has_audio = self.has_audio_stream(str(src))
 
+        filters: List[str] = []
+        video_in_label = '0:v'
+        audio_in_label = '0:a:0'
+
+        if is_reordered:
+            seek, read_span = story_edit.read_window(edit_plan)
+            duration = edit_plan.duration
+            edit_chains, v_label, a_label = story_edit.build_filtergraph(
+                edit_plan, has_audio, seek
+            )
+            filters.extend(edit_chains)
+            video_in_label = v_label
+            if a_label:
+                audio_in_label = a_label
+
+        # --- video filter chain ------------------------------------------
         scaler = getattr(config, 'video_scaler', 'lanczos')
 
         if config.background_mode == 'smart':
             # Handle smart person-aware cropping
-            filters, last_label = self._build_smart_background_filters(
-                video_path, start_time, end_time, width=SHORT_WIDTH, height=SHORT_HEIGHT
+            bg_filters, last_label = self._build_smart_background_filters(
+                video_path, start_time, end_time, width=SHORT_WIDTH, height=SHORT_HEIGHT,
+                in_label=video_in_label
             )
         else:
-            filters, last_label = build_background_filters(
-                config.background_mode, scaler=scaler
+            bg_filters, last_label = build_background_filters(
+                config.background_mode, scaler=scaler, in_label=video_in_label
             )
+        filters.extend(bg_filters)
+
+        # Burn title hook text sheet if present (top of frame)
+        title_hook = getattr(edit_plan, 'title_hook', '') if edit_plan else ''
+        if title_hook and getattr(config, 'hook_text_enabled', True):
+            hook_sheet = self._render_title_hook_sheet(
+                title_hook, sheet_path, y_ratio=getattr(config, 'hook_y_ratio', 0.11)
+            )
+            if hook_sheet and hook_sheet.exists():
+                filters.append(f"movie='{self._escape_filter_path(hook_sheet)}'[tx0]")
+                filters.append(f"[{last_label}][tx0]overlay=0:0:format=auto[texted]")
+                last_label = 'texted'
 
         if burn_captions and transcript_segments:
-            caption_offset = 0.0 if captions_are_clip_relative else start_time
-            if self.write_ass(transcript_segments, ass_path,
+            caption_offset = 0.0 if (captions_are_clip_relative or is_reordered) else start_time
+            cap_segments = transcript_segments
+            if is_reordered and not captions_are_clip_relative:
+                cap_segments = story_edit.remap_segments(transcript_segments, edit_plan)
+                caption_offset = 0.0
+
+            if self.write_ass(cap_segments, ass_path,
                               time_offset=caption_offset, clip_duration=duration,
                               keywords=keywords, style=caption_style):
-                # Use relative path from cwd for FFmpeg subtitles filter to avoid
-                # Windows drive-letter parsing issues in filter strings.
                 try:
                     rel_ass = Path(ass_path).relative_to(Path.cwd())
                 except ValueError:
                     rel_ass = Path(ass_path)
-                # Render subtitles in a full-chroma format, then convert once at
-                # the end. Burning big bold captions directly onto yuv420p
-                # blends the glyph edges into half-resolution chroma planes,
-                # which is what makes caption edges look muddy or fringed --
-                # especially the coloured emphasis words. Compositing at 4:4:4
-                # and subsampling afterwards keeps the outlines crisp.
                 filters.append(
                     f"[{last_label}]format=yuv444p,"
                     f"subtitles='{self._escape_filter_path(rel_ass)}'"
@@ -702,46 +808,35 @@ class VideoEditor:
             else:
                 logger.warning("No caption lines fell inside the clip; skipping captions")
 
-        # Final conversion to the delivery format. Tagging the colour space
-        # matters: untagged H.264 is interpreted as BT.601 by some players and
-        # BT.709 by others, so an untagged file looks washed out or oversaturated
-        # depending on where it is watched.
+        # Final conversion to delivery format
         filters.append(f"[{last_label}]format=yuv420p[vout]")
 
-        has_audio = self.has_audio_stream(str(src))
-
         # --- audio graph --------------------------------------------------
-        # The music bed (when there is one) needs a SECOND input, and mixing
-        # two inputs is only expressible in -filter_complex. The previous
-        # implementation built a multi-input, labelled graph and handed it to
-        # '-af', which accepts only a simple 1-in/1-out chain -- so FFmpeg
-        # rejected every render with "Simple filtergraph '(null)' was expected
-        # to have exactly 1 input and 1 output. However, it had 2 input(s)".
-        # It also used [0:a:0] as *both* the speech and the music source, so
-        # even as a complex graph it would only ever have ducked the speech
-        # against itself. Both problems are fixed by resolving the music track
-        # first, adding it as input 1, and appending real audio chains to the
-        # same filter_complex we already build for video.
         music_track = self._pick_music_track() if has_audio else None
 
-        cmd = [
-            self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
-            # -ss before -i seeks fast; -t after gives an exact duration.
-            # Both are floats, so no sub-second truncation.
-            '-ss', f"{start_time:.3f}",
-            '-i', str(src),
-        ]
+        if is_reordered:
+            seek, read_span = story_edit.read_window(edit_plan)
+            cmd = [
+                self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
+                '-ss', f"{seek:.3f}",
+                '-t', f"{read_span:.3f}",
+                '-i', str(src),
+            ]
+        else:
+            cmd = [
+                self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
+                '-ss', f"{start_time:.3f}",
+                '-i', str(src),
+            ]
 
         if music_track:
-            # -stream_loop -1 loops the bed for as long as the clip needs it,
-            # which is what 'aloop' was reaching for. Doing it at the input is
-            # cheaper and cannot overflow a frame-count limit.
             cmd += ['-stream_loop', '-1', '-i', str(music_track)]
 
-        cmd += ['-t', f"{duration:.3f}"]
+        if not is_reordered:
+            cmd += ['-t', f"{duration:.3f}"]
 
         if has_audio:
-            filters.extend(self._build_audio_filters(bool(music_track)))
+            filters.extend(self._build_audio_filters(bool(music_track), in_label=audio_in_label))
 
         cmd += [
             '-filter_complex', ';'.join(filters),
@@ -751,9 +846,6 @@ class VideoEditor:
         if has_audio:
             cmd += [
                 '-map', '[aout]',
-                # 128k was audibly lossy on music beds. 192k at 48kHz is what
-                # YouTube itself recommends for stereo; the extra bytes are
-                # negligible next to the video track.
                 '-c:a', 'aac', '-b:a', config.audio_bitrate,
                 '-ar', str(config.audio_sample_rate),
                 '-ac', '2',
@@ -762,26 +854,15 @@ class VideoEditor:
             logger.warning("Source has no audio stream; rendering a silent clip")
             cmd += ['-an']
 
-        # Encoder, quality and colour flags. Resolved once per process: this is
-        # a hardware encoder when the machine has one (freeing the CPU for
-        # transcription, the actual bottleneck), else libx264. The thread cap
-        # only applies to libx264 -- hardware encoders do not contend for cores.
         cmd += self._video_encode_args(threads=threads)
         cmd += ['-movflags', '+faststart']
 
-        # Framerate: previously hard-coded to '-r 30', which silently threw away
-        # half the frames of any 50/60fps source and made motion look choppy.
-        # Now the source rate is preserved, capped at video_max_fps so an
-        # unusual high-rate source cannot explode the encode time.
         target_fps = self._choose_fps(str(src))
         if target_fps:
             cmd += ['-r', f"{target_fps:g}"]
 
-        # NOTE: the -threads cap is applied inside _video_encode_args(), which
-        # knows whether the resolved encoder is CPU-bound and can honour it.
         cmd += ['-y', str(staging)]
 
-        # Timeouts must scale with the work: a fixed 30s killed any real clip.
         timeout = max(300, int(duration * 30) + 120)
 
         logger.info(
@@ -793,11 +874,11 @@ class VideoEditor:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             logger.error("FFmpeg timed out after %ss rendering %s", timeout, out.name)
-            self._cleanup(staging, ass_path)
+            self._cleanup(staging, ass_path, sheet_path)
             return False
         except Exception as exc:
             logger.error("FFmpeg could not be launched: %s", exc)
-            self._cleanup(staging, ass_path)
+            self._cleanup(staging, ass_path, sheet_path)
             return False
 
         if result.returncode != 0:
@@ -806,25 +887,24 @@ class VideoEditor:
                 result.returncode, out.name,
                 (result.stderr or '').strip()[-800:],
             )
-            self._cleanup(staging, ass_path)
+            self._cleanup(staging, ass_path, sheet_path)
             return False
 
         if not staging.exists() or staging.stat().st_size == 0:
             logger.error("FFmpeg reported success but produced no output for %s", out.name)
-            self._cleanup(staging, ass_path)
+            self._cleanup(staging, ass_path, sheet_path)
             return False
 
         try:
             if out.exists():
                 out.unlink()
-            # shutil.move handles cross-filesystem moves; Path.rename does not.
             shutil.move(str(staging), str(out))
         except Exception as exc:
             logger.error("Could not move rendered clip into place: %s", exc)
-            self._cleanup(staging, ass_path)
+            self._cleanup(staging, ass_path, sheet_path)
             return False
 
-        self._cleanup(None, ass_path)
+        self._cleanup(None, ass_path, sheet_path)
 
         dims = self.probe_dimensions(str(out))
         logger.info(
@@ -904,7 +984,7 @@ class VideoEditor:
         return random.choice(tracks)
 
     @staticmethod
-    def _build_audio_filters(with_music: bool) -> List[str]:
+    def _build_audio_filters(with_music: bool, in_label: str = '0:a:0') -> List[str]:
         """Audio chains ending in the ``[aout]`` label.
 
         Speech is always loudness-normalised to YouTube's target. When a music
@@ -912,9 +992,10 @@ class VideoEditor:
         it drops under dialogue and swells in the gaps) and mixed underneath.
         """
         loudnorm = 'loudnorm=I=-16:TP=-1.5:LRA=11'
+        src_label = in_label if in_label.startswith('[') else f'[{in_label}]'
 
         if not with_music:
-            return [f"[0:a:0]{loudnorm},aresample=async=1:first_pts=0[aout]"]
+            return [f"{src_label}{loudnorm},aresample=async=1:first_pts=0[aout]"]
 
         music_volume = float(getattr(config, 'music_volume', 0.15) or 0.15)
         duck = float(getattr(config, 'music_duck_factor', 0.3) or 0.3)
@@ -930,7 +1011,7 @@ class VideoEditor:
         return [
             # Speech: normalise once, then split -- one copy is the sidechain
             # control signal, the other is the audible track.
-            f"[0:a:0]{loudnorm},aresample=async=1:first_pts=0,"
+            f"{src_label}{loudnorm},aresample=async=1:first_pts=0,"
             f"asplit=2[speech][sidechain]",
             # Music: match the speech layout/rate before it reaches the mixer,
             # and trim it to the clip so the looped input cannot run long.
@@ -1039,19 +1120,9 @@ class VideoEditor:
     def _build_smart_background_filters(self, video_path: str, start_time: float,
                                         end_time: float,
                                         width: int = SHORT_WIDTH,
-                                        height: int = SHORT_HEIGHT):
-        """Person-aware framing, delegating to :mod:`smart_crop`.
-
-        The previous implementation lived here and never worked: it normalised
-        source-pixel face coordinates by the *output* size, averaged the
-        positions of different people into a point where nobody stood, and its
-        multi-person branch computed regions and then discarded them with
-        ``return build_background_filters('crop', ...)``. See smart_crop.py for
-        the full analysis.
-
-        Falls back to the configured non-smart backdrop whenever detection
-        finds nobody, so this stage can never fail a render.
-        """
+                                        height: int = SHORT_HEIGHT,
+                                        in_label: str = '0:v'):
+        """Person-aware framing, delegating to :mod:`smart_crop`."""
         fallback = getattr(config, 'smart_fallback_mode', 'crop')
         scaler = getattr(config, 'video_scaler', 'lanczos')
         try:
@@ -1063,14 +1134,15 @@ class VideoEditor:
                 max_people=getattr(config, 'smart_max_people', 4),
                 min_presence=getattr(config, 'smart_min_presence', 0.34),
                 scaler=scaler,
+                in_label=in_label,
             )
         except Exception as exc:
             logger.warning("Smart framing failed (%s); using '%s'", exc, fallback)
-            return build_background_filters(fallback, width, height, scaler=scaler)
+            return build_background_filters(fallback, width, height, scaler=scaler, in_label=in_label)
 
         if not result:
             logger.info("Smart framing found no people; using '%s'", fallback)
-            return build_background_filters(fallback, width, height, scaler=scaler)
+            return build_background_filters(fallback, width, height, scaler=scaler, in_label=in_label)
 
         filters, label, _count = result
         return list(filters), label

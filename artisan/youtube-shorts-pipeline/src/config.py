@@ -297,51 +297,6 @@ class Config:
         # anything remains posted.
         self.schedule_backlog_min = self._int('SCHEDULE_BACKLOG_MIN', 1, minimum=0)
 
-        # --- Queue health / backlog management -----------------------------
-        # Target total clips queued per niche (across all sources). Discovery
-        # will run to fill the queue when it drops below this.
-        self.queue_target_total = self._int('QUEUE_TARGET_TOTAL', 12, minimum=1)
-        # Minimum distinct source_video_ids in queue. If below, discovery runs
-        # to diversify the supply.
-        self.queue_min_distinct_sources = self._int('QUEUE_MIN_DISTINCT_SOURCES', 4, minimum=1)
-        # Maximum share of queue from a single source. If top source exceeds
-        # this share, discovery runs to diversify.
-        self.queue_max_top_source_share = self._float('QUEUE_MAX_TOP_SOURCE_SHARE', 0.50,
-                                                      minimum=0.0, maximum=1.0)
-        # Max un-uploaded clips per source before discovery skips it.
-        # The DB already enforces MAX_QUEUED_PER_SOURCE, this is for discovery logic.
-        self.queue_max_pending_per_source = self._int('QUEUE_MAX_PENDING_PER_SOURCE', 3, minimum=1)
-        # TTL for backlog clips in days. Clips older than this are marked
-        # 'expired' and no longer block discovery or upload.
-        self.backlog_ttl_days = self._int('BACKLOG_TTL_DAYS', 7, minimum=1)
-        # Max clips to generate from one source video per discovery cycle.
-        self.max_clips_generated_per_source_per_cycle = self._int('MAX_CLIPS_GENERATED_PER_SOURCE_PER_CYCLE', 2, minimum=1)
-
-        # --- Scheduled discovery -----------------------------------------
-        # Candidates pulled per channel before dedup/filtering. Must be >=
-        # schedule_max_videos so already-processed videos can't starve a run.
-        self.discovery_lookback = self._int('DISCOVERY_LOOKBACK', 10, minimum=1)
-        # Default cap on videos STARTED per scheduled run per niche. A niche
-        # can override with `max_videos:` in niches.yaml; SCHEDULE_MAX_TOTAL
-        # (below) still clamps the whole sweep so a stack of hungry niches
-        # can't blow the day's quota in one run. Quota: ~10k units/day, one
-        # upload ~1600 -> ~6 uploads/day, so a few videos/run is the norm.
-        self.schedule_max_videos = self._int('SCHEDULE_MAX_VIDEOS', 3, minimum=1)
-        # Hard ceiling on videos started across ALL niches in one sweep.
-        # 0 = unlimited (per-niche caps rule). Default matches the upload
-        # quota reality: ~6 uploads/day.
-        self.schedule_max_total = self._int('SCHEDULE_MAX_TOTAL', 6, minimum=0)
-        # Pull-once model (Allan's design): a sweep that already has un-uploaded
-        # clips for a niche should POST those instead of pulling+downloading a
-        # new source. Only pull again when the clip supply runs out. This is
-        # what turns "3 downloads a day" into "1 download, posted all day".
-        self.schedule_backlog_first = self._bool('SCHEDULE_BACKLOG_FIRST', True)
-        # A niche's clip supply is considered exhausted when fewer than this
-        # many un-uploaded clips remain (default 1 = pull only when nothing is
-        # left to post). Lower = re-pull sooner, higher = keep pulling while
-        # anything remains posted.
-        self.schedule_backlog_min = self._int('SCHEDULE_BACKLOG_MIN', 1, minimum=0)
-
         # Guaranteed fresh chop (SWEEP_GUARANTEE_FRESH): a full sweep always
         # chops one fresh source video per authenticated channel, regardless of
         # the shared sweep budget (SCHEDULE_MAX_TOTAL) and of queue health, so
@@ -434,6 +389,32 @@ class Config:
         # purpose: a red word in every group stops registering as emphasis.
         self.caption_punch_ratio = self._float('CAPTION_PUNCH_RATIO', 0.22,
                                                minimum=0.0)
+
+        # --- Edit structure (hook -> story -> payoff) ---------------------
+        # See src/story_edit.py. 'auto' restructures a clip when the transcript
+        # supports it and leaves it alone when it does not, so it is safe as a
+        # default; 'straight' is the one switch back to a continuous cut.
+        self.edit_style = (os.getenv('EDIT_STYLE') or 'auto').strip().lower()
+        if self.edit_style not in ('auto', 'question_first', 'cold_open', 'straight'):
+            self.edit_style = 'auto'
+        # A span shorter than this is a visual glitch rather than a shot, so the
+        # planner drops it instead of cutting to it for four frames.
+        self.edit_min_span = self._float('EDIT_MIN_SPAN_SECONDS', 0.6, minimum=0.1)
+        # How much of the answering beat rides along with a lifted question.
+        # "Are cows allowed on the plane?" alone dangles; with ~1.2s it lands as
+        # an exchange.
+        self.hook_tail_seconds = self._float('HOOK_TAIL_SECONDS', 1.2, minimum=0.0)
+        # Cold-open teaser length. Long enough to raise a question, short enough
+        # not to spend the payoff it is selling.
+        self.cold_open_seconds = self._float('COLD_OPEN_SECONDS', 1.8, minimum=0.0)
+        # The burned-in title hook, held for the whole clip.
+        self.hook_text_enabled = self._bool('HOOK_TEXT_ENABLED', True)
+        self.hook_uppercase = self._bool('HOOK_UPPERCASE', True)
+        self.hook_max_words = self._int('HOOK_MAX_WORDS', 9, minimum=1)
+        # Top of the frame. Speech captions live in the lower third, and two
+        # blocks of large text in the same band make both unreadable.
+        self.hook_y_ratio = self._float('HOOK_Y_RATIO', 0.11, minimum=0.0, maximum=1.0)
+        self.hook_prefer_transcript = self._bool('HOOK_PREFER_TRANSCRIPT', True)
 
         # --- Smart (person-aware) framing --------------------------------
         # Used when BACKGROUND_MODE=smart. See src/smart_crop.py.
