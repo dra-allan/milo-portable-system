@@ -1,15 +1,23 @@
-"""Choosing which seconds of a source file to ship.
+"""Choosing which seconds of a source file to ship -- and how to cut them.
 
 Windows are generated broadly, then ranked automatically by visual activity,
 audio energy, and Whisper's setup -> payoff score. There is no approval queue: a
 batch can produce 100 clips unattended while still preferring complete moments
 over random loud cuts.
+
+Each surviving window then gets an EDIT PLAN attached (:mod:`story_edit`), which
+is what turns a chosen range into hook -> story -> payoff instead of a straight
+trim. The plan is stored on the window as a plain dict under ``edit`` rather
+than as an object, for two reasons: the clipper database serialises plan rows
+with ``json.dumps``, and a recorded plan means a rejected clip can be
+re-rendered exactly as it was built.
 """
 
 from typing import Dict, List, Optional
 
+from . import story_edit
 from .config import config
-from .highlights import rank_windows
+from .highlights import rank_windows, transcript_for
 from .spec import CampaignSpec
 from .utils import scene_times, setup_logger, window_loudness
 
@@ -82,11 +90,25 @@ def candidate_windows(source: Dict, spec: CampaignSpec, db,
     # proceed. It is cached per source, so this scales to large batches.
     unique = rank_windows(unique, source, spec, db=db)
     picked = _spread(unique, limit, target)
+
+    # The transcript is already cached by rank_windows, so planning the edit is
+    # free here. Only the picked windows get one -- an edit plan for a window
+    # that will never render is wasted work.
+    segments = transcript_for(source)
     for window in picked:
-        logger.info('WINDOW file=%s start=%.2f dur=%.2f score=%.3f setup=%.3f payoff=%.3f',
+        plan = story_edit.build_plan(window, segments,
+                                    min_duration=spec.render.min_duration,
+                                    max_duration=spec.render.max_duration)
+        window['edit'] = plan.to_dict()
+        # Keep duration/end agreeing with what will actually be rendered, so
+        # validation and the campaign's duration rules see the real number.
+        window['duration'] = plan.duration
+        logger.info('WINDOW file=%s start=%.2f dur=%.2f score=%.3f setup=%.3f '
+                    'payoff=%.3f question=%.3f edit=%s',
                     source.get('filename'), window['start'], window['duration'],
                     window['score'], window.get('setup_score', 0.0),
-                    window.get('payoff_score', 0.0))
+                    window.get('payoff_score', 0.0),
+                    window.get('question_score', 0.0), plan.style)
     return picked
 
 
