@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787174547.1565914,
+  "updated_at": 1787176158.0295682,
   "routines": [
     {
       "name": "curate-skills",
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787172254.7461514,
+      "last_run": 1787176112.1266875,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787175875.3091044,
-      "runs": 665,
+      "next_run": 1787179740.199142,
+      "runs": 666,
       "failures": 89
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787172275.3883228,
+      "last_run": 1787176140.3807468,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~7265 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787175933.6015644,
-      "runs": 93,
+      "next_run": 1787179758.027555,
+      "runs": 94,
       "failures": 4
     },
     {
