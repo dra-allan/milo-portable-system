@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787117495.112809,
+  "updated_at": 1787123337.9063044,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787114771.5287035,
-      "last_status": "failed (124)",
-      "last_output": "timed out after 900s",
-      "next_run": 1787119368.0339594,
-      "runs": 657,
+      "last_run": 1787119414.1189487,
+      "last_status": "ok",
+      "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     209\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
+      "next_run": 1787123073.1304069,
+      "runs": 658,
       "failures": 32
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787116927.008576,
-      "last_status": "failed (1)",
-      "last_output": "run again with -v for the full traceback\n  [x] TimeoutExpired: Command '['git', '-C', 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\dra-brains', 'pull', '--rebase', '--autostash']' timed out after 180 seconds",
-      "next_run": 1787120998.7336965,
-      "runs": 651,
+      "last_run": 1787121243.482968,
+      "last_status": "ok",
+      "last_output": "[ok] Everything up-to-date",
+      "next_run": 1787124897.125489,
+      "runs": 652,
       "failures": 89
     },
     {
@@ -131,11 +131,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1787061193.2334797,
+      "last_run": 1787123037.508014,
       "last_status": "ok",
-      "last_output": "Morning briefing — Tue 18 Aug 2026.\n\n**Pipelines are healthy.** Cookies file intact at 3243 bytes (good auth, no clobber since the fix). Latest commits on main: `dbe56b3` ranking crop-to-fill, `bc481ac` ranking cookie fix, `b6df6ed` shorts cookie/local-cut fix. Nothing broken overnight that I can see.\n\n**Where things stand:**\n- **Shorts engine** — running. Capital Mindset is the earner (~18.5k views, doubled recently); Chop UG spiking on latest uploads; NXS/Wealth alive. Uploads after the fix: capital 12, flick 12, NXS 10, wealth 6, chop 3.\n- **Ranking pipeline** — fixed 08-17, swept 3 backlog niches + built 1 fresh. Working.\n\n**Open items on your plate:**\n1. **flick_shorts token** — still revoked (`invalid_grant`), needs re-auth whenever you want that channel posting again.\n2. **Per-channel Google Cloud projects** — the plan to kill the shared upload-quota wall. Needs you to create projects under each owning gmail, or point me at which to do first.\n3. **wealth_mindset quality gate** — last batch had garbled per-language titles; pipeline needs a check so it never uploads gibberish again.\n4. **daadaallan0@gmail.com** (Chop UG + RankDrop) has no connected Flow profile — add one when you're near Chrome.\n\n**One operational note:** if any video starts throwing \"Sign in to confirm you're not a bot\", re-export cookies via CDP first — they rotate. That's what cost us 6 hours on the 17th.\n\nWant me to start on any of the four? The Google Cloud per-channel quota project is the one that unblocks upload volume long-term.",
-      "next_run": 1787122800.0,
-      "runs": 12,
+      "last_output": "Overnight runs happened. Reading the logs to see results\nMorning. Here's where things stand at 06:35.\n\n**Overnight: 12 shorts uploaded, zero errors.** The backlog drained. 04:49 run put 6 on flick_shorts (Danny McBride interview, uUAH82U_jXU). 05:13 run put 6 on capital_mindset (yveLqk3DCNs, \"Once You Get Money, Buy These 10 Things Immediately\"). Both daemons are Running and self-scheduled — shorts fires 09:39 today (jittered), ranking 09:04.\n\n**The catch: fresh extraction is still blocked.** This morning's ranking sweep pulled 3 candidates and got 0 — all \"Video unavailable\" (Z-fC9JWV0xI, ftFLQYPDyzg, XU2qCP9ssRs). Shorts sweep chopped 0 fresh lanes, 5 chop failures. Same bot-fingerprint wall as yesterday. Uploads only worked because we were draining already-rendered clips. The 09:04/09:39 runs will likely find nothing new to post.\n\n**One decision needed today:** the extraction block. Yesterday's conclusion stands — yt-dlp config can't fix it; options are real-browser extraction (curl_cffi impersonate or browser-fetch flow) or waiting out YouTube's experiment. Backlog is nearly dry, so this now costs real uploads, not just convenience. My call: spend an hour on the curl_cffi impersonate path today; it's the only one that doesn't depend on upstream.\n\nAlso still open from yesterday: the 4 rogue Chop UG uploads (ids 465–468) waiting on your yes/no, and flick_shorts OAuth client needs recreating in Google Cloud Console before that channel can re-auth.\n\nWant me to take the curl_cffi shot at the extraction block?",
+      "next_run": 1787209200.0,
+      "runs": 13,
       "failures": 1
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787117399.3166428,
+      "last_run": 1787121297.7496164,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~6960 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787121094.912442,
-      "runs": 79,
+      "next_run": 1787124939.812969,
+      "runs": 80,
       "failures": 4
     },
     {
