@@ -19,6 +19,8 @@ from .utils import ensure_dir, setup_logger
 logger = setup_logger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+EDIT_STYLES = ('auto', 'question_first', 'cold_open', 'straight')
+
 
 def _load_env():
     try:
@@ -88,6 +90,11 @@ class ClipperConfig:
         # -- render geometry (Shorts native) ----------------------------
         self.width = _i('VIDEO_WIDTH', 1080)
         self.height = _i('VIDEO_HEIGHT', 1920)
+        # 30, not 60. The clipping playbook exports 60fps and for fast-motion
+        # footage that is the right call, but it roughly doubles encode time per
+        # clip on a 2-core box and is invisible on talking-head sources -- which
+        # is most campaign content. Set VIDEO_FPS=60 per campaign when the
+        # footage is actually moving.
         self.fps = _i('VIDEO_FPS', 30)
         # CRF 18 / preset medium is the measured setting from the Shorts lane:
         # veryfast reintroduced blocking beside hard caption edges, which the
@@ -114,10 +121,41 @@ class ClipperConfig:
 
         # -- speech captions (ASS, like the Shorts lane) ------------------
         self.caption_enabled = _b('CAPTION_ENABLED', True)
+        # 'clipfarm' (registered by story_edit) is the one-group-at-a-time look
+        # that pairs with a title hook: see src/story_edit.py.
         self.caption_style = os.getenv('CAPTION_STYLE', 'viral').lower()
         self.caption_font_size = _i('CAPTION_FONT_SIZE', 0) or None
         self.caption_max_words = _i('CAPTION_MAX_WORDS', 0) or None
         self.caption_punch_ratio = _f('CAPTION_PUNCH_RATIO', 0.22)
+
+        # -- edit structure (hook -> story -> payoff) ---------------------
+        # See src/story_edit.py. 'auto' restructures a clip when the transcript
+        # supports it and leaves it alone when it does not, so it is safe as a
+        # default; 'straight' is the one switch back to a continuous cut.
+        self.edit_style = (os.getenv('EDIT_STYLE') or 'auto').strip().lower()
+        if self.edit_style not in EDIT_STYLES:
+            self.edit_style = 'auto'
+        # A span shorter than this is a visual glitch rather than a shot, so the
+        # planner drops it instead of cutting to it for four frames.
+        self.edit_min_span = _f('EDIT_MIN_SPAN_SECONDS', 0.6)
+        # How much of the answering beat rides along with a lifted question.
+        # "Are cows allowed on the plane?" alone dangles; with ~1.2s it lands as
+        # an exchange.
+        self.hook_tail_seconds = _f('HOOK_TAIL_SECONDS', 1.2)
+        # Cold-open teaser length. Long enough to raise a question, short enough
+        # not to spend the payoff it is selling.
+        self.cold_open_seconds = _f('COLD_OPEN_SECONDS', 1.8)
+        # The burned-in title hook, held for the whole clip. Roughly 80% of
+        # Shorts viewers scroll with the sound off, so this and the speech
+        # captions are the only things doing any work for them.
+        self.hook_text_enabled = _b('HOOK_TEXT_ENABLED', True)
+        self.hook_uppercase = _b('HOOK_UPPERCASE', True)
+        self.hook_max_words = _i('HOOK_MAX_WORDS', 9)
+        # Top of the frame. Speech captions live in the lower third, and two
+        # blocks of large text in the same band make both unreadable.
+        self.hook_y_ratio = _f('HOOK_Y_RATIO', 0.11)
+        # Prefer a hook lifted from the footage over model/template copy.
+        self.hook_prefer_transcript = _b('HOOK_PREFER_TRANSCRIPT', True)
 
         # -- clip selection ----------------------------------------------
         self.clips_per_source = max(1, _i('CLIPS_PER_SOURCE', 2))
@@ -210,6 +248,38 @@ class ClipperConfig:
         if not os.getenv('CAPTION_PUNCH_RATIO') \
                 and self.style.get('caption_punch_ratio') is not None:
             self.caption_punch_ratio = float(self.style['caption_punch_ratio'])
+        # Edit structure is a style choice, so it follows the same path. An
+        # unknown value in YAML is ignored rather than raising: a typo in a
+        # style file should not stop a build.
+        if not os.getenv('EDIT_STYLE') and self.style.get('edit_style'):
+            candidate = str(self.style['edit_style']).strip().lower()
+            if candidate in EDIT_STYLES:
+                self.edit_style = candidate
+            else:
+                logger.warning('clipper.yaml style.edit_style=%r is not one of '
+                               '%s; keeping %s', candidate,
+                               ', '.join(EDIT_STYLES), self.edit_style)
+        if not os.getenv('HOOK_TEXT_ENABLED') \
+                and self.style.get('hook_text_enabled') is not None:
+            self.hook_text_enabled = bool(self.style['hook_text_enabled'])
+        if not os.getenv('HOOK_UPPERCASE') \
+                and self.style.get('hook_uppercase') is not None:
+            self.hook_uppercase = bool(self.style['hook_uppercase'])
+        if not os.getenv('HOOK_MAX_WORDS') and self.style.get('hook_max_words'):
+            self.hook_max_words = int(self.style['hook_max_words'])
+        if not os.getenv('HOOK_Y_RATIO') \
+                and self.style.get('hook_y_ratio') is not None:
+            self.hook_y_ratio = float(self.style['hook_y_ratio'])
+        if not os.getenv('HOOK_PREFER_TRANSCRIPT') \
+                and self.style.get('hook_prefer_transcript') is not None:
+            self.hook_prefer_transcript = bool(
+                self.style['hook_prefer_transcript'])
+        if not os.getenv('COLD_OPEN_SECONDS') \
+                and self.style.get('cold_open_seconds') is not None:
+            self.cold_open_seconds = float(self.style['cold_open_seconds'])
+        if not os.getenv('HOOK_TAIL_SECONDS') \
+                and self.style.get('hook_tail_seconds') is not None:
+            self.hook_tail_seconds = float(self.style['hook_tail_seconds'])
 
     # -- path helpers ---------------------------------------------------
     def _path(self, env, default, create=True):
