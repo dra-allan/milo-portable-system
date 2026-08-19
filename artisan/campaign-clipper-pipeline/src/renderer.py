@@ -1,4 +1,26 @@
-"""Render one campaign clip: full crop, captions, logo, encode."""
+"""Render one campaign clip: edit, crop, captions, logo, encode.
+
+TWO RENDER PATHS, ON PURPOSE
+----------------------------
+``straight`` (one span)
+    ``-ss`` / ``-t`` around a single continuous range, exactly as before. Every
+    clip that passes validation today keeps rendering through this path with the
+    same filtergraph, so the edit work below cannot regress existing campaigns.
+
+``reordered`` (two or more spans)
+    ``trim``/``atrim`` per span, rebased with ``setpts``, then ``concat``. This
+    is what lets a clip open on a question that was spoken in the middle of the
+    source (see :mod:`story_edit`).
+
+WHY CAPTIONS CANNOT BE BUILT INDEPENDENTLY
+------------------------------------------
+A reordered clip's audio no longer matches the source timeline, so captioning
+from source-timeline word timings would desync every word by however far its
+span moved -- silently, and differently per clip. So both the filtergraph and
+the captions are derived from the *same* :class:`~story_edit.EditPlan` and the
+same span offsets. If a span moves, the picture and the text move together. That
+is the same structural-sync discipline the shorts lane uses for keyframe drift.
+"""
 
 import shutil
 from pathlib import Path
@@ -6,6 +28,7 @@ from typing import Dict, List, Optional
 
 from . import overlay as ov
 from . import smart_crop
+from . import story_edit
 from . import viral_captions as vc
 from .config import config
 from .spec import CampaignSpec
@@ -76,12 +99,19 @@ def _escape_filter_path(path: str) -> str:
     return p
 
 
-def _build_captions(spec: CampaignSpec, plan: Dict, work: Path) -> Optional[Path]:
-    """Build an ASS caption file from the source transcript for this window.
+def _build_captions(spec: CampaignSpec, plan: Dict, work: Path,
+                    edit: story_edit.EditPlan) -> Optional[Path]:
+    """Build an ASS caption file for this clip's OUTPUT timeline.
 
     Returns None when captions are disabled, no transcript exists, or nothing
-    falls inside the clip window -- the renderer then skips the subtitles
-    filter entirely rather than burning an empty file.
+    falls inside the clip -- the renderer then skips the subtitles filter
+    entirely rather than burning an empty file.
+
+    The reordered branch is the important one: segments are rewritten into
+    output time by ``story_edit.remap_segments`` and then handed over with
+    ``time_offset=0``, because they are already clip-relative. Passing the
+    source-time segments with a single offset -- which is correct for a straight
+    cut -- would desync every word of a reordered clip.
     """
     if not config.caption_enabled or not plan.get('has_audio'):
         return None
@@ -99,6 +129,16 @@ def _build_captions(spec: CampaignSpec, plan: Dict, work: Path) -> Optional[Path
                     spec.id, plan.get('source_name'))
         return None
 
+    if edit.is_reordered:
+        segments = story_edit.remap_segments(segments, edit)
+        time_offset = 0.0
+        if not segments:
+            logger.info('CAPTION_SKIP campaign=%s source=%s no speech inside '
+                        'the edited spans', spec.id, plan.get('source_name'))
+            return None
+    else:
+        time_offset = float(edit.coverage_start)
+
     ass_path = work / 'captions.ass'
     try:
         keywords = list(spec.caption.required_keywords) \
@@ -106,8 +146,8 @@ def _build_captions(spec: CampaignSpec, plan: Dict, work: Path) -> Optional[Path
         document = vc.build_viral_ass(
             segments,
             preset_name=config.caption_style,
-            time_offset=float(plan.get('start', 0.0)),
-            clip_duration=float(plan.get('duration', 0.0)),
+            time_offset=time_offset,
+            clip_duration=edit.duration,
             keywords=keywords,
             font_size=config.caption_font_size,
             max_words=config.caption_max_words,
@@ -123,18 +163,27 @@ def _build_captions(spec: CampaignSpec, plan: Dict, work: Path) -> Optional[Path
                     spec.id, plan.get('source_name'))
         return None
     ass_path.write_text(document, encoding='utf-8')
-    logger.info('CAPTION_BURNED campaign=%s source=%s words in window',
-                spec.id, plan.get('source_name'))
+    logger.info('CAPTION_BURNED campaign=%s source=%s style=%s edit=%s',
+                spec.id, plan.get('source_name'), config.caption_style,
+                edit.style)
     return ass_path
 
 
 def render_clip(spec: CampaignSpec, plan: Dict, copy: Dict,
                 logo_path: Optional[Path] = None,
                 stamp_logo: bool = True) -> Optional[Dict]:
-    """Smart/full crop the source, then composite caption/logo layers."""
+    """Cut the edit, frame it 9:16, then composite caption/logo layers."""
     source = Path(plan['source_path'])
     if not source.exists():
         logger.error('RENDER_SKIP missing_source=%s', source)
+        return None
+
+    # One plan object drives the cut, the crop bounds, the captions and the
+    # output duration. Old clip rows with no stored plan yield a straight cut.
+    edit = story_edit.plan_from(plan)
+    duration = edit.duration
+    if duration <= 0:
+        logger.error('RENDER_SKIP campaign=%s empty edit plan', spec.id)
         return None
 
     work = ensure_dir(config.campaign_temp_dir(spec.id) /
@@ -146,8 +195,16 @@ def render_clip(spec: CampaignSpec, plan: Dict, copy: Dict,
     sheets: List[Path] = []
     sheet_reports: List[Dict] = []
     if spec.render.own_text_required or copy.get('overlay_text'):
+        # A hook lifted from the transcript belongs at the TOP of the frame:
+        # speech captions live in the lower third, and two blocks of large text
+        # fighting for the same band is the one reliable way to make both
+        # unreadable on a phone.
+        y_ratio = (config.hook_y_ratio
+                   if copy.get('hook_source') in ('question', 'payoff')
+                   else None)
         sheet = ov.text_sheet(copy.get('overlay_text', ''), work / 'text.png',
-                              highlight=copy.get('highlight', ''))
+                              highlight=copy.get('highlight', ''),
+                              y_ratio=y_ratio)
         if sheet:
             ink = ov.sheet_ink(sheet)
             sheet_reports.append({'path': str(sheet), 'ink': ink})
@@ -157,16 +214,37 @@ def render_clip(spec: CampaignSpec, plan: Dict, copy: Dict,
                 return None
             sheets.append(sheet)
 
+    # Frame from the whole range the edit touches, not just the first span: a
+    # crop chosen from the hook alone can put the story's speaker off-screen.
     crop = smart_crop.plan_crop(
-        str(source), float(plan['start']),
-        float(plan['start']) + float(plan['duration']),
+        str(source), edit.coverage_start, edit.coverage_end,
         target_w=config.width, target_h=config.height)
     if crop is None:
         logger.info('SMART_CROP_FALLBACK file=%s using centre crop', source.name)
     else:
         logger.info('SMART_CROP_APPLIED file=%s crop=%s', source.name, crop)
 
-    chains = ov.crop_chain('0:v', 'framed', crop=crop)
+    has_audio = bool(plan.get('has_audio'))
+    chains: List[str] = []
+    audio_label: Optional[str] = None
+
+    if edit.is_reordered:
+        seek, read_span = story_edit.read_window(edit)
+        args = ['-ss', f'{seek:.3f}', '-t', f'{read_span:.3f}', '-i', str(source)]
+        edit_chains, video_label, audio_label = story_edit.build_filtergraph(
+            edit, has_audio, seek)
+        chains.extend(edit_chains)
+        logger.info('EDIT_APPLIED campaign=%s style=%s spans=%d out=%.2fs',
+                    spec.id, edit.style, len(edit.spans), duration)
+    else:
+        args = ['-ss', f'{edit.coverage_start:.3f}', '-t', f'{duration:.3f}',
+                '-i', str(source)]
+        video_label = '0:v'
+
+    if not has_audio:
+        args += ['-f', 'lavfi', '-t', f'{duration:.3f}', '-i', SILENT_INPUT]
+
+    chains += ov.crop_chain(video_label, 'framed', crop=crop)
     label = 'framed'
     if sheets:
         chains += ov.sheet_chain(label, 'texted', sheets)
@@ -181,7 +259,7 @@ def render_clip(spec: CampaignSpec, plan: Dict, copy: Dict,
         label = 'branded'
         logo_used = True
     captions_used = False
-    ass_path = _build_captions(spec, plan, work)
+    ass_path = _build_captions(spec, plan, work, edit)
     if ass_path and ass_path.exists():
         chains.append(
             f'[{label}]format=yuv444p,'
@@ -191,15 +269,12 @@ def render_clip(spec: CampaignSpec, plan: Dict, copy: Dict,
         captions_used = True
     chains.append(f'[{label}]fps={config.fps},format=yuv420p[vout]')
 
-    duration = float(plan['duration'])
-    has_audio = bool(plan.get('has_audio'))
-    args = ['-ss', f"{float(plan['start']):.3f}", '-t', f'{duration:.3f}',
-            '-i', str(source)]
-    if not has_audio:
-        args += ['-f', 'lavfi', '-t', f'{duration:.3f}', '-i', SILENT_INPUT]
     args += ['-filter_complex', ';'.join(chains), '-map', '[vout]']
     if has_audio:
-        args += ['-map', '0:a:0?', '-c:a', 'aac', '-b:a', config.audio_bitrate,
+        # A reordered edit's audio comes out of the concat; a straight cut maps
+        # the input stream directly, exactly as it always did.
+        args += ['-map', f'[{audio_label}]'] if audio_label else ['-map', '0:a:0?']
+        args += ['-c:a', 'aac', '-b:a', config.audio_bitrate,
                  '-ar', '48000', '-ac', '2']
     else:
         args += ['-map', '1:a', '-c:a', 'aac', '-b:a', '128k', '-shortest']
@@ -208,22 +283,24 @@ def render_clip(spec: CampaignSpec, plan: Dict, copy: Dict,
     args += _encode_args() + ['-t', f'{duration:.3f}', str(out_path)]
 
     if config.dry_run:
-        logger.info('DRY_RUN would render %s', out_path.name)
-        return {'path': str(out_path), 'dry_run': True}
+        logger.info('DRY_RUN would render %s (%s)', out_path.name, edit.describe())
+        return {'path': str(out_path), 'dry_run': True, 'edit': edit.to_dict()}
     if not run_ffmpeg(args, timeout=config.render_timeout):
-        logger.error('RENDER_FAILED campaign=%s source=%s start=%.2f',
-                     spec.id, plan['source_name'], plan['start'])
+        logger.error('RENDER_FAILED campaign=%s source=%s start=%.2f edit=%s',
+                     spec.id, plan['source_name'], plan['start'], edit.style)
         return None
 
     media = probe_media(str(out_path))
-    logger.info('RENDER_OK file=%s %dx%d %.2fs audio=%s logo=%s encoder=%s',
-                out_path.name, media['width'], media['height'], media['duration'],
-                media['has_audio'], logo_used, resolve_encoder())
+    logger.info('RENDER_OK file=%s %dx%d %.2fs audio=%s logo=%s edit=%s '
+                'encoder=%s', out_path.name, media['width'], media['height'],
+                media['duration'], media['has_audio'], logo_used, edit.style,
+                resolve_encoder())
     return {'path': str(out_path), 'work_dir': str(work),
             'sheets': sheet_reports, 'logo_stamped': logo_used,
             'captions': captions_used,
             'logo_path': str(logo_path) if logo_path else '',
             'smart_crop': crop is not None, 'crop': crop,
+            'edit': edit.to_dict(),
             'encoder': resolve_encoder(), 'media': media}
 
 
