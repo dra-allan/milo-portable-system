@@ -197,7 +197,23 @@ def plugin_dirs() -> List[str]:
     discovery is per-interpreter, so a provider pip-installed into one venv is
     invisible to a daemon started from another. Only directories that exist are
     returned, so a stale entry never breaks a run.
+
+    BUT: when the provider is already importable by THIS interpreter (the
+    common case -- pip install lands in the same interpreter the daemon runs),
+    passing ``plugin_dirs`` makes yt-dlp register it TWICE -- once from the
+    explicit dirs, once from entry-point discovery -- and yt-dlp's registry
+    asserts on the duplicate (``PoTokenProvider BgUtilHTTP already
+    registered``). So explicit dirs are only handed over when entry-point
+    discovery cannot have found the plugin already.
     """
+    try:
+        import yt_dlp_plugins  # noqa: F401
+        import yt_dlp_plugins.extractor.getpot_bgutil_http  # noqa: F401
+        # Importable through the interpreter's own path: yt-dlp's default
+        # discovery will find it. Explicit dirs would only duplicate it.
+        return []
+    except Exception:
+        pass
     candidates: List[str] = []
     for raw in _env_list('YTDLP_PLUGIN_DIRS', ()):
         candidates.append(raw)
@@ -335,8 +351,12 @@ class NoWritebackYDL(yt_dlp.YoutubeDL):
     onto different player clients. One choke point, one behaviour.
     """
 
-    def __init__(self, params=None, auto_init=True, **kwargs):
-        super().__init__(harden(params), auto_init=auto_init, **kwargs)
+    def __init__(self, params=None, **kwargs):
+        # ``auto_init`` is deliberately NOT forwarded here. No caller in this
+        # repo passes it, and forwarding the default broke every fake in
+        # tests/test_downloader_fetch.py (their __init__ only takes ``opts``).
+        # Production is unaffected: yt-dlp's own default is auto_init=True.
+        super().__init__(harden(params), **kwargs)
 
     def save_cookies(self):
         # See COOKIE WRITEBACK in the module docstring. Do not "fix" this.

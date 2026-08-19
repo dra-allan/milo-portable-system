@@ -106,6 +106,12 @@ class DownloaderFetchTests(unittest.TestCase):
 
     def _install_fake(self, cls):
         """Inject a fake yt_dlp module for the duration of one test."""
+        # _ytdlp binds yt_dlp.YoutubeDL at import time, so a _ytdlp already in
+        # sys.modules (e.g. imported by test_ytdlp_hardening earlier in the
+        # session) would keep subclassing the REAL YoutubeDL and this fake would
+        # be ignored -- every download_audio call then hits the network. Evict
+        # it so the next lazy import re-binds against the fake.
+        sys.modules.pop('_ytdlp', None)
         fake = types.ModuleType('yt_dlp')
         fake.YoutubeDL = cls
         utils = types.ModuleType('yt_dlp.utils')
