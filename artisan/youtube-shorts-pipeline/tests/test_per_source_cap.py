@@ -1,12 +1,12 @@
 """The 2026-08-19 burst, as a test.
 
-five of the six clips flick_shorts published that day came from one source video
+Six of the clips flick_shorts published that day came from one source video
 (uUAH82U_jXU) and six of capital_mindset's came from another (yveLqk3DCNs).
-Both runs were inside the 6/channel/day cap and both broke the 3/source/day
-cadence rule, because the drain loop only consulted the channel budget.
+Both runs sat inside the 6/channel/day cap and both broke the 3/source/day
+cadence rule, because the drain loop only ever consulted the channel budget.
 
-These tests exercise the selection directly -- no database, no Google -- so the
-cap is pinned by something cheaper than noticing it on YouTube the next morning.
+These exercise the selection directly -- no database, no Google -- so the cap is
+pinned by something cheaper than noticing it on YouTube the next morning.
 """
 import sys
 from pathlib import Path
@@ -34,6 +34,7 @@ def test_single_source_cannot_exceed_its_daily_cap():
     plan, skips = select_uploads(rows, {'flick_shorts': 6},
                                 {'uUAH82U_jXU': 3}, _one_channel)
     assert len(plan) == 3, 'the per-source cap has to bind before the channel cap'
+    # All three held-back clips are reported, not just the one that tripped it.
     assert skips['source_cap'] == 3
     assert skips['channel_cap'] == 0
 
@@ -72,7 +73,7 @@ def test_a_source_already_at_cap_today_is_skipped_entirely():
     chosen = {row['source_video_id'] for _, row in plan}
     assert chosen == {'fresh'}
     assert len(plan) == 2
-    assert skips['source_cap'] == 1  # one probe per exhausted source, then dropped
+    assert skips['source_cap'] == 4, 'all four blocked clips should be reported'
 
 
 def test_multiple_channels_keep_independent_budgets():
@@ -88,8 +89,16 @@ def test_multiple_channels_keep_independent_budgets():
     per_channel = {}
     for channel, _row in plan:
         per_channel[channel] = per_channel.get(channel, 0) + 1
-    # This is the exact 8/19 scenario: it used to produce 6 and 6.
+    # This is the exact 8/19 scenario. It used to produce 6 and 6.
     assert per_channel == {'flick_shorts': 3, 'capital_mindset': 3}
+
+
+def test_run_limit_caps_the_whole_run():
+    rows = _rows('a', 3) + _rows('b', 3)
+    plan, skips = select_uploads(rows, {'flick_shorts': 6}, {'a': 3, 'b': 3},
+                                _one_channel, run_limit=2)
+    assert len(plan) == 2
+    assert skips['run_limit'] == 4
 
 
 def test_rows_without_a_channel_binding_are_counted_not_uploaded():

@@ -73,15 +73,18 @@ def select_uploads(rows: List[Dict], channel_budgets: Dict[str, int],
         rows: queued clip rows, oldest first.
         channel_budgets: channel key -> uploads still allowed today.
         source_budgets: source video id -> uploads still allowed today.
-            Mutated copies are used internally; the caller's dicts are not
-            touched, because the caller prints them as the *starting* budget.
+            Copies are used internally; the caller's dicts are never mutated,
+            because the caller prints them as the *starting* budget afterwards.
         channel_of: maps a row to its upload channel key.
         run_limit: hard ceiling for this run (0/None = no extra ceiling).
 
     Returns:
         ``(plan, skips)`` where plan is an ordered list of
-        ``(channel_key, row)`` and skips counts why rows were dropped:
+        ``(channel_key, row)`` and skips counts CLIPS dropped, per reason:
         ``no_channel``, ``channel_cap``, ``source_cap``, ``run_limit``.
+        Clip counts, not source counts -- the summary line is the only place
+        anyone checks whether the cadence cap actually bit, so "3 clips held
+        back" has to read as 3.
     """
     channel_left = dict(channel_budgets)
     source_left = dict(source_budgets)
@@ -111,10 +114,11 @@ def select_uploads(rows: List[Dict], channel_budgets: Dict[str, int],
             progressed = False
             for source in list(active):
                 index = pointers[source]
-                if index >= len(by_source[source]):
+                queue = by_source[source]
+                if index >= len(queue):
                     active.remove(source)
                     continue
-                row = by_source[source][index]
+                row = queue[index]
                 pointers[source] = index + 1
                 progressed = True
 
@@ -126,9 +130,14 @@ def select_uploads(rows: List[Dict], channel_budgets: Dict[str, int],
                     continue
                 if source_left.get(source, 0) <= 0:
                     # THE CHECK THAT WAS MISSING. Counted separately from
-                    # channel_cap so the summary distinguishes "channel is done
-                    # for today" from "this source is done for today".
-                    skips['source_cap'] += 1
+                    # channel_cap so the summary distinguishes "this channel is
+                    # done for today" from "this source is done for today".
+                    #
+                    # Every clip still queued behind this one is blocked by the
+                    # same cap, so they are all counted here before the source
+                    # leaves the rotation -- otherwise the summary reports 1
+                    # where 3 clips were held back.
+                    skips['source_cap'] += len(queue) - index
                     active.remove(source)
                     continue
 
@@ -247,14 +256,14 @@ def run(niche: Optional[str] = None, channel_override: Optional[str] = None,
               'daily cap)')
         return 0
 
-    uploaders: Dict[str, YouTubeUploader] = {}
+    uploaders: Dict[str, Optional[YouTubeUploader]] = {}
     remaining = dict(channel_budgets)
 
     for channel, row in plan:
         path = row.get('local_path') or ''
         if not path or not Path(path).exists():
             # Stale absolute paths from the old Windows box land here. Marked so
-            # they stop being replanned every single sweep.
+            # they stop being replanned on every single sweep.
             summary['missing'] += 1
             print(f"  SKIP {row['source_video_id']}#{row['segment_index']}: "
                   'file missing')
@@ -266,9 +275,9 @@ def run(niche: Optional[str] = None, channel_override: Optional[str] = None,
             try:
                 uploaders[channel] = YouTubeUploader(channel=channel)
             except Exception as exc:
-                # Includes ChannelIdentityError: a channel whose token points at
-                # the wrong YouTube channel is skipped entirely, not retried.
-                summary['failed'] += 1
+                # Includes ChannelIdentityError: a channel whose token resolves
+                # to the wrong YouTube channel is skipped entirely, never
+                # retried, and never uploaded to.
                 print(f'  ERROR {channel}: {str(exc)[:400]}')
                 uploaders[channel] = None
         uploader = uploaders.get(channel)
