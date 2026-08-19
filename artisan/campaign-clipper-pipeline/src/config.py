@@ -226,6 +226,34 @@ class ClipperConfig:
         self.banned_words = [str(w).lower()
                              for w in (raw.get('banned_words') or [])]
 
+        # -- autopilot intake rules ---------------------------------------
+        # The eligibility wall, as data. Every prior submission was wasted on a
+        # campaign demanding 1000 followers, so the ability to retune this
+        # without touching code is the point, not a nicety.
+        intake = raw.get('intake') or {}
+        self.intake_reject_keywords = [
+            str(k).strip().lower()
+            for k in (intake.get('reject_keywords') or []) if str(k).strip()]
+        self.intake_max_progress = float(intake.get('max_progress_pct') or 20)
+        self.campaign_channels = [
+            str(c).strip() for c in (intake.get('campaign_channels') or [])
+            if str(c).strip()]
+        self.intake_unknown_niche_channel = str(
+            intake.get('unknown_niche_channel') or '').strip()
+
+        # -- opencli browser bridge ---------------------------------------
+        # No default profile on purpose: it names one physical Chrome. Env wins,
+        # as everywhere else in this file.
+        opencli = raw.get('opencli') or {}
+        self.opencli_bin = (os.getenv('OPENCLI_BIN')
+                            or str(opencli.get('bin') or 'opencli')).strip()
+        self.opencli_session = (os.getenv('OPENCLI_SESSION')
+                                or str(opencli.get('session')
+                                       or 'clipster')).strip()
+        self.opencli_profile = (os.getenv('OPENCLI_PROFILE')
+                                or str(opencli.get('profile') or '')).strip()
+        self.opencli_timeout = _i('OPENCLI_TIMEOUT', 120)
+
         # niche -> channel key map (config/channels.yaml). A campaign's own
         # upload_channel field beats this; this beats the global env value.
         self.channel_map = self._load_channels()
@@ -320,6 +348,37 @@ class ClipperConfig:
     def channel_for_niche(self, niche: str) -> str:
         """Channel key for a niche, or '' when unbound."""
         return self.channel_map.get(str(niche or '').strip().lower(), '')
+
+    def resolve_channel(self, upload_channel: str = '',
+                        niche: str = '') -> str:
+        """The channel a campaign's clips upload to, or '' meaning skip.
+
+        Order: the campaign spec's explicit field, then the niche map, then the
+        unknown-niche catch-all, then the global env value.
+
+        The result is then **guarded**. Only channels listed in
+        ``intake.campaign_channels`` may receive campaign clips; anything else
+        returns ''. The guard deliberately applies to the explicit spec field
+        too, because the failure it prevents (a campaign clip posted to a
+        channel the ranking pipeline owns) is just as bad when a human typed the
+        channel name as when the niche map produced it.
+
+        Lives here rather than in ``main`` so it is testable without importing
+        the render stack.
+        """
+        channel = (upload_channel or '').strip()
+        if not channel:
+            channel = (self.channel_for_niche(niche)
+                       or self.intake_unknown_niche_channel
+                       or self.upload_channel)
+        channel = (channel or '').strip()
+        if not channel:
+            return ''
+        if self.campaign_channels and channel not in self.campaign_channels:
+            logger.warning('CHANNEL_NOT_CAMPAIGN channel=%s niche=%s skip',
+                           channel, niche or '?')
+            return ''
+        return channel
 
     def get(self, key, default=None):
         return self.defaults.get(key, default)
