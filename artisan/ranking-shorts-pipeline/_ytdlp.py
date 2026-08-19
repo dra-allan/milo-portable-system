@@ -101,6 +101,16 @@ def impersonate_target():
 
 
 def plugin_dirs() -> List[str]:
+    """Explicit plugin dirs ONLY when entry-point discovery cannot find the
+    provider already. Passing them for an importable, pip-installed plugin
+    makes yt-dlp register it twice and assert (``BgUtilHTTP already
+    registered``). See the shorts lane's copy for the full rationale."""
+    try:
+        import yt_dlp_plugins  # noqa: F401
+        import yt_dlp_plugins.extractor.getpot_bgutil_http  # noqa: F401
+        return []
+    except Exception:
+        pass
     candidates: List[str] = list(_env_list('YTDLP_PLUGIN_DIRS', ()))
     try:
         import site
@@ -195,8 +205,8 @@ def harden(params: Optional[Dict]) -> Dict:
 class NoWritebackYDL(yt_dlp.YoutubeDL):
     """See the shorts lane's copy for the full rationale."""
 
-    def __init__(self, params=None, auto_init=True, **kwargs):
-        super().__init__(harden(params), auto_init=auto_init, **kwargs)
+    def __init__(self, params=None, **kwargs):
+        super().__init__(harden(params), **kwargs)
 
     def save_cookies(self):
         return None
