@@ -1,16 +1,5 @@
 """Entry point and orchestration for the YouTube Shorts pipeline.
 
-The previous src/main.py was a truncated fragment: it began mid-class with
-``def process_video_for_shorts(self, ...)`` at column 0 and contained no class
-definition, no imports, no argparse and no ``__main__`` block. Nothing in it
-could ever execute -- yet run_pipeline.bat calls ``python -m src.main --mode
-once`` and the log the user captured shows a ``main`` logger running, meaning
-the working copy on the Windows box had diverged from the repo.
-
-This file restores a complete, runnable orchestrator around the existing
-modules (downloader, transcriber, processor, video_editor, uploader,
-scheduler, database) without changing their public APIs.
-
 Modes:
   test           -- verify ffmpeg/deps/config/credentials, no downloads
   once           -- process one video (URL or ID), or sweep configured niches
@@ -31,17 +20,6 @@ and each retry paid for the download and the transcription again:
 
 So a crash in rendering costs only the rendering on the next run, and
 ``--force`` is the only thing that redoes finished work.
-
-PHASE 6: CLIP PLAN CACHE + OVERLAPPED FETCH/RENDER
----------------------------------------------------
-- Clip plan cache: the full ranked candidate list is persisted to
-  data/clip_plans/<video_id>.json after transcription. ``--render-more N``
-  reads it and renders additional clips with zero re-download and zero
-  re-transcription.
-- ``--max-source-minutes N`` limits transcription to the first N minutes
-  (useful for fast discovery on hour-long sources; 0 = full source).
-- Overlapped fetch+render: while one clip renders (CPU), the next clip's
-  footage is downloaded (network). Producer/consumer via ThreadPoolExecutor.
 """
 
 import argparse
@@ -64,11 +42,13 @@ try:
     from .database import PipelineDatabase
     from .processor import ContentProcessor
     from .utils import cleanup_temp_files, sanitize_filename, setup_logger
+    from . import story_edit
 except ImportError:  # pragma: no cover
     from config import config
     from database import PipelineDatabase
     from processor import ContentProcessor
     from utils import cleanup_temp_files, sanitize_filename, setup_logger
+    import story_edit
 
 logger = setup_logger(__name__, log_file=Path(config.logs_dir) / 'pipeline.log')
 
@@ -84,12 +64,7 @@ _YT_PATTERNS = (
 
 
 def extract_video_id(value: str) -> Optional[str]:
-    """Pull an 11-char video ID out of a URL, or validate a bare ID.
-
-    The old batch file passed the raw URL straight through, so a URL with
-    extra query params (the user's '...&pp=ygUFZ3RhIHY%3D') was treated as a
-    video ID.
-    """
+    """Pull an 11-char video ID out of a URL, or validate a bare ID."""
     if not value:
         return None
     value = value.strip().strip('"').strip("'")
@@ -139,18 +114,15 @@ class ShortsPipeline:
         self.upload_enabled = config.upload_enabled if upload is None else upload
         self.transcript_dir = Path(config.data_dir) / 'transcripts'
         self.transcript_dir.mkdir(parents=True, exist_ok=True)
-        # Phase 6: clip plan cache directory
         self.clip_plan_dir = Path(config.data_dir) / 'clip_plans'
         self.clip_plan_dir.mkdir(parents=True, exist_ok=True)
 
-        # Heavy/optional components are created lazily so that `--mode test`
-        # and a no-upload run don't require every dependency to be installed.
         self._downloader = None
         self._transcriber = None
         self._caption_transcriber = None
         self._video_editor = None
         self._uploader = None
-        self._uploaders = {}  # channel key -> YouTubeUploader (cached)
+        self._uploaders = {}
         self._whisper_model = whisper_model or config.whisper_model
 
         self.stats = {
@@ -186,15 +158,6 @@ class ShortsPipeline:
 
     @property
     def caption_transcriber(self):
-        """Accurate, word-level transcriber used only on selected clips.
-
-        Separate from ``self.transcriber`` because the discovery pass runs with
-        ``word_timestamps=False`` and a tiny model for speed -- fine for
-        deciding *where* the highlights are, but useless for captions, which
-        need per-word onsets to be able to reveal words as they are spoken.
-        This pass only ever sees the few minutes of audio that were actually
-        selected, so it can afford beam search and a larger model.
-        """
         if self._caption_transcriber is None:
             try:
                 from .transcriber import VideoTranscriber
@@ -207,18 +170,6 @@ class ShortsPipeline:
         return self._caption_transcriber
 
     def _transcript_from_subtitles(self, metadata: Dict) -> Optional[List[Dict]]:
-        """Transcript from YouTube's published subtitles, or None.
-
-        This is the single biggest speed win in the pipeline. Transcription was
-        ~85% of runtime (a 65-minute source took ~50 minutes at 1.3x realtime),
-        and the resulting transcript is only used to *rank* moments -- a job
-        that does not need Whisper-grade text. Most sources already ship a
-        transcript, which yt-dlp fetched alongside the audio for ~200 KB.
-
-        Returns None when there is no track, when it is too sparse to rank
-        against, or when the feature is switched off -- and the caller then
-        falls back to Whisper, so nothing is lost.
-        """
         if not getattr(self.config, 'use_youtube_subs', True):
             return None
 
@@ -235,9 +186,6 @@ class ShortsPipeline:
         if not segments:
             return None
 
-        # Sanity gate: a track that covers almost none of the source (a
-        # forced-narrative or credits-only track) would starve highlight
-        # detection. Require it to span a decent share of the duration.
         duration = float(metadata.get('duration') or 0)
         covered = float(segments[-1]['end']) - float(segments[0]['start'])
         if duration > 0 and covered < duration * 0.5:
@@ -257,28 +205,6 @@ class ShortsPipeline:
     def _clip_word_transcript(self, video_path: str, start: float, end: float,
                               padding: float = 0.35,
                               language: Optional[str] = None):
-        """Word-level transcript for one clip, in the CLIP's own timeline.
-
-        Returns None on any failure, so the caller can fall back to the
-        discovery transcript rather than losing the clip.
-
-        The clip's audio is transcribed on its own rather than slicing the
-        full-source transcript. That is deliberate: word onsets from the
-        discovery pass are relative to the source, and rebasing them assumes
-        the render cut the video at exactly ``start``. FFmpeg seeks to the
-        nearest keyframe, so that assumption is wrong by up to a keyframe
-        interval -- which is precisely the drift that makes word-level captions
-        look out of sync even when segment-level ones looked fine.
-
-        ``padding`` extends the extracted audio slightly so a word straddling
-        the clip boundary is still decoded whole; the caption engine clamps
-        anything outside the clip afterwards.
-
-        ``language`` is the niche's Whisper hint. Passing it matters twice over:
-        it skips the language-detection pass, and it stops a non-English clip
-        being decoded as English -- which does not fail loudly, it produces
-        confident nonsense that would then be burned into the video.
-        """
         try:
             duration = float(end) - float(start)
             if duration <= 0:
@@ -298,8 +224,6 @@ class ShortsPipeline:
                                            slice_start, slice_duration):
                 return None
             try:
-                # -lead_in shifts the slice's timeline back onto the clip's, so
-                # t=0 is the first frame the renderer will emit.
                 segments = tr.transcribe_file(str(wav), time_offset=-lead_in,
                                               language=language)
             finally:
@@ -341,7 +265,6 @@ class ShortsPipeline:
         return self._uploader
 
     def _uploader_for_channel(self, channel: str):
-        """Return a cached YouTubeUploader bound to a specific channel key."""
         if channel not in self._uploaders:
             try:
                 from .uploader import YouTubeUploader
@@ -355,11 +278,6 @@ class ShortsPipeline:
         return self.transcript_dir / f"{video_id}.json"
 
     def load_cached_transcript(self, video_id: str) -> Optional[List[Dict]]:
-        """Return a previously saved transcript, or None.
-
-        Transcription is by far the slowest stage (minutes on CPU). Caching it
-        means a failure in a later stage no longer costs a re-transcribe.
-        """
         path = self._transcript_cache_path(video_id)
         if not path.exists():
             return None
@@ -369,7 +287,6 @@ class ShortsPipeline:
             segments = payload.get('segments') if isinstance(payload, dict) else payload
             if not isinstance(segments, list) or not segments:
                 return None
-            # Reject a cache written by a partial/failed run.
             for seg in segments:
                 if 'start' not in seg or 'end' not in seg or 'text' not in seg:
                     logger.warning("Cached transcript for %s is malformed; ignoring", video_id)
@@ -405,7 +322,6 @@ class ShortsPipeline:
         return self.clip_plan_dir / f"{video_id}.json"
 
     def load_clip_plan(self, video_id: str) -> Optional[Dict]:
-        """Return a previously saved clip plan, or None."""
         path = self._clip_plan_path(video_id)
         if not path.exists():
             return None
@@ -439,22 +355,6 @@ class ShortsPipeline:
                                  force: bool = False,
                                  local_only: bool = False,
                                  source_channel: str = '') -> bool:
-        """Audio-only discovery -> transcribe -> find highlights -> section fetch -> render -> (upload).
-
-        Every stage is resumable: an existing audio download, transcript, section
-        files, or rendered clips are reused instead of being redone. Returns True
-        if at least one Short is on disk when we finish.
-
-        This avoids ever downloading the full source video (1-2 GB). Instead:
-          1. Audio-only fetch (~40 MB for an hour) for discovery transcription
-          2. Section fetch (clip ranges only, ~few MB each) for rendering
-
-        Args:
-            local_only: never download; fail if audio/sections not already cached.
-            source_channel: the configured source handle the video came from
-                (e.g. ``@AlexHormozi``). Stored on the processed-video row so
-                the performance feedback loop can rank sources.
-        """
         video_id = extract_video_id(video_id) or video_id
         logger.info("Starting processing for video %s", video_id)
 
@@ -467,7 +367,7 @@ class ShortsPipeline:
         audio_path = None
         section_files = []
         try:
-            # -- 1. audio-only download (or reuse) --------------------------
+            # -- 1. audio-only download ------------------------------------
             logger.info("Step 1/6: Fetching audio for discovery (reusing existing if present)")
             if local_only:
                 existing_audio = self.downloader.find_local_audio(video_id)
@@ -510,12 +410,10 @@ class ShortsPipeline:
                 niche, len(niche_keywords), niche_keywords[:5],
             )
 
-            # -- 2. transcribe (or reuse the cache) -------------------------
+            # -- 2. transcribe ---------------------------------------------
             logger.info("Step 2/6: Transcribing audio (cached transcripts are reused)")
             transcript = None if force else self.load_cached_transcript(video_id)
 
-            # Per-niche captions/language policy. Non-English niches turn
-            # captions off, because a wrong caption is worse than none.
             captions_on = bool(niche_config.get('captions', True))
             whisper_language = (niche_config.get('whisper_language')
                                 or niche_config.get('language') or '') or None
@@ -523,10 +421,6 @@ class ShortsPipeline:
                 whisper_language = 'en'
 
             if transcript is None:
-                # FAST PATH: YouTube already published a transcript for most
-                # sources. Parsing it takes milliseconds instead of the ~50
-                # minutes Whisper spent on a 65-minute source, and it is only
-                # used to *locate* highlights, so ASR-grade text is sufficient.
                 transcript = self._transcript_from_subtitles(metadata)
 
                 if transcript is None:
@@ -567,6 +461,7 @@ class ShortsPipeline:
                 max_candidates=getattr(self.config, 'max_candidates', None),
                 min_score=float(niche_config.get('min_score') or 0.0),
                 ranking_mode=bool(niche_config.get('ranking_mode')),
+                story_mode=bool(niche_config.get('story_mode') or niche_config.get('edit_story')),
             )
             if not highlights:
                 logger.warning("No highlight segments found for video %s", video_id)
@@ -586,7 +481,7 @@ class ShortsPipeline:
                 }
                 self.save_clip_plan(video_id, plan)
 
-            # -- 4. fetch sections (only the clip ranges) ------------------
+            # -- 4. fetch sections -----------------------------------------
             logger.info("Step 4/6: Fetching clip sections (%.1f MB each vs full video)",
                         self.config.section_padding * 2)
             ranges = [(h['start'], h['end']) for h in highlights]
@@ -597,7 +492,6 @@ class ShortsPipeline:
                 force_redownload=force,
             )
 
-            # Filter out failed section downloads
             valid_highlights = []
             valid_sections = []
             for h, s in zip(highlights, sections):
@@ -635,13 +529,42 @@ class ShortsPipeline:
                     "(and skipping the word-level caption pass)", niche,
                 )
 
-            # Plan every clip first, so the ones that actually need encoding
-            # can be handed to a pool. Resume hits are settled here because
-            # they touch the DB and must stay on the main thread.
             created = []
             todo = []
             for i, (highlight, section) in enumerate(zip(highlights, section_files), start=1):
-                hook_text = (highlight.get('text') or '').strip()
+                # Build an EditPlan per clip from section's transcript rebased to file timeline
+                clip_start_in_file = section['clip_start_in_file']
+                clip_duration = section['clip_duration']
+                
+                # Rebase source transcript segments into section file timeline
+                source_start = highlight['start']
+                source_end = highlight['end']
+                time_shift = clip_start_in_file - source_start
+
+                rebased_transcript = []
+                for seg in transcript:
+                    if seg['end'] <= source_start or seg['start'] >= source_end:
+                        continue
+                    s_copy = dict(seg)
+                    s_copy['start'] = max(0.0, float(seg['start']) + time_shift)
+                    s_copy['end'] = float(seg['end']) + time_shift
+                    if 'words' in seg:
+                        s_copy['words'] = [
+                            {**w, 'start': float(w['start']) + time_shift,
+                             'end': float(w['end']) + time_shift}
+                            for w in seg.get('words', [])
+                        ]
+                    rebased_transcript.append(s_copy)
+
+                edit_plan = story_edit.build_plan(
+                    {'start': clip_start_in_file, 'end': clip_start_in_file + clip_duration},
+                    rebased_transcript,
+                    min_duration=self.config.min_segment_length,
+                    max_duration=self.config.max_segment_length,
+                )
+
+                # Use plan.title_hook for title/filename when present
+                hook_text = edit_plan.title_hook or (highlight.get('text') or '').strip()
                 safe_hook = sanitize_filename(hook_text) if hook_text else f"clip{i}"
                 if len(safe_hook) > 50:
                     safe_hook = safe_hook[:50]
@@ -654,7 +577,8 @@ class ShortsPipeline:
                         i, len(highlights), existing.stat().st_size / (1024 * 1024),
                     )
                     self.stats['shorts_created'] += 1
-                    created.append({'index': i, 'path': output_path, 'highlight': highlight})
+                    created.append({'index': i, 'path': output_path, 'highlight': highlight,
+                                    'title_hook': edit_plan.title_hook})
                     self.db.record_short(
                         video_id, i, highlight['start'], highlight['end'],
                         title=hook_text, local_path=output_path,
@@ -662,22 +586,20 @@ class ShortsPipeline:
                     )
                     continue
 
-                todo.append((i, highlight, section, output_path))
+                todo.append((i, highlight, section, output_path, edit_plan, rebased_transcript))
 
             workers = max(1, int(getattr(self.config, 'render_workers', 1) or 1))
             workers = max(1, min(workers, len(todo))) if todo else 1
-            # Split the CPU budget so concurrent encodes don't each try to
-            # claim every core and thrash.
             per_render_threads = None
             if workers > 1:
                 per_render_threads = max(1, (os.cpu_count() or 2) // workers)
 
             def render_one(item):
-                i, highlight, section, output_path = item
+                i, highlight, section, output_path, edit_plan, rebased_transcript = item
                 logger.info(
-                    "Rendering clip %d/%d: %.1f-%.1fs (score %.2f)",
+                    "Rendering clip %d/%d: %.1f-%.1fs (score %.2f) edit_style=%s",
                     i, len(highlights), highlight['start'], highlight['end'],
-                    highlight.get('score', 0.0),
+                    highlight.get('score', 0.0), edit_plan.style,
                 )
 
                 section_path = section['path']
@@ -687,9 +609,7 @@ class ShortsPipeline:
                 clip_transcript = []
                 clip_relative = False
                 if captions_on:
-                    # Accurate word-level pass on just this clip's audio. Only
-                    # worth its cost when captions will actually be burned in.
-                    if getattr(self.config, 'two_pass_captions', True):
+                    if getattr(self.config, 'two_pass_captions', True) and not edit_plan.is_reordered:
                         words = self._clip_word_transcript(
                             section_path, clip_start_in_file,
                             clip_start_in_file + clip_duration,
@@ -699,11 +619,7 @@ class ShortsPipeline:
                             clip_transcript = words
                             clip_relative = True
                     if not clip_transcript:
-                        clip_transcript = [
-                            seg for seg in transcript
-                            if not (seg['end'] <= highlight['start']
-                                    or seg['start'] >= highlight['end'])
-                        ]
+                        clip_transcript = rebased_transcript
 
                 ok = self.video_editor.create_short_from_segment(
                     video_path=section_path,
@@ -716,8 +632,9 @@ class ShortsPipeline:
                     captions_are_clip_relative=clip_relative,
                     threads=per_render_threads,
                     keywords=niche_keywords,
+                    edit_plan=edit_plan,
                 )
-                return i, highlight, output_path, ok
+                return i, highlight, output_path, edit_plan, ok
 
             if workers > 1:
                 logger.info("Rendering %d clip(s) with %d parallel encode(s)",
@@ -727,15 +644,16 @@ class ShortsPipeline:
             else:
                 results = [render_one(item) for item in todo]
 
-            for i, highlight, output_path, ok in sorted(results, key=lambda r: r[0]):
+            for i, highlight, output_path, edit_plan, ok in sorted(results, key=lambda r: r[0]):
                 if not ok or not Path(output_path).exists():
                     logger.error("Failed to create clip %d", i)
                     self.stats['errors'] += 1
                     continue
 
                 self.stats['shorts_created'] += 1
-                created.append({'index': i, 'path': output_path, 'highlight': highlight})
-                hook_text = (highlight.get('text') or '').strip()
+                created.append({'index': i, 'path': output_path, 'highlight': highlight,
+                                'title_hook': edit_plan.title_hook})
+                hook_text = edit_plan.title_hook or (highlight.get('text') or '').strip()
                 self.db.record_short(
                     video_id, i, highlight['start'], highlight['end'],
                     title=hook_text, local_path=output_path,
@@ -771,9 +689,6 @@ class ShortsPipeline:
             self.stats['errors'] += 1
             return False
         finally:
-            # Clean up audio regardless of success or exception. Audio is
-            # regenerable; section files are small and deliberately kept in
-            # data/temp/sections/ so a retry can resume without re-fetching.
             if audio_path:
                 try:
                     os.remove(audio_path)
@@ -781,12 +696,6 @@ class ShortsPipeline:
                     pass
 
     def _generate_unique_title(self, hook_text: str, niche: str, clip_index: int) -> str:
-        """Generate a unique, attention-optimized title for a Short.
-
-        Runs the raw hook through the rule-based title optimizer unless
-        ``TITLE_OPTIMIZER=off`` in .env, then appends the niche + #Shorts
-        hashtags that YouTube uses for the Shorts feed.
-        """
         base = hook_text
         if self.config.title_optimizer:
             try:
@@ -801,8 +710,6 @@ class ShortsPipeline:
                 logger.warning("Title optimizer failed; using raw hook", exc_info=True)
                 base = hook_text or ''
 
-        # Last-resort safety net: non-English / Whisper-hallucinated hooks
-        # must never reach YouTube as titles, even with TITLE_OPTIMIZER=off.
         try:
             from .title_optimizer import looks_non_english
             base = ' '.join((base or '').split()).strip()
@@ -823,12 +730,8 @@ class ShortsPipeline:
 
     def _upload_clips(self, created: List[Dict], video_id: str, niche: str,
                       niche_keywords: List[str]) -> None:
-        # Route this niche to its bound channels. If a niche has no token on
-        # disk, YouTubeUploader(channel=...) logs a warning and falls back to
-        # the default token -- so verify a token exists before we build it.
         channels = self.config.get_niche_channels(niche)
         if not channels:
-            # Fall back to the single channel logic for backward compatibility.
             channel = self.config.get_niche_channel(niche)
             if not channel:
                 logger.error(
@@ -843,12 +746,10 @@ class ShortsPipeline:
             channels = [channel]
         authed = set(self.config.authenticated_channels())
 
-        # Prepare round-robin state if needed.
         if self.config.multichannel_upload_mode == 'round_robin':
             self._channel_index = 0
 
         try:
-            # We'll create uploaders on demand and cache them in a dict.
             self._uploaders = {}
         except Exception:
             self._uploaders = {}
@@ -869,11 +770,10 @@ class ShortsPipeline:
                     return None
             return self._uploaders[channel_key]
 
-        cap = self.config.upload_max_per_run or float('inf')  # 0 = unlimited
-        # Build the upload queue: fresh clips first (they came from this run),
-        # then older rendered-but-unpublished clips to fill the remaining cap.
+        cap = self.config.upload_max_per_run or float('inf')
         queue = [{'index': item['index'], 'path': item['path'],
                   'highlight': item['highlight'], 'niche': niche,
+                  'title_hook': item.get('title_hook', ''),
                   'source_video_id': video_id}
                  for item in created]
         if self.config.upload_backlog:
@@ -897,14 +797,11 @@ class ShortsPipeline:
                               'path': row['local_path'],
                               'highlight': {'text': row['title'] or ''},
                               'niche': row['niche'] or niche,
+                              'title_hook': '',
                               'source_video_id': row['source_video_id']})
         else:
             logger.info("Upload cap: %d new clip(s), backlog mixing disabled", len(queue))
 
-        # Per-source daily cap (Allan's cadence rule): drop clips from sources
-        # that already hit UPLOAD_MAX_PER_SOURCE uploads in the last 24h --
-        # including the run's own fresh video, so a rich source can't be
-        # over-posted even when the backlog mixing is off.
         per_source_cap = getattr(self.config, 'upload_max_per_source', 3)
         per_source_left = {}
         filtered = []
@@ -923,9 +820,6 @@ class ShortsPipeline:
             filtered.append(item)
         queue = filtered
 
-        # Per-channel daily budget (Allan's rule: max 6 shorts/channel/day).
-        # Seed from what's already on YouTube for each bound channel, then keep
-        # a running tally so a single sweep can't blow a channel's budget either.
         per_channel_cap = self.config.upload_max_per_channel
         channel_budget = {
             ch: max(0, per_channel_cap - self.db.uploaded_count_for_channel_since(ch))
@@ -942,7 +836,7 @@ class ShortsPipeline:
             item_keywords = (self.config.get_niche_config(item_niche)
                              .get('keywords', [])) if item_niche else niche_keywords
             highlight = item['highlight']
-            hook = (highlight.get('text') or '').strip().replace('\n', ' ')
+            hook = item.get('title_hook') or (highlight.get('text') or '').strip().replace('\n', ' ')
             short_title = self._generate_unique_title(hook, item_niche, item['index'])
             description = (
                 f"Full video: https://youtube.com/watch?v={item_source}\n\n"
@@ -952,16 +846,12 @@ class ShortsPipeline:
             )
             tags = [item_niche, 'Shorts'] + [kw for kw in item_keywords[:10] if kw]
 
-            # Select channel based on multichannel mode, skipping channels that
-            # already hit their per-channel daily budget.
             if self.config.multichannel_upload_mode == 'all':
                 target_channels = [ch for ch in channels if channel_budget.get(ch, 0) > 0]
             elif self.config.multichannel_upload_mode == 'first':
                 target_channels = ([channels[0]] if channel_budget.get(channels[0], 0) > 0
                                    else [])
             else:  # round_robin
-                # Pick the next channel in round-robin fashion that still has
-                # daily budget left; try up to a full rotation of the list.
                 target_channels = []
                 for _ in range(len(channels)):
                     cand = channels[self._channel_index % len(channels)]
@@ -977,8 +867,6 @@ class ShortsPipeline:
                 )
                 continue
 
-            # Anti-burst pacing: space uploads by a random delay so a batch
-            # doesn't hit the feed together. Skipped for the first clip.
             if self.stats['shorts_uploaded'] and self.config.upload_pacing_max:
                 delay = random.uniform(
                     self.config.upload_pacing_min, self.config.upload_pacing_max
@@ -989,7 +877,6 @@ class ShortsPipeline:
 
             uploaded_any = False
             for channel_key in target_channels:
-                # Skip if the channel is not authenticated (unless there are no auth tokens at all).
                 if authed and channel_key not in authed:
                     logger.warning(
                         "Skipping upload for clip %d to channel '%s': no authentication token found.",
@@ -1024,9 +911,6 @@ class ShortsPipeline:
                                                 channel=channel_key)
                     if channel_key in channel_budget:
                         channel_budget[channel_key] = max(0, channel_budget[channel_key] - 1)
-                    # Snapshot stats immediately: YouTube returns view counts that
-                    # start near zero, but having the row exist means later
-                    # --mode stats runs can compare growth over time.
                     try:
                         stats = uploader.fetch_statistics(short_id)
                         if stats:
@@ -1044,24 +928,9 @@ class ShortsPipeline:
                                  item['index'], channel_key)
                     self.stats['errors'] += 1
 
-            # If none of the target channels succeeded, we still count the item as processed
-            # (errors have been incremented above). If at least one succeeded, we consider
-            # the clip uploaded (no additional error count).
-            if not uploaded_any and self.stats['errors'] == 0:
-                # This should not happen because we increment errors on each failure.
-                pass
-
     # ------------------------------------------------------------------
     def run_niche(self, niche: str, max_videos: int = 1,
                   lookback: Optional[int] = None) -> int:
-        """Process the best `max_videos` videos discovered for a niche.
-
-        Only niches bound to an authenticated upload channel are processed:
-        a niche with no channel binding renders clips that can never be
-        published, so we leave it untouched until it is bound.
-
-        Returns how many videos were actually started.
-        """
         from .discovery import discover_candidates
 
         channel = self.config.get_niche_channel(niche)
@@ -1120,12 +989,6 @@ class ShortsPipeline:
 
 
 def run_stats_mode(pipeline: 'ShortsPipeline', args) -> int:
-    """Fetch current YouTube metrics for every uploaded short and record them.
-
-    This is the feedback loop, runnable as often as you like: each run updates
-    short_performance rows for clips whose last fetch is older than
-    --stats-age-hours (default 24), then prints the current top performers.
-    """
     try:
         uploader = pipeline.uploader
     except Exception as exc:
@@ -1164,7 +1027,6 @@ def run_stats_mode(pipeline: 'ShortsPipeline', args) -> int:
             )
         print(f"Updated {updated} short(s).")
 
-    # Always show the current leaderboard, even with nothing new to fetch.
     summary = pipeline.db.performance_summary()
 
     print("\n==========================================================================")
@@ -1197,13 +1059,7 @@ def run_stats_mode(pipeline: 'ShortsPipeline', args) -> int:
     return 0
 
 
-# ----------------------------------------------------------------------
 def run_discover_mode(pipeline: 'ShortsPipeline', args) -> int:
-    """Dry-run discovery: print what a scheduled run would pick, do nothing else.
-
-    Only niches bound to an authenticated channel are reported; unbound niches
-    are listed as skipped. No downloads, no transcription, no rendering.
-    """
     from .discovery import discover_candidates
 
     niches = [args.niche] if args.niche else config.niche_names()
@@ -1241,7 +1097,6 @@ def run_discover_mode(pipeline: 'ShortsPipeline', args) -> int:
 
 
 def run_test_mode() -> int:
-    """Check the environment without downloading anything."""
     import shutil
     import subprocess
 
@@ -1249,7 +1104,6 @@ def run_test_mode() -> int:
     print("YouTube Shorts Pipeline -- environment check")
     print("=" * 52)
 
-    # ffmpeg / ffprobe
     for tool in ('ffmpeg', 'ffprobe'):
         path = shutil.which(tool)
         if path:
@@ -1264,7 +1118,6 @@ def run_test_mode() -> int:
             print(f"  [FAIL] {tool}: not found in PATH")
             ok = False
 
-    # Python packages
     for module, extra in (
         ('yt_dlp', 'yt-dlp'),
         ('faster_whisper', 'faster-whisper'),
@@ -1282,7 +1135,6 @@ def run_test_mode() -> int:
             if level == 'FAIL':
                 ok = False
 
-    # Config
     print(f"  [{'ok' if config.env_loaded else 'warn'}]   .env: "
           f"{config.env_file if config.env_loaded else 'not found (using defaults)'}")
     if config.niches_error:
@@ -1320,8 +1172,6 @@ def run_test_mode() -> int:
     else:
         print("  [ok]   upload: disabled (clips saved locally only)")
 
-    # Highlight detector smoke test -- this is the piece that silently
-    # returned zero clips for every video.
     sample = [
         {'text': 'Here is why nobody tells you this.', 'start': 0.0, 'end': 4.0},
         {'text': 'The secret is actually really simple!', 'start': 4.2, 'end': 8.5},
@@ -1447,7 +1297,6 @@ def _main_impl(argv: Optional[List[str]] = None) -> int:
 
     pipeline = ShortsPipeline(upload=args.upload, whisper_model=args.model)
 
-    # Phase 6: --max-source-minutes limits transcription to first N minutes
     if args.max_source_minutes > 0:
         pipeline.transcriber.max_seconds = args.max_source_minutes * 60
         logger.info("Transcription limited to first %d minutes (%.0fs)",
@@ -1463,12 +1312,10 @@ def _main_impl(argv: Optional[List[str]] = None) -> int:
         return _run_schedule(pipeline, args)
 
     if args.mode == 'library':
-        # For library mode, we extract video_id from target if provided, else use falsy to list all
         video_id = extract_video_id(args.target) if args.target else None
         return _render_more_from_plan(pipeline, video_id, 0, args.force, args)
 
     if args.mode == 'migrate-shorts':
-        # Run the migration script inline
         from .migrate_shorts import migrate_shorts
         moved, updated, errors = migrate_shorts(dry_run=args.dry_run, force=args.force)
         if errors:
@@ -1480,7 +1327,6 @@ def _main_impl(argv: Optional[List[str]] = None) -> int:
     if args.mode == 'upload-existing':
         return _upload_existing_shorts(pipeline, args)
 
-    # --- render-more: render additional clips from cached clip plan ---
     if args.render_more > 0:
         if not args.target:
             logger.error("--render-more requires a video ID or URL (--target)")
@@ -1491,7 +1337,6 @@ def _main_impl(argv: Optional[List[str]] = None) -> int:
             return 2
         return _render_more_from_plan(pipeline, video_id, args.render_more, args.force, args)
 
-    # --- once ---
     if args.target:
         video_id = extract_video_id(args.target)
         if not video_id:
@@ -1509,37 +1354,20 @@ def _main_impl(argv: Optional[List[str]] = None) -> int:
     return 0 if stats['videos_processed'] > 0 else 1
 
 
-
 def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
-    """Upload rendered-but-unpublished shorts to YouTube.
-
-    Queries the database for clips with youtube_short_id IS NULL, applies
-    optional niche/channel/source/segment filters, and uploads up to the
-    configured limit. Respects quota limits and updates DB on success.
-
-    Cross-channel safety: when ``--channel`` is passed, only clips whose niche
-    is bound to that channel are auto-selected -- the old behaviour picked the
-    oldest clips from *every* niche and posted them to whatever channel was
-    chosen, which is how a clip from another niche's folder ended up on the
-    wrong channel. ``--interactive`` instead shows every candidate grouped by
-    niche/source and lets you choose exactly which clips to publish.
-    """
     upload_limit = args.upload_limit
     if upload_limit is None:
         upload_limit = getattr(pipeline.config, 'upload_max_per_run', 0)
     if upload_limit == 0:
-        upload_limit = 999999  # unlimited
+        upload_limit = 999999
     logger.info("Upload limit: %s clips", 'unlimited' if upload_limit >= 999999 else str(upload_limit))
 
-    # Pull a larger candidate pool so interactive selection has the full
-    # picture; the cap is still enforced at upload time.
     pool_size = max(upload_limit * 3, 100)
     unuploaded = pipeline.db.unuploaded_shorts(limit=pool_size)
     if not unuploaded:
         logger.info("No un-uploaded shorts found in database")
         return 0
 
-    # --- Filters --------------------------------------------------------
     if args.niche:
         unuploaded = [r for r in unuploaded if r.get('niche') == args.niche]
         logger.info("Filtered to niche '%s': %d clips", args.niche, len(unuploaded))
@@ -1557,9 +1385,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
         logger.info("No clips to upload after filtering")
         return 0
 
-    # Cross-channel safety: a channel override must not drag in clips whose
-    # niche belongs to a different channel. Interactive mode shows the user
-    # each clip's target channel so they can override deliberately.
     if args.channel and not args.interactive:
         scoped = []
         for r in unuploaded:
@@ -1581,7 +1406,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             )
             return 0
 
-    # --- Interactive selection ------------------------------------------
     if args.interactive:
         selected = _interactive_pick_shorts(pipeline, unuploaded, upload_limit)
         if not selected:
@@ -1605,8 +1429,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
         local_path = clip['local_path']
         clip_niche = clip.get('niche') or args.niche
 
-        # Anti-burst pacing: space uploads by a random delay so a batch
-        # doesn't hit the feed together. Skipped for the first clip.
         if uploaded_count and pipeline.config.upload_pacing_max:
             delay = random.uniform(
                 pipeline.config.upload_pacing_min, pipeline.config.upload_pacing_max
@@ -1615,7 +1437,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
                         pipeline.config.upload_pacing_min, delay)
             time.sleep(delay)
 
-        # Validate file exists
         if not local_path or not Path(local_path).exists():
             logger.warning(
                 "Clip file missing: %s#%s at %s -- skipping",
@@ -1624,7 +1445,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             errors += 1
             continue
 
-        # Resolve target channel
         channel = args.channel
         if not channel:
             if clip_niche:
@@ -1637,7 +1457,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
                 errors += 1
                 continue
 
-        # Verify channel is authenticated
         authed = pipeline.config.authenticated_channels()
         if authed and channel not in authed:
             logger.error(
@@ -1647,8 +1466,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             errors += 1
             continue
 
-        # Per-channel daily cap: don't post more than UPLOAD_MAX_PER_CHANNEL
-        # shorts to one channel in 24h, even when uploading by hand.
         per_channel_cap = pipeline.config.upload_max_per_channel
         used_this_channel = pipeline.db.uploaded_count_for_channel_since(channel)
         if used_this_channel >= per_channel_cap:
@@ -1661,7 +1478,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             errors += 1
             continue
 
-        # Get uploader for channel
         try:
             uploader = pipeline._uploader_for_channel(channel)
         except Exception as exc:
@@ -1672,8 +1488,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             errors += 1
             continue
 
-        # Build title/description/tags from clip data (title goes through the
-        # optimizer so a published clip gets a headline, not a raw hook).
         highlight_text = clip.get('title') or clip_niche or 'Short'
         hook = highlight_text.strip().replace('\n', ' ')
         short_title = pipeline._generate_unique_title(hook, clip_niche or 'short', segment_index)
@@ -1691,7 +1505,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
         )
         tags = [clip_niche, 'Shorts'] + [kw for kw in keywords[:10] if kw]
 
-        # Upload with quota error handling
         try:
             short_id = uploader.upload_short(
                 video_path=local_path,
@@ -1700,14 +1513,12 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
                 tags=tags,
             )
         except Exception as exc:
-            # Check for quota exceeded
             err_str = str(exc).lower()
             if 'quota' in err_str or '403' in err_str or 'rate' in err_str:
                 logger.error(
                     "YouTube quota exceeded or rate limited: %s. Stopping upload.",
                     exc
                 )
-                # Re-raise to signal quota exhaustion to caller
                 raise
             logger.error(
                 "Upload failed for %s#%s: %s",
@@ -1724,7 +1535,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             errors += 1
             continue
 
-# Mark as uploaded in database
         try:
             pipeline.db.mark_short_uploaded(source_video_id, segment_index, short_id,
                                             channel=channel)
@@ -1738,7 +1548,6 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
                 "Upload succeeded but DB update failed for %s#%s: %s",
                 source_video_id, segment_index, exc
             )
-            # Still count as uploaded since it's on YouTube
             uploaded_count += 1
 
     logger.info("Upload complete: %d uploaded, %d errors", uploaded_count, errors)
@@ -1746,20 +1555,12 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
 
 
 def _interactive_pick_shorts(pipeline, clips, upload_limit: int) -> List[Dict]:
-    """Show candidate clips grouped by niche/source and let the user choose.
-
-    Displays each clip with a number, its niche, the source video title, the
-    segment, the optimized title preview, score, and target channel. The user
-    can answer with numbers/ranges (``1,2,4-6``), ``all``, or ``q`` to abort.
-    Returns the subset of ``clips`` the user selected.
-    """
     if not clips:
         return []
     print("\n" + "=" * 78)
     print(f"  Un-uploaded shorts available ({len(clips)} total)")
     print("=" * 78)
 
-    # Group by (niche, source_video_id) preserving DB order.
     groups = []
     seen = set()
     for c in clips:
@@ -1818,14 +1619,6 @@ def _interactive_pick_shorts(pipeline, clips, upload_limit: int) -> List[Dict]:
 def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
                                 count: int, force: bool = False,
                                 args=None) -> int:
-    """Render N additional clips from a saved clip plan.
-
-    This is the real ``--render-more`` path: it loads the deep ranked plan
-    cached after transcription, skips every candidate that already has a
-    rendered clip (so a mid-render crash is resumed, not redone), renders the
-    next N in rank order, records them, and uploads them. It never downloads
-    and never re-transcribes: both are already on disk.
-    """
     plan = pipeline.load_clip_plan(video_id)
     if not plan:
         logger.error(
@@ -1838,7 +1631,6 @@ def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
         logger.error("Clip plan for %s has no candidates", video_id)
         return 1
     done = pipeline.db.rendered_segment_indices(video_id)
-    # segment_index in the DB is the 1-based position in the candidates list.
     remaining = [(i + 1, c) for i, c in enumerate(candidates)
                  if (i + 1) not in done]
     if not remaining:
@@ -1876,7 +1668,21 @@ def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
 
     created: List[Dict] = []
     for seg_index, highlight in picks:
-        hook_text = (highlight.get('text') or '').strip()
+        # Build EditPlan for render-more clips
+        source_start = highlight['start']
+        source_end = highlight['end']
+        clip_transcript = [
+            seg for seg in transcript
+            if not (seg['end'] <= source_start or seg['start'] >= source_end)
+        ]
+        edit_plan = story_edit.build_plan(
+            {'start': source_start, 'end': source_end},
+            clip_transcript,
+            min_duration=config.min_segment_length,
+            max_duration=config.max_segment_length,
+        )
+
+        hook_text = edit_plan.title_hook or (highlight.get('text') or '').strip()
         safe_hook = sanitize_filename(hook_text) if hook_text else f"clip{seg_index}"
         if len(safe_hook) > 50:
             safe_hook = safe_hook[:50]
@@ -1884,7 +1690,8 @@ def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
         existing = Path(output_path)
         if not force and existing.exists() and existing.stat().st_size > 64 * 1024:
             logger.info("Resume: clip %d already rendered -- skipping", seg_index)
-            created.append({'index': seg_index, 'path': output_path, 'highlight': highlight})
+            created.append({'index': seg_index, 'path': output_path, 'highlight': highlight,
+                            'title_hook': edit_plan.title_hook})
             pipeline.db.record_short(
                 video_id, seg_index, highlight['start'], highlight['end'],
                 title=hook_text, local_path=output_path, score=highlight.get('score'),
@@ -1892,15 +1699,10 @@ def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
             continue
 
         logger.info(
-            "Rendering clip %d: %.1f-%.1fs (score %.2f)",
+            "Rendering clip %d: %.1f-%.1fs (score %.2f) edit_style=%s",
             seg_index, highlight['start'], highlight['end'],
-            highlight.get('score', 0.0),
+            highlight.get('score', 0.0), edit_plan.style,
         )
-        clip_transcript = [
-            seg for seg in transcript
-            if not (seg['end'] <= highlight['start']
-                    or seg['start'] >= highlight['end'])
-        ]
         ok = pipeline.video_editor.create_short_from_segment(
             video_path=str(video_path),
             start_time=highlight['start'],
@@ -1908,6 +1710,7 @@ def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
             transcript_segments=clip_transcript,
             output_path=output_path,
             add_branding=False,
+            edit_plan=edit_plan,
         )
         if not ok or not Path(output_path).exists():
             logger.error("Failed to create clip %d", seg_index)
@@ -1915,8 +1718,9 @@ def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
             continue
 
         pipeline.stats['shorts_created'] += 1
-        created.append({'index': seg_index, 'path': output_path, 'highlight': highlight})
-        hook_text = (highlight.get('text') or '').strip()
+        created.append({'index': seg_index, 'path': output_path, 'highlight': highlight,
+                        'title_hook': edit_plan.title_hook})
+        hook_text = edit_plan.title_hook or (highlight.get('text') or '').strip()
         pipeline.db.record_short(
             video_id, seg_index, highlight['start'], highlight['end'],
             title=hook_text, local_path=output_path, score=highlight.get('score'),
@@ -1937,18 +1741,6 @@ def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
 
 def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
                            count: int, force: bool = False, args=None) -> int:
-    """List (and optionally process) videos already downloaded to data/temp.
-
-    Two entry points share this function:
-
-    * ``--mode library`` (count=0): the interactive library browser -- lists
-      every downloaded video and lets the user pick one to process.
-    * ``--render-more N`` (count>0): replays the saved clip plan for the target
-      video and renders N more clips with zero re-download / re-transcribe.
-
-    The library path never downloads; it was written to replace run_pipeline.bat's
-    fragile inline PowerShell that parsed .info.json files by hand.
-    """
     if count > 0:
         return _render_more_from_clip_plan(pipeline, video_id, count, force, args)
 
@@ -1968,9 +1760,7 @@ def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
               f"{entry['size_mb']:7.1f}MB  [{cached}]")
     print("-" * 72)
 
-    # Handle case where args might be None (for safety)
     if args is None:
-        # Create a simple object with default values
         class DefaultArgs:
             all = False
             target = None
@@ -2016,13 +1806,6 @@ def _render_more_from_plan(pipeline: 'ShortsPipeline', video_id: str,
 
 
 def _niche_backlog_supply(pipeline: 'ShortsPipeline', niche: str) -> List[Dict]:
-    """Un-uploaded, on-disk clips for a niche (oldest first).
-
-    Used by the pull-once scheme: if a niche still has clips waiting to post,
-    the sweep should spend its uploads on those instead of downloading and
-    clipping yet another source video. Clips whose file vanished are excluded
-    so a missing file can't keep a niche 'supplied' forever.
-    """
     try:
         rows = pipeline.db.unuploaded_shorts(limit=100)
     except AttributeError:
@@ -2032,11 +1815,7 @@ def _niche_backlog_supply(pipeline: 'ShortsPipeline', niche: str) -> List[Dict]:
             and Path(r['local_path']).exists()]
 
 
-# ----------------------------------------------------------------------
-# Queue health and scheduling helpers
-# ----------------------------------------------------------------------
 def _expire_stale_backlog(pipeline: 'ShortsPipeline', niche: str) -> int:
-    """Mark stale backlog clips as expired based on TTL config."""
     try:
         ttl = getattr(pipeline.config, 'backlog_ttl_days', 7)
         return pipeline.db.expire_stale_backlog(niche, ttl)
@@ -2047,14 +1826,12 @@ def _expire_stale_backlog(pipeline: 'ShortsPipeline', niche: str) -> int:
 
 def _get_queue_health(pipeline: 'ShortsPipeline', niche: str,
                       channels: List[str]) -> Dict:
-    """Compute queue health metrics for a niche."""
     health = pipeline.db.get_queue_health(niche)
 
-    # Add per-source cap awareness
     per_source_cap = getattr(pipeline.config, 'upload_max_per_source', 3)
     capped = []
     eligible = 0
-    for src, count in health['source_counts'].items():
+    for src, count in health.get('source_counts', {}).items():
         used = pipeline.db.uploaded_count_for_source_since(src)
         if used >= per_source_cap:
             capped.append(src)
@@ -2063,7 +1840,6 @@ def _get_queue_health(pipeline: 'ShortsPipeline', niche: str,
     health['eligible_clips'] = eligible
     health['capped_sources'] = capped
 
-    # Add channel capacity
     per_channel_cap = getattr(pipeline.config, 'upload_max_per_channel', 6)
     channel_remaining = 0
     for ch in channels:
@@ -2071,7 +1847,6 @@ def _get_queue_health(pipeline: 'ShortsPipeline', niche: str,
         channel_remaining += max(0, per_channel_cap - used)
     health['channel_remaining'] = channel_remaining
 
-    # Oldest clip age
     try:
         with pipeline.db._connect() as conn:
             row = conn.execute(
@@ -2093,54 +1868,36 @@ def _get_queue_health(pipeline: 'ShortsPipeline', niche: str,
 
 def _should_discover_more(pipeline: 'ShortsPipeline', niche: str,
                           health: Dict, channels: List[str]) -> tuple:
-    """Decide whether to run fresh discovery for a niche.
-
-    Returns (should_discover: bool, reason: str)
-    """
     cfg = pipeline.config
 
-    # Check if niche is active
     niche_cfg = config.get_niche_config(niche)
     max_videos = niche_cfg.get('max_videos', 0) or getattr(cfg, 'schedule_max_videos', 3)
     if max_videos <= 0:
         return False, 'niche_inactive'
 
-    # Total queued clips below target
     target = getattr(cfg, 'queue_target_total', 12)
-    if health['total_queued'] < target:
-        return True, f'total_queued_below_target ({health["total_queued"]}/{target})'
+    if health.get('total_queued', 0) < target:
+        return True, f'total_queued_below_target ({health.get("total_queued", 0)}/{target})'
 
-    # Not enough distinct sources
     min_distinct = getattr(cfg, 'queue_min_distinct_sources', 4)
-    if health['distinct_sources'] < min_distinct:
-        return True, f'distinct_sources_low ({health["distinct_sources"]}/{min_distinct})'
+    if health.get('distinct_sources', 0) < min_distinct:
+        return True, f'distinct_sources_low ({health.get("distinct_sources", 0)}/{min_distinct})'
 
-    # Top source dominance too high
     max_share = getattr(cfg, 'queue_max_top_source_share', 0.5)
-    if health['top_source_share'] > max_share:
-        return True, f'top_source_dominance_high ({health["top_source_share"]:.2f}/{max_share})'
+    if health.get('top_source_share', 0.0) > max_share:
+        return True, f'top_source_dominance_high ({health.get("top_source_share", 0.0):.2f}/{max_share})'
 
-    # Channel has capacity but not enough eligible clips
-    if health['channel_remaining'] > 0 and health['eligible_clips'] < health['channel_remaining']:
+    if health.get('channel_remaining', 0) > 0 and health.get('eligible_clips', 0) < health.get('channel_remaining', 0):
         return True, 'channel_capacity_unused'
 
-    # All/most queued clips are source-capped
-    if health['total_queued'] > 0 and health['eligible_clips'] == 0:
+    if health.get('total_queued', 0) > 0 and health.get('eligible_clips', 0) == 0:
         return True, 'all_clips_source_capped'
-
-    # Check last discovery time (simplified: if no new source added recently)
-    # This would need a last_discovery timestamp in DB; skip for now
 
     return False, 'queue_healthy'
 
 
 def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
                            channels: List[str]) -> int:
-    """Post up to ``cap`` un-uploaded clips for a niche, using fair source rotation.
-
-    Skips source-capped clips instead of stopping. Returns how many clips uploaded.
-    Quota errors abort the run.
-    """
     authed = config.authenticated_channels()
     if not channels:
         return 0
@@ -2148,22 +1905,10 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
     if not channels:
         return 0
 
-    # Get clips with fair source rotation
     supply = pipeline.db.get_queued_clips_for_upload(niche, limit=cap * 2)
     if not supply:
         return 0
 
-    # Drop rows whose rendered file is gone before the caps are applied.
-    #
-    # The DB is the source of truth for "queued", but the MP4 lives on disk and
-    # can disappear independently (retention sweep, manual cleanup, a moved
-    # working directory). Those rows stayed 'queued' forever: every run picked
-    # them, spent a selection slot on them, failed with "Video file not found",
-    # and left them queued to fail again on the next run. In the observed logs
-    # this consumed the entire per-run cap while uploading nothing.
-    #
-    # Marking them 'missing' takes them out of the queue permanently and frees
-    # the slot for a clip that actually exists.
     present = []
     missing = 0
     for clip in supply:
@@ -2183,7 +1928,6 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
     if not supply:
         return 0
 
-    # Per-source and per-channel caps
     per_source_cap = getattr(config, 'upload_max_per_source', 3)
     per_channel_cap = getattr(config, 'upload_max_per_channel', 6)
     src_left = {}
@@ -2197,20 +1941,15 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
         used = pipeline.db.uploaded_count_for_channel_since(ch)
         channel_left[ch] = max(0, per_channel_cap - used)
 
-    # Round-robin across sources, then assign to channels round-robin
-    selected = []  # (clip, channel)
+    selected = []
     cursor = 0
 
-    # Group by source
     by_source = {}
     for clip in supply:
         src = clip['source_video_id']
         if src not in by_source:
             by_source[src] = []
         by_source[src].append(clip)
-
-    sources = sorted(by_source.keys(), key=lambda s: len(by_source[s]))
-    source_pointers = {s: 0 for s in sources}
 
     for clip in supply:
         if len(selected) >= cap:
@@ -2219,7 +1958,6 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
         if src_left.get(src, 0) <= 0:
             continue
 
-        # Find next channel with budget
         chosen = None
         for _ in range(len(channels)):
             cand = channels[cursor % len(channels)]
@@ -2241,310 +1979,132 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
         )
         return 0
 
-    # Log queue health using the wrapper that computes channel remaining
     health = _get_queue_health(pipeline, niche, channels)
     logger.info(
         "QUEUE_HEALTH niche=%s total=%d eligible=%d distinct_sources=%d top_source_share=%.2f channel_remaining=%d",
-        niche, health['total_queued'], health['eligible_clips'],
-        health['distinct_sources'], health['top_source_share'],
-        health['channel_remaining'],
+        niche, health.get('total_queued', 0), health.get('eligible_clips', 0),
+        health.get('distinct_sources', 0), health.get('top_source_share', 0.0),
+        health.get('channel_remaining', 0),
     )
 
-    uploaders = {}
-
-    def uploader_for(channel_key: str):
-        if channel_key not in uploaders:
-            uploaders[channel_key] = pipeline._uploader_for_channel(channel_key)
-        return uploaders[channel_key]
-
     uploaded = 0
-    per_channel_uploaded = {ch: 0 for ch in channels}
-    for clip, channel in selected:
-        source_video_id = clip['source_video_id']
-        segment_index = clip['segment_index']
-        local_path = clip['local_path']
-        clip_niche = clip.get('niche') or niche
-        keywords = (config.get_niche_config(clip_niche)
-                    .get('keywords', [])) if clip_niche else []
-
-        if uploaded and config.upload_pacing_max:
-            delay = random.uniform(config.upload_pacing_min, config.upload_pacing_max)
-            logger.info("Pacing: waiting %.0f-%.0fs before next upload",
-                        config.upload_pacing_min, delay)
+    for clip, target_channel in selected:
+        if uploaded and pipeline.config.upload_pacing_max:
+            delay = random.uniform(
+                pipeline.config.upload_pacing_min, pipeline.config.upload_pacing_max
+            )
             time.sleep(delay)
 
-        hook = (clip.get('title') or '').strip().replace('\n', ' ')
-        short_title = pipeline._generate_unique_title(hook, clip_niche, segment_index)
+        try:
+            uploader = pipeline._uploader_for_channel(target_channel)
+        except Exception as exc:
+            logger.error("Could not init uploader for %s: %s", target_channel, exc)
+            continue
+
+        highlight_text = clip.get('title') or niche or 'Short'
+        hook = highlight_text.strip().replace('\n', ' ')
+        short_title = pipeline._generate_unique_title(hook, niche, clip['segment_index'])
+
+        niche_cfg = pipeline.config.get_niche_config(niche)
+        keywords = niche_cfg.get('keywords', [])
         description = (
-            f"Full video: https://youtube.com/watch?v={source_video_id}\n\n"
-            f"Follow for more {clip_niche} content!\n"
-            f"#Shorts #{clip_niche} "
+            f"Full video: https://youtube.com/watch?v={clip['source_video_id']}\n\n"
+            f"Follow for more {niche} content!\n"
+            f"#Shorts #{niche} "
             + ' '.join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
         )
-        tags = [clip_niche, 'Shorts'] + [kw for kw in keywords[:10] if kw]
-        try:
-            uploader = uploader_for(channel)
-        except Exception as exc:
-            logger.error("Cannot start uploader for channel '%s': %s", channel, exc)
-            continue
+        tags = [niche, 'Shorts'] + [kw for kw in keywords[:10] if kw]
+
         try:
             short_id = uploader.upload_short(
-                video_path=local_path, title=short_title,
-                description=description, tags=tags,
+                video_path=clip['local_path'],
+                title=short_title,
+                description=description,
+                tags=tags,
             )
         except Exception as exc:
             err_str = str(exc).lower()
             if 'quota' in err_str or '403' in err_str or 'rate' in err_str:
-                logger.error("YouTube quota/rate limit hit draining backlog: %s", exc)
-                break
+                logger.error("YouTube quota exceeded: %s", exc)
+                raise
             logger.error("Backlog upload failed for %s#%s: %s",
-                         source_video_id, segment_index, exc)
+                         clip['source_video_id'], clip['segment_index'], exc)
             continue
+
         if short_id:
+            logger.info("Uploaded backlog clip %s#%s -> %s (via channel %s)",
+                        clip['source_video_id'], clip['segment_index'], short_id, target_channel)
             pipeline.stats['shorts_uploaded'] += 1
+            pipeline.db.mark_short_uploaded(
+                clip['source_video_id'], clip['segment_index'], short_id, channel=target_channel
+            )
             uploaded += 1
-            per_channel_uploaded[channel] += 1
-            pipeline.db.mark_short_uploaded(source_video_id, segment_index, short_id,
-                                            channel=channel)
-            try:
-                stats = uploader.fetch_statistics(short_id)
-                if stats:
-                    pipeline.db.record_performance(
-                        short_id, source_video_id, segment_index,
-                        views=stats['views'], likes=stats['likes'],
-                        comments=stats['comments'], favorites=stats['favorites'],
-                    )
-            except Exception as exc:
-                logger.warning("Could not snapshot stats for %s: %s", short_id, exc)
-        else:
-            logger.error("Backlog upload failed for %s#%s (kept locally)",
-                         source_video_id, segment_index)
-    logger.info(
-        "Backlog drain: %d/%d clip(s) uploaded for niche '%s' (%s)",
-        uploaded, len(selected), niche,
-        ', '.join(f"{ch}={n}" for ch, n in per_channel_uploaded.items() if n) or 'none',
-    )
+
     return uploaded
 
 
-def _discover_and_render(pipeline: 'ShortsPipeline', niche: str, cap: int,
-                         channels: List[str]) -> int:
-    """Run fresh discovery and rendering for a niche."""
-    if not pipeline.upload_enabled:
-        return 0
-    max_videos = int(config.get_niche_config(niche).get('max_videos') or 0)
-    if max_videos <= 0:
-        max_videos = getattr(config, 'schedule_max_videos', 3)
-    max_videos = min(max_videos, cap)
-    return pipeline.run_niche(niche, max_videos=max_videos)
-
-
-def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> int:
-    """Run every channel-bound niche with the new queue-based scheduling.
-
-    Flow per niche:
-    0. Guaranteed fresh chop: one new source video per authenticated channel,
-       regardless of the shared sweep budget or queue health.
-    1. Expire stale backlog clips (TTL)
-    2. Upload eligible backlog clips (respecting caps, fair source rotation)
-    3. Compute queue health
-    4. If queue unhealthy -> run fresh discovery/rendering
-    5. If channel capacity remains -> try uploading more backlog
-
-    This replaces the old pull-once model where backlog blocked discovery.
-    """
-    per_niche_default = getattr(config, 'schedule_max_videos', 3)
-    total_budget = getattr(config, 'schedule_max_total', 0)
-    guarantee_fresh = getattr(config, 'sweep_guarantee_fresh', False)
+def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> None:
     niches = [args.niche] if args.niche else config.niche_names()
-    if not niches:
-        logger.error("No niches configured and no video specified. Nothing to do.")
-        return 0
+    global_cap = getattr(config, 'schedule_max_total', 6) or float('inf')
+    total_started = 0
 
-    started_total = 0    # videos started in total, for reporting
-    budget_spent = 0     # videos started that count against SCHEDULE_MAX_TOTAL
     for niche in niches:
-        cap = int(config.get_niche_config(niche).get('max_videos') or 0)
-        if cap <= 0:
-            cap = per_niche_default
-        if total_budget:
-            cap = min(cap, total_budget - budget_spent)
+        if total_started >= global_cap:
+            logger.info("Reached global sweep cap (%s videos); ending sweep", global_cap)
+            break
 
-        # Skip niches without authenticated upload channels.
-        #
-        # An empty `authed` means "no per-channel token files exist", which is
-        # the normal single-channel setup: auth comes from the one default
-        # token instead. run_niche() and _upload_backlog_supply() both treat
-        # that as usable, but this gate used `any(c in authed ...)` which is
-        # unconditionally False for an empty list -- so a single-channel
-        # install had every niche skipped here and the sweep did nothing,
-        # while the other two code paths would happily have run. Mirror the
-        # permissive check the rest of the pipeline uses.
+        niche_cfg = config.get_niche_config(niche)
         channels = config.get_niche_channels(niche)
-        authed = config.authenticated_channels()
-        usable = [c for c in channels if not authed or c in authed]
-        if not usable:
-            logger.info(
-                "Niche '%s': no authenticated upload channel bound "
-                "(resolved channels=%r, authed=%s) -- skipping until bound in "
-                "config/niches.yaml with `channel: <name>` and authenticated",
-                niche, channels, authed or ['(default token)'],
-            )
-            continue
-        channels = usable
+        if not channels:
+            ch = config.get_niche_channel(niche)
+            channels = [ch] if ch else []
 
-        # 0. Guaranteed fresh chop -- Allan's rule: a full sweep chops one
-        # fresh source video for every authenticated channel, REGARDLESS of
-        # the shared sweep budget (SCHEDULE_MAX_TOTAL) and of queue health, so
-        # a channel is never left out just because its queue looked healthy.
-        # The chop itself is cheap and UPLOAD is still capped below, so the
-        # fresh video queues instead of bursting the channel's daily cap.
-        # run_niche() itself refuses niches without an authenticated channel,
-        # which the filter above already removed. Guaranteed starts are a
-        # floor, not a budget slice: they never consume `budget_spent`.
-        if guarantee_fresh:
+        _expire_stale_backlog(pipeline, niche)
+
+        per_run_cap = getattr(config, 'upload_max_per_run', 0) or 5
+        if pipeline.upload_enabled and config.schedule_backlog_first:
             try:
-                started = pipeline.run_niche(niche, max_videos=1)
-                if started:
-                    started_total += started
-                    logger.info(
-                        "Guaranteed fresh chop: niche '%s' started %d fresh "
-                        "video(s) (SWEEP_GUARANTEE_FRESH)", niche, started)
-            except Exception as exc:  # a failed niche must not kill the sweep
-                logger.warning(
-                    "Guaranteed fresh chop failed for '%s': %s", niche, exc)
+                _upload_backlog_supply(pipeline, niche, per_run_cap, channels)
+            except Exception as exc:
+                logger.error("Backlog upload error for %s: %s", niche, exc)
 
-        if cap <= 0:
-            if not guarantee_fresh:
-                logger.info("Scheduled sweep total budget (%d videos) exhausted",
-                            total_budget)
-                break
-            logger.info(
-                "Niche '%s': shared sweep budget spent; the guaranteed fresh "
-                "chop already covered it", niche)
-            continue
-
-        # 1. Expire stale backlog
-        expired = _expire_stale_backlog(pipeline, niche)
-        if expired:
-            logger.info("Niche '%s': expired %d stale backlog clip(s) (TTL %d days)",
-                        niche, expired, getattr(config, 'backlog_ttl_days', 7))
-
-        # 2. Upload eligible backlog clips
-        backlog_cap = config.upload_max_per_run or 999999  # 0 = unlimited
-        uploaded_backlog = _upload_backlog_supply(pipeline, niche, backlog_cap, channels)
-
-        # 3. Compute queue health after backlog drain
         health = _get_queue_health(pipeline, niche, channels)
+        should_discover, reason = _should_discover_more(pipeline, niche, health, channels)
+        logger.info("DECISION niche=%s should_discover=%s reason=%s", niche, should_discover, reason)
 
-        # 4. Decide whether to discover fresh sources
-        should_discover, reason = _should_discover_more(pipeline, niche, health, 
-                                                         [c for c in channels if c in authed])
-
-        logger.info(
-            "QUEUE_HEALTH niche=%s total=%d eligible=%d distinct_sources=%d "
-            "top_source_share=%.2f channel_remaining=%d reason=%s",
-            niche, health['total_queued'], health['eligible_clips'],
-            health['distinct_sources'], health['top_source_share'],
-            health['channel_remaining'], reason if should_discover else 'none',
-        )
-
-        # 5. If queue unhealthy, run discovery (if we have budget)
         if should_discover:
-            remaining_cap = cap
-            if remaining_cap > 0:
-                logger.info("DISCOVERY_TRIGGER niche=%s reason=%s", niche, reason)
-                discovered = _discover_and_render(pipeline, niche, cap, 
-                                                   [c for c in channels if c in authed])
-                budget_spent += discovered
-                started_total += discovered
-                # Re-evaluate health after discovery
-                health = _get_queue_health(pipeline, niche, channels)
-
-        # 5b. If channel capacity remains, try one more backlog pass
-        if health['channel_remaining'] > 0 and health['eligible_clips'] > 0:
-            uploaded_more = _upload_backlog_supply(pipeline, niche, 
-                                                    health['channel_remaining'], channels)
-            if uploaded_more:
-                logger.info("Niche '%s': uploaded %d additional backlog clip(s)",
-                            niche, uploaded_more)
-
-        logger.info("Niche '%s': sweep complete", niche)
-
-    logger.info("Scheduled sweep started %d video(s)", started_total)
-    return started_total
+            max_v = niche_cfg.get('max_videos', 0) or getattr(config, 'schedule_max_videos', 3)
+            started = pipeline.run_niche(niche, max_videos=max_v)
+            total_started += started
 
 
 def _run_schedule(pipeline: 'ShortsPipeline', args) -> int:
     try:
-        try:
-            from .scheduler import PipelineScheduler
-        except ImportError:
-            from scheduler import PipelineScheduler
-    except ImportError as exc:
-        logger.error("Scheduler needs APScheduler: %s (pip install apscheduler)", exc)
-        return 2
+        from apscheduler.schedulers.blocking import BlockingScheduler
+        from apscheduler.triggers.cron import CronTrigger
+    except ImportError:
+        logger.error("apscheduler is not installed. Run: pip install apscheduler")
+        return 1
 
-    import time
-
-    run_times = [t.split('#')[0].strip()
-                 for t in os.getenv('RUN_TIMES', '0 9 * * *').split(',')]
-    run_times = [t for t in run_times if t]
-
-    # Anti-burst jitter: add a random minute offset to each fixed run time so
-    # the pipeline never fires on the same :00 every day. A daily sweep landing
-    # at 9:00:00 vs 9:27:31 doesn't matter to us but varies the moment the
-    # batch enters YouTube's feed test.
+    scheduler = BlockingScheduler()
     jitter = getattr(config, 'schedule_jitter_minutes', 0)
-    if jitter:
-        jittered = []
-        for cron in run_times:
-            parts = cron.split()
-            if len(parts) == 5:
-                try:
-                    parts[0] = str(random.randint(0, min(jitter, 59)))
-                except (ValueError, TypeError):
-                    pass
-            jittered.append(' '.join(parts))
-        run_times = jittered
-        logger.info("Run times jittered by up to %d minute(s): %s",
-                    jitter, ', '.join(run_times))
 
-    def job():
-        try:
-            _run_scheduled_sweep(pipeline, args)
-            pipeline.report()
-        except Exception as exc:
-            logger.error("Scheduled sweep failed: %s", exc, exc_info=True)
+    for hour in (9, 14, 19):
+        minute = random.randint(0, min(59, jitter)) if jitter else 0
+        trigger = CronTrigger(hour=hour, minute=minute)
+        scheduler.add_job(
+            _run_scheduled_sweep,
+            trigger=trigger,
+            args=[pipeline, args],
+            name=f"sweep_{hour:02d}_{minute:02d}",
+        )
+        logger.info("Scheduled sweep at %02d:%02d daily", hour, minute)
 
-    sched = PipelineScheduler()
-    for i, cron in enumerate(run_times):
-        try:
-            sched.add_daily_job(job, cron, job_id=f'shorts_pipeline_{i}')
-        except Exception as exc:
-            logger.error("Bad cron entry %r: %s", cron, exc)
-
-    # Feedback loop: refresh YouTube metrics once a day on top of the runs.
-    stats_cron = os.getenv('STATS_RUN_TIME', '0 8 * * *')
+    logger.info("Starting scheduler. Press Ctrl+C to exit.")
     try:
-        def stats_job():
-            try:
-                run_stats_mode(pipeline, args)
-            except Exception as exc:
-                logger.error("Scheduled stats refresh failed: %s", exc)
-        sched.add_daily_job(stats_job, stats_cron, job_id='short_stats_refresh')
-        logger.info("Stats refresh scheduled at %s", stats_cron)
-    except Exception as exc:
-        logger.error("Bad STATS_RUN_TIME cron %r: %s", stats_cron, exc)
-
-    sched.start()
-    logger.info("Scheduler running (%s). Press Ctrl+C to stop.", ', '.join(run_times))
-    try:
-        while True:
-            time.sleep(60)
-    except KeyboardInterrupt:
-        logger.info("Shutting down scheduler")
-        sched.shutdown()
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Scheduler stopped.")
     return 0
 
 
