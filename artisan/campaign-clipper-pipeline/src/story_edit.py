@@ -94,6 +94,40 @@ _LEADING_FILLER = re.compile(
 
 
 # ---------------------------------------------------------------------------
+# Caption look that goes with this edit style
+# ---------------------------------------------------------------------------
+def _register_caption_preset() -> None:
+    """Add the 'clipfarm' caption look to the shared preset table.
+
+    Registered here rather than edited into ``viral_captions`` so the caption
+    engine stays a general-purpose module and this lane's editorial choices stay
+    with the editorial code.
+
+    Three words at a time, one group on screen, sat at ``margin_v`` 470 -- low
+    enough to clear the title hook at the top of the frame, high enough to clear
+    the Shorts UI at the bottom. Those two overlaps are the only reliable ways
+    to make burned-in text unreadable on a phone.
+    """
+    try:
+        from . import viral_captions as vc
+    except Exception:  # pragma: no cover - captions optional at import time
+        return
+    if 'clipfarm' in vc.PRESETS:
+        return
+    try:
+        vc.PRESETS['clipfarm'] = vc.CaptionPreset(
+            'clipfarm', font='Anton', font_size=116,
+            emphasis='&H0000D7FF', punch='&H002B2BFF',
+            outline=8, shadow=4, margin_v=470, max_words=3,
+        )
+    except Exception as exc:  # pragma: no cover
+        logger.debug('could not register the clipfarm caption preset: %s', exc)
+
+
+_register_caption_preset()
+
+
+# ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
 @dataclass
@@ -257,19 +291,35 @@ def find_question(segments: Sequence[Dict], start: float, end: float,
     return best
 
 
-def find_payoff(segments: Sequence[Dict], start: float,
-                end: float) -> Optional[Dict]:
-    """The strongest reaction beat in the back half of the window."""
+def find_payoff(segments: Sequence[Dict], start: float, end: float,
+                require_cue: bool = True) -> Optional[Dict]:
+    """The strongest reaction beat in the back half of the window.
+
+    ``require_cue`` is the difference between ``auto`` and an explicit
+    ``cold_open``:
+
+    * ``auto`` must be conservative. Bolting a teaser onto the front of flat
+      narration adds a jump cut and buys nothing, so with no reaction cue it
+      declines and the clip stays a straight cut.
+    * an explicit ``cold_open`` was asked for, so it falls back to the last
+      substantive beat -- which in list and reveal footage is usually where the
+      payoff actually is ("the last shot is the cows being shown").
+    """
     window = float(end) - float(start)
     if window <= 0:
         return None
     from_time = float(start) + window * 0.5
+    candidates = _segments_within(segments, from_time, end)
+    if not candidates:
+        return None
     best, best_hits = None, 0
-    for segment in _segments_within(segments, from_time, end):
+    for segment in candidates:
         hits = len(_PAYOFF_CUE.findall(str(segment.get('text') or '')))
         if hits > best_hits:
             best, best_hits = segment, hits
-    return best
+    if best is not None:
+        return best
+    return None if require_cue else candidates[-1]
 
 
 def title_hook_from(text: str, uppercase: bool = True,
@@ -409,7 +459,8 @@ def build_plan(window: Dict, segments: Sequence[Dict], min_duration: float,
         question = find_question(segments, start, end,
                                 min_lead_in=max(min_span, 1.0))
     if requested in (STYLE_AUTO, STYLE_COLD_OPEN) and question is None:
-        payoff = find_payoff(segments, start, end)
+        payoff = find_payoff(segments, start, end,
+                            require_cue=(requested == STYLE_AUTO))
 
     if question is not None and requested in (STYLE_AUTO, STYLE_QUESTION_FIRST):
         spans = _question_first(start, end, question, hook_tail, notes)
