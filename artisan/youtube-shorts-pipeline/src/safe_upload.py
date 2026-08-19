@@ -35,14 +35,22 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-from .config import config
-from .database import PipelineDatabase
-from .uploader import YouTubeUploader
+try:  # package-relative first (python -m src.safe_upload)
+    from .config import config
+    from .database import PipelineDatabase
+    from .uploader import YouTubeUploader
+except ImportError:  # pragma: no cover - direct execution / tests on sys.path
+    from config import config
+    from database import PipelineDatabase
+    from uploader import YouTubeUploader
 
 try:
     from .title_optimizer import optimize_title
 except Exception:  # pragma: no cover - optimizer is optional
-    optimize_title = None
+    try:
+        from title_optimizer import optimize_title
+    except Exception:
+        optimize_title = None
 
 
 def _delete_after_upload(path, source_id, segment, logger=print) -> bool:
