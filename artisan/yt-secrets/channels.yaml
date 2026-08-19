@@ -1,6 +1,27 @@
-# Single source of truth for YouTube channel keys, owners, projects and token destinations.
-# New channel checklist: add a stable key, owner email, project slug, pipeline list,
-# token_dir, then run `cd artisan && python -m yt_secrets auth --channel <key>`.
+# Single source of truth for YouTube channel keys, owners, projects, token
+# destinations -- and, since 2026-08-19, channel IDENTITY.
+#
+# WHY channel_id MATTERS
+# ---------------------
+# On 2026-08-16 the wealth_mindset token was minted while signed into the wrong
+# Google account, resolved to the "Chop UG" channel, and published four clips
+# there. Nothing errored: there was no recorded answer to "what channel is
+# wealth_mindset supposed to be?", so nothing could disagree.
+#
+# Filling in channel_id below turns that into a refusal. Until it is filled in,
+# the auth CLI binds the key to whatever channel it first resolves to and writes
+# that into channel_identity.json (machine-written, do not hand-edit), then
+# enforces it from then on. A value here always wins over the ledger.
+#
+# Get a channel id with:  cd artisan && python -m yt_secrets status
+#
+# New channel checklist: stable key, owner email, project slug, pipelines,
+# token_dir, then  cd artisan && python -m yt_secrets auth --channel <key>
+# and paste the reported channel id into channel_id.
+#
+# client_from: <other key>
+#   Use that channel's OAuth client instead of this one's. Only needed when a
+#   channel's own Google Cloud client is gone (see flick_shorts).
 channels:
   flick_shorts:
     email: draallan0@gmail.com
@@ -8,12 +29,22 @@ channels:
     active: true
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
+    channel_id: ''
+    # LANDMINE: this channel's own OAuth client (929304292327-aggfh...) was
+    # DELETED in Google Cloud, so a fresh auth returns `deleted_client`. The
+    # existing token still works, but it cannot be re-minted against its own
+    # client. Borrowing wealth_mindset's live client is the documented
+    # workaround; recreating a Desktop client in the yt-flick-shorts project is
+    # the real fix (and restores this channel's own 10k/day quota).
+    client_from: wealth_mindset
+    client_status: deleted-recreate-in-google-cloud
   capital_mindset:
     email: draallan0@gmail.com
     slug: draallan0
     active: true
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
+    channel_id: ''
 
   wealth_mindset:
     email: adrasaltsxxx@gmail.com
@@ -21,24 +52,34 @@ channels:
     active: true
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
+    # Re-authed correctly on 2026-08-18 after the Chop UG mix-up. Paste the id
+    # reported by `python -m yt_secrets status` here so the mix-up can never
+    # recur silently.
+    channel_id: ''
   dra_allan_official:
     email: adrasaltsxxx@gmail.com
     slug: adrasaltsxxx
     active: false
     pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
+    channel_id: ''
   NXS:
     email: draallan12@gmail.com
     slug: adrasaltsxxx
     active: true
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
+    # Owned by draallan12 but rides project B (adrasaltsxxx). Consent must be
+    # approved while signed in as draallan12 -- the single most common cause of
+    # a wrong-channel bind on this account.
+    channel_id: ''
   explaination:
     email: draallan12@gmail.com
     slug: adrasaltsxxx
     active: true
     pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
+    channel_id: ''
 
   chop_ug:
     email: daadaallan0@gmail.com
@@ -46,33 +87,42 @@ channels:
     active: false
     pipelines: [shorts]
     token_dir: artisan/youtube-shorts-pipeline/config
+    # This is the channel the 8/16 rogue uploads landed on (ids 465-468). Its
+    # id is worth filling in first: with it recorded, any token that resolves
+    # here under another key is rejected outright.
+    channel_id: ''
   rankdrop:
     email: daadaallan0@gmail.com
     slug: draallan0
     active: false
     pipelines: [ranking]
     token_dir: artisan/ranking-shorts-pipeline/config
+    channel_id: ''
   money_matrix:
     email: adrasaltsx@gmail.com
     slug: adrasaltsxxx
     active: false
     pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
+    channel_id: ''
   god_did_fx:
     email: draallan84@gmail.com
     slug: adrasaltsxxx
     active: false
     pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
+    channel_id: ''
   the_other_guys:
     email: allandaada@gmail.com
     slug: draallan0
     active: false
     pipelines: [shorts]
     token_dir: artisan/youtube-shorts-pipeline/config
+    channel_id: ''
   moviegasm:
     email: allandaada@gmail.com
     slug: draallan0
     active: true
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
+    channel_id: ''
