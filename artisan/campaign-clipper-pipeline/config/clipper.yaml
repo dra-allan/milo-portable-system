@@ -44,3 +44,55 @@ banned_words:
   - slur
   - suicide
   - overdose
+
+# ---------------------------------------------------------------------------
+# Autopilot intake rules.
+#
+# Data, not code: this is the eligibility wall that made every prior submission
+# worthless, so it has to be adjustable without a code change. All 47
+# submissions under Roobet [CLIPPING] 3 came back Ineligible because it demands
+# 1000 followers per social profile and the campaign channels have 0-22. The day
+# a channel clears 1000, delete the follower keywords here and gated campaigns
+# (which are the better-paying ones, precisely because the wall thins the
+# competition) become available with no code change.
+#
+# Keywords are substring-matched, case-insensitively, against every requirement
+# row on the campaign page: obligations, prohibitions AND rows whose marker
+# colour could not be classified.
+# ---------------------------------------------------------------------------
+intake:
+  max_progress_pct: 20          # only campaigns using less than this much budget
+  reject_keywords:
+    - min followers
+    - min followers per social profile
+    - min subscribers
+    - minimum followers
+    - minimum subscribers
+    - min views
+    - minimum views
+    - min engagement
+    - minimum engagement
+    - engagement percentage
+  # The only channels campaign clips may ever be posted to. chop_ug, rankdrop,
+  # the_other_guys and explaination are reserved for the shorts/ranking lane and
+  # are deliberately absent: a campaign resolving to one of them is skipped.
+  campaign_channels:
+    - capital_mindset
+    - wealth_mindset
+    - flick_shorts
+    - moviegasm
+    - NXS
+  # Where a campaign whose niche is unrecognised goes. flick_shorts is the
+  # "post anything, keep what goes viral" channel.
+  unknown_niche_channel: flick_shorts
+
+# opencli browser bridge (submission surface).
+#
+# profile is intentionally EMPTY. It identifies one physical Chrome on one
+# machine, so a committed value would be wrong everywhere except the box it was
+# written on, and opencli would submit through whichever bridge answered first.
+# Set OPENCLI_PROFILE in the environment, or fill it in per machine.
+opencli:
+  bin: opencli
+  session: clipster
+  profile: ''
