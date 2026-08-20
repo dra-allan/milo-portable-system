@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787210276.2354186,
+  "updated_at": 1787213433.166866,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787207344.2537138,
+      "last_run": 1787211812.8868725,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     214\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1787211535.8945553,
-      "runs": 680,
+      "next_run": 1787215455.9026039,
+      "runs": 681,
       "failures": 32
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787208290.920059,
+      "last_run": 1787212410.719791,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787212164.36922,
-      "runs": 674,
+      "next_run": 1787216031.5695093,
+      "runs": 675,
       "failures": 89
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787208565.583269,
-      "last_status": "failed (124)",
-      "last_output": "timed out after 900s",
-      "next_run": 1787213078.3209722,
-      "runs": 102,
+      "last_run": 1787213325.4579573,
+      "last_status": "ok",
+      "last_output": "------------------------------------------------------------------------------\n sync  ~7265 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
+      "next_run": 1787217033.0813637,
+      "runs": 103,
       "failures": 5
     },
     {
