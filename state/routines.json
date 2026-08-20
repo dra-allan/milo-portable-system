@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787205449.8657207,
+  "updated_at": 1787212678.6941466,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787205435.2751324,
-      "last_status": "failed (3221225786)",
-      "last_output": "",
-      "next_run": 1787209041.444889,
-      "runs": 677,
+      "last_run": 1787212507.5360694,
+      "last_status": "ok",
+      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     5\n  memories     229\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
+      "next_run": 1787216130.4806035,
+      "runs": 678,
       "failures": 33
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787205442.1054642,
-      "last_status": "failed (3221225786)",
-      "last_output": "",
-      "next_run": 1787209045.8603368,
-      "runs": 671,
+      "last_run": 1787212530.489368,
+      "last_status": "ok",
+      "last_output": "[ok] vault clean, nothing to commit",
+      "next_run": 1787216137.9350483,
+      "runs": 672,
       "failures": 90
     },
     {
@@ -131,11 +131,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1787123037.508014,
+      "last_run": 1787212537.9384565,
       "last_status": "ok",
-      "last_output": "Overnight runs happened. Reading the logs to see results\nMorning. Here's where things stand at 06:35.\n\n**Overnight: 12 shorts uploaded, zero errors.** The backlog drained. 04:49 run put 6 on flick_shorts (Danny McBride interview, uUAH82U_jXU). 05:13 run put 6 on capital_mindset (yveLqk3DCNs, \"Once You Get Money, Buy These 10 Things Immediately\"). Both daemons are Running and self-scheduled — shorts fires 09:39 today (jittered), ranking 09:04.\n\n**The catch: fresh extraction is still blocked.** This morning's ranking sweep pulled 3 candidates and got 0 — all \"Video unavailable\" (Z-fC9JWV0xI, ftFLQYPDyzg, XU2qCP9ssRs). Shorts sweep chopped 0 fresh lanes, 5 chop failures. Same bot-fingerprint wall as yesterday. Uploads only worked because we were draining already-rendered clips. The 09:04/09:39 runs will likely find nothing new to post.\n\n**One decision needed today:** the extraction block. Yesterday's conclusion stands — yt-dlp config can't fix it; options are real-browser extraction (curl_cffi impersonate or browser-fetch flow) or waiting out YouTube's experiment. Backlog is nearly dry, so this now costs real uploads, not just convenience. My call: spend an hour on the curl_cffi impersonate path today; it's the only one that doesn't depend on upstream.\n\nAlso still open from yesterday: the 4 rogue Chop UG uploads (ids 465–468) waiting on your yes/no, and flick_shorts OAuth client needs recreating in Google Cloud Console before that channel can re-auth.\n\nWant me to take the curl_cffi shot at the extraction block?",
-      "next_run": 1787209200.0,
-      "runs": 13,
+      "last_output": "Good morning, Allan. Briefing for Thu 2026-08-20:\n\n**1. Yesterday (08-19):** Big day on the VPS. The two YouTube daemons (shorts + ranking) were completely dead — registered boot-only with interactive logon, they'd never fired (Last Run 11/30/1999). Re-registered with dual triggers (daily 08:45/08:49 + AtStartup), single-instance, unlimited runtime. Also registered the `pipeline-driver` routine (09:40 daily, reports to Telegram). And the extraction block got fixed for real: PR #17 merged — root cause was client config (android_vr/ios had no GVS POT, stale yt-dlp-ejs, no browser TLS), not an IP ban. mweb client combo now resolves 40 formats and downloads clean. Plus a yt-dlp plugin fix (find_spec, never import) committed to both lanes, and a procedure for recovering orphaned rendered shorts.\n\n**2. Time-sensitive:** Today 09:40 is the first real pipeline-driver run under the fixed daemons — first live test of the whole chain since the block. Watch the Telegram report; if uploads fire, this is the first fresh content since 08-17. Also: the Alibaba trial claim (was ~3 days out on 08-15) is likely lapsed — decide if that's dead. The two-week underperformer trial ends 08-26.\n\n**3. Not asked, worth your attention:** flick_shorts still has a dead token — its OAuth client is deleted in Google Cloud (401 deleted_client). That channel can't upload until you recreate the client. That's the last broken channel in the fleet, and it's the one with no niche lock, so it's the one you'd want for experimenting. Also: those 4 rogue Chop UG clips (ids 465-468) are still live awaiting your call — I'd say delete them; they're misbranded content on a channel you care about.",
+      "next_run": 1787284800.0,
+      "runs": 14,
       "failures": 1
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787205445.9913678,
-      "last_status": "failed (3221225786)",
-      "last_output": "",
-      "next_run": 1787209049.8653703,
-      "runs": 99,
+      "last_run": 1787212656.304227,
+      "last_status": "ok",
+      "last_output": "dc, ui-designer.mdc, ui-finish-gate-reviewer.mdc, uswds-developer.mdc, ux-architect.mdc, ux-researcher.mdc, video-optimization-specialist.mdc, video-streaming-engineer.mdc, visual-storyteller.mdc, voice-ai-integration-engineer.mdc, webassembly-engineer.mdc, wechat-mini-program-developer.mdc, wechat-official-account-manager.mdc, weibo-strategist.mdc, whimsy-injector.mdc, wordpress-performance-engineer.mdc, wordpress-shopping-cart-engineer.mdc, x-twitter-intelligence-analyst.mdc, xiaohongshu-specialist.mdc, zhihu-strategist.mdc\n    gemini         GEMINI.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, account-strategist.md, aeo-foundations-architect.md, agentic-search-optimizer.md, ai-citation-strategist.md, ai-data-remediation-engineer.md, ai-engineer.md, api-platform-engineer.md, app-store-optimizer.md, autonomous-optimization-architect.md, backend-architect.md, baidu-seo-specialist.md, behavioral-nudge-engine.md, bilibili-content-strategist.md, book-co-author.md, bookkeeper-controller.md, brand-guardian.md, carousel-growth-engine.md, china-e-commerce-operator.md, china-market-localization-strategist.md, cms-developer.md, code-reviewer.md, codebase-onboarding-engineer.md, content-creator.md, cross-border-e-commerce-specialist.md, data-engineer.md, data-visualization-engineer.md, database-optimizer.md, database-reliability-engineer.md, deal-strategist.md, desktop-app-engineer.md, developer-tooling-engineer.md, devops-automator.md, discovery-coach.md, douyin-strategist.md, drupal-performance-engineer.md, drupal-shopping-cart-engineer.md, email-intelligence-engineer.md, email-marketing-strategist.md, embedded-firmware-engineer.md, feedback-synthesizer.md, feishu-integration-developer.md, filament-optimization-specialist.md, financial-analyst.md, finops-engineer.md, fp-a-analyst.md, frontend-developer.md, gaussdb-expert-engineer.md, git-workflow-master.md, global-podcast-strategist.md, growth-hacker.md, identity-access-engineer.md, image-prompt-engineer.md, incident-response-commander.md, inclusive-visuals-specialist.md, instagram-curator.md, internationalization-engineer.md, investment-researcher.md, iot-fleet-engineer.md, it-service-manager.md, kuaishou-strategist.md, linkedin-content-creator.md, livestream-commerce-coach.md, llm-post-training-engineer.md, minimal-change-engineer.md, mobile-app-builder.md, mobile-release-engineer.md, multi-agent-systems-architect.md, multi-platform-publisher.md, network-engineer.md, offer-lead-gen-strategist.md, orgscript-engineer.md, outbound-strategist.md, payments-billing-engineer.md, persona-walkthrough-specialist.md, pipeline-analyst.md, podcast-strategist.md, pr-communications-manager.md, privacy-engineer.md, private-domain-operator.md, product-manager.md, prompt-engineer.md, proposal-strategist.md, rag-pipeline-engineer.md, rapid-prototyper.md, realtime-collaboration-engineer.md, reddit-community-builder.md, rust-refactoring-specialist.md, sales-coach.md, sales-engineer.md, search-relevance-engineer.md, section-508-accessibility-specialist.md, senior-developer.md, seo-specialist.md, short-video-editing-coach.md, social-media-strategist.md, software-architect.md, solidity-smart-contract-engineer.md, sprint-prioritizer.md, sre-site-reliability-engineer.md, tax-strategist.md, technical-writer.md, tiktok-strategist.md, trend-researcher.md, twitter-engager.md, ui-designer.md, ui-finish-gate-reviewer.md, uswds-developer.md, ux-architect.md, ux-researcher.md, video-optimization-specialist.md, video-streaming-engineer.md, visual-storyteller.md, voice-ai-integration-engineer.md, webassembly-engineer.md, wechat-mini-program-developer.md, wechat-official-account-manager.md, weibo-strategist.md, whimsy-injector.md, wordpress-performance-engineer.md, wordpress-shopping-cart-engineer.md, x-twitter-intelligence-analyst.md, xiaohongshu-specialist.md, zhihu-strategist.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 6 harness(es) in sync",
+      "next_run": 1787216278.693423,
+      "runs": 100,
       "failures": 5
     },
     {
