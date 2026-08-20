@@ -402,15 +402,17 @@ class Config:
         self.edit_min_span = self._float('EDIT_MIN_SPAN_SECONDS', 0.6, minimum=0.1)
         # How much of the answering beat rides along with a lifted question.
         # "Are cows allowed on the plane?" alone dangles; with ~1.2s it lands as
-        # an exchange.
-        self.hook_tail_seconds = self._float('HOOK_TAIL_SECONDS', 1.2, minimum=0.0)
+        # an exchange. Allan's cut: keep it short (0.3s) so the fade lands right
+        # after the question instead of trailing into the answering sentence.
+        self.hook_tail_seconds = self._float('HOOK_TAIL_SECONDS', 0.3, minimum=0.0)
         # Cold-open teaser length. Long enough to raise a question, short enough
         # not to spend the payoff it is selling.
         self.cold_open_seconds = self._float('COLD_OPEN_SECONDS', 1.8, minimum=0.0)
         # Dip-fade length (seconds) between reordered pieces (hook/story/payoff).
-        # 0 disables the seam fade entirely. Kept small on purpose: a big fade
-        # reads as a glitch, a small one reads as a deliberate edit.
-        self.reorder_fade = self._float('REORDER_FADE', 0.35, minimum=0.0)
+        # 0 disables the seam fade entirely. Kept barely-noticeable: its job is
+        # to prevent an audible click/snap at the cut, not to stage a visible
+        # transition.
+        self.reorder_fade = self._float('REORDER_FADE', 0.12, minimum=0.0)
         # The burned-in title hook, held for the whole clip.
         self.hook_text_enabled = self._bool('HOOK_TEXT_ENABLED', True)
         self.hook_uppercase = self._bool('HOOK_UPPERCASE', True)
