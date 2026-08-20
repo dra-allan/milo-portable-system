@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787204422.4069955,
+  "updated_at": 1787210276.2354186,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787203413.4625974,
+      "last_run": 1787207344.2537138,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     214\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1787207073.7161915,
-      "runs": 679,
+      "next_run": 1787211535.8945553,
+      "runs": 680,
       "failures": 32
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787204047.6126842,
+      "last_run": 1787208290.920059,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787207707.6147447,
-      "runs": 673,
+      "next_run": 1787212164.36922,
+      "runs": 674,
       "failures": 89
     },
     {
@@ -131,11 +131,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1787123037.508014,
+      "last_run": 1787209809.1657062,
       "last_status": "ok",
-      "last_output": "Overnight runs happened. Reading the logs to see results\nMorning. Here's where things stand at 06:35.\n\n**Overnight: 12 shorts uploaded, zero errors.** The backlog drained. 04:49 run put 6 on flick_shorts (Danny McBride interview, uUAH82U_jXU). 05:13 run put 6 on capital_mindset (yveLqk3DCNs, \"Once You Get Money, Buy These 10 Things Immediately\"). Both daemons are Running and self-scheduled — shorts fires 09:39 today (jittered), ranking 09:04.\n\n**The catch: fresh extraction is still blocked.** This morning's ranking sweep pulled 3 candidates and got 0 — all \"Video unavailable\" (Z-fC9JWV0xI, ftFLQYPDyzg, XU2qCP9ssRs). Shorts sweep chopped 0 fresh lanes, 5 chop failures. Same bot-fingerprint wall as yesterday. Uploads only worked because we were draining already-rendered clips. The 09:04/09:39 runs will likely find nothing new to post.\n\n**One decision needed today:** the extraction block. Yesterday's conclusion stands — yt-dlp config can't fix it; options are real-browser extraction (curl_cffi impersonate or browser-fetch flow) or waiting out YouTube's experiment. Backlog is nearly dry, so this now costs real uploads, not just convenience. My call: spend an hour on the curl_cffi impersonate path today; it's the only one that doesn't depend on upstream.\n\nAlso still open from yesterday: the 4 rogue Chop UG uploads (ids 465–468) waiting on your yes/no, and flick_shorts OAuth client needs recreating in Google Cloud Console before that channel can re-auth.\n\nWant me to take the curl_cffi shot at the extraction block?",
-      "next_run": 1787209200.0,
-      "runs": 13,
+      "last_output": "Morning. It's 06:51 on the VPS. Here's where things stand:\n\n**Today's auto-runs (in ~2 hours)**\n- Shorts + ranking daemons are alive — both currently running, last boot 8/19 21:24. They fire the 8:45/8:49 tasks, self-schedule the 9AM sweep, and the pipeline-driver verifies + reports to Telegram at 09:40. If that Telegram ping doesn't land by ~9:45, something's wrong.\n\n**Watch item: the extraction block**\n- Last known state (8/18): yt-dlp getting UNPLAYABLE on most videos from this IP — a YouTube bot-fingerprint experiment, not fixable by config. If the daemons are still blocked today, the real path is browser-based extraction (curl_cffi impersonate or browser fetch) or waiting out the experiment. Today's sweep will tell us if it cleared overnight.\n\n**Fixed last night (PC)**\n- Reorder-shorts silence bug — clips started with ~2s of digital silence. Root cause was `-ss`/`-t` on the ffmpeg input in the reorder branch; fix committed (b061ba5), plus `RENDER_WORKERS=1` to stop the parallel h264_qsv OOM. All 12 clips of that video verified clean.\n\n**Still open (no action needed today unless you want)**\n- flick_shorts OAuth client is deleted in Google Cloud — needs recreation before that channel can upload again.\n- 4 rogue Chop UG uploads (wrong-channel bug) still live — say the word if you want them taken down.\n- Clipster: all 47 Roobet submissions ineligible due to the 1,000-follower gate. Strategy question, not a bug.\n\nWant me to check whether yesterday's sweep actually produced uploads, or is the 9:40 Telegram report enough?",
+      "next_run": 1787295600.0,
+      "runs": 14,
       "failures": 1
     },
     {
@@ -157,12 +157,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787204384.9095662,
-      "last_status": "ok",
-      "last_output": "------------------------------------------------------------------------------\n sync  ~7211 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787208022.353876,
-      "runs": 101,
-      "failures": 4
+      "last_run": 1787208565.583269,
+      "last_status": "failed (124)",
+      "last_output": "timed out after 900s",
+      "next_run": 1787213078.3209722,
+      "runs": 102,
+      "failures": 5
     },
     {
       "name": "vault-sync",
