@@ -749,10 +749,15 @@ class VideoEditor:
         audio_in_label = '0:a:0'
 
         if is_reordered:
-            seek, read_span = story_edit.read_window(edit_plan)
             duration = edit_plan.duration
+            # Spans are expressed in the section file's timeline, which is what
+            # the input IS, so trim with absolute times (seek=0). Input seeking
+            # via -ss/-t here produces a stream whose timestamps make loudnorm
+            # on the concatenated audio emit ~2s of digital silence at the
+            # start of the clip, so the reorder path deliberately decodes the
+            # (already bounded) section instead of seeking into it.
             edit_chains, v_label, a_label = story_edit.build_filtergraph(
-                edit_plan, has_audio, seek
+                edit_plan, has_audio, 0.0
             )
             filters.extend(edit_chains)
             video_in_label = v_label
@@ -815,11 +820,8 @@ class VideoEditor:
         music_track = self._pick_music_track() if has_audio else None
 
         if is_reordered:
-            seek, read_span = story_edit.read_window(edit_plan)
             cmd = [
                 self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
-                '-ss', f"{seek:.3f}",
-                '-t', f"{read_span:.3f}",
                 '-i', str(src),
             ]
         else:
