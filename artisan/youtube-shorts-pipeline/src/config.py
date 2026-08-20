@@ -407,6 +407,10 @@ class Config:
         # Cold-open teaser length. Long enough to raise a question, short enough
         # not to spend the payoff it is selling.
         self.cold_open_seconds = self._float('COLD_OPEN_SECONDS', 1.8, minimum=0.0)
+        # Dip-fade length (seconds) between reordered pieces (hook/story/payoff).
+        # 0 disables the seam fade entirely. Kept small on purpose: a big fade
+        # reads as a glitch, a small one reads as a deliberate edit.
+        self.reorder_fade = self._float('REORDER_FADE', 0.35, minimum=0.0)
         # The burned-in title hook, held for the whole clip.
         self.hook_text_enabled = self._bool('HOOK_TEXT_ENABLED', True)
         self.hook_uppercase = self._bool('HOOK_UPPERCASE', True)

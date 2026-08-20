@@ -588,8 +588,15 @@ def read_window(plan: EditPlan, pad: float = 0.5) -> Tuple[float, float]:
 
 
 def build_filtergraph(plan: EditPlan, has_audio: bool,
-                      seek: float) -> Tuple[List[str], str, Optional[str]]:
+                      seek: float,
+                      fade: float = 0.0) -> Tuple[List[str], str, Optional[str]]:
     """trim/concat chains for a reordered edit.
+
+    ``fade`` (seconds) dips each piece out and in at the seams so the hard cut
+    between hook/story/payoff footage becomes a short fade instead of a snap.
+    It deliberately does NOT change any piece's duration: the fade lives inside
+    the piece's own window, so concat keeps the output length and caption
+    timeline exactly as before.
 
     Returns ``(chains, video_label, audio_label)``. ``audio_label`` is None for a
     silent source, in which case the caller supplies its own silent input --
@@ -602,16 +609,30 @@ def build_filtergraph(plan: EditPlan, has_audio: bool,
     for index, span in enumerate(plan.spans):
         rel_start = max(0.0, span.start - seek)
         rel_end = max(rel_start + 0.05, span.end - seek)
+        piece_dur = rel_end - rel_start
+        # Guard: a seam fade can never take up more than a third of a piece,
+        # otherwise a very short span would be more dip than content.
+        seam_fade = min(float(fade or 0.0), piece_dur / 3.0)
         # setpts/asetpts rebase each piece to zero, which is what makes concat
         # produce a continuous timeline instead of overlapping timestamps.
-        chains.append(
-            f'[0:v]trim=start={rel_start:.3f}:end={rel_end:.3f},'
-            f'setpts=PTS-STARTPTS[ev{index}]')
+        v_filters = f'[0:v]trim=start={rel_start:.3f}:end={rel_end:.3f},' \
+                    f'setpts=PTS-STARTPTS'
+        if seam_fade > 0:
+            if index > 0:
+                v_filters += f',fade=t=in:st=0:d={seam_fade:.3f}'
+            if index < len(plan.spans) - 1:
+                v_filters += f',fade=t=out:st={piece_dur - seam_fade:.3f}:d={seam_fade:.3f}'
+        chains.append(f'{v_filters}[ev{index}]')
         video_labels.append(f'[ev{index}]')
         if has_audio:
-            chains.append(
-                f'[0:a:0]atrim=start={rel_start:.3f}:end={rel_end:.3f},'
-                f'asetpts=PTS-STARTPTS[ea{index}]')
+            a_filters = f'[0:a:0]atrim=start={rel_start:.3f}:end={rel_end:.3f},' \
+                        f'asetpts=PTS-STARTPTS'
+            if seam_fade > 0:
+                if index > 0:
+                    a_filters += f',afade=t=in:st=0:d={seam_fade:.3f}'
+                if index < len(plan.spans) - 1:
+                    a_filters += f',afade=t=out:st={piece_dur - seam_fade:.3f}:d={seam_fade:.3f}'
+            chains.append(f'{a_filters}[ea{index}]')
             audio_labels.append(f'[ea{index}]')
 
     count = len(plan.spans)

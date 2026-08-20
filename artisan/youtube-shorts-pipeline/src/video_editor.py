@@ -757,7 +757,8 @@ class VideoEditor:
             # start of the clip, so the reorder path deliberately decodes the
             # (already bounded) section instead of seeking into it.
             edit_chains, v_label, a_label = story_edit.build_filtergraph(
-                edit_plan, has_audio, 0.0
+                edit_plan, has_audio, 0.0,
+                fade=float(getattr(config, 'reorder_fade', 0.0) or 0.0),
             )
             filters.extend(edit_chains)
             video_in_label = v_label
