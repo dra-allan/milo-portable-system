@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787291332.6901264,
+  "updated_at": 1787295987.052711,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787289809.5391088,
+      "last_run": 1787293713.6608202,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     215\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1787293446.5714667,
-      "runs": 701,
+      "next_run": 1787297348.6381466,
+      "runs": 702,
       "failures": 32
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787290120.8141077,
+      "last_run": 1787294014.8004987,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787293746.2707007,
-      "runs": 695,
+      "next_run": 1787297633.2202759,
+      "runs": 696,
       "failures": 89
     },
     {
@@ -131,11 +131,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1787209809.1657062,
+      "last_run": 1787295812.2990305,
       "last_status": "ok",
-      "last_output": "Morning. It's 06:51 on the VPS. Here's where things stand:\n\n**Today's auto-runs (in ~2 hours)**\n- Shorts + ranking daemons are alive — both currently running, last boot 8/19 21:24. They fire the 8:45/8:49 tasks, self-schedule the 9AM sweep, and the pipeline-driver verifies + reports to Telegram at 09:40. If that Telegram ping doesn't land by ~9:45, something's wrong.\n\n**Watch item: the extraction block**\n- Last known state (8/18): yt-dlp getting UNPLAYABLE on most videos from this IP — a YouTube bot-fingerprint experiment, not fixable by config. If the daemons are still blocked today, the real path is browser-based extraction (curl_cffi impersonate or browser fetch) or waiting out the experiment. Today's sweep will tell us if it cleared overnight.\n\n**Fixed last night (PC)**\n- Reorder-shorts silence bug — clips started with ~2s of digital silence. Root cause was `-ss`/`-t` on the ffmpeg input in the reorder branch; fix committed (b061ba5), plus `RENDER_WORKERS=1` to stop the parallel h264_qsv OOM. All 12 clips of that video verified clean.\n\n**Still open (no action needed today unless you want)**\n- flick_shorts OAuth client is deleted in Google Cloud — needs recreation before that channel can upload again.\n- 4 rogue Chop UG uploads (wrong-channel bug) still live — say the word if you want them taken down.\n- Clipster: all 47 Roobet submissions ineligible due to the 1,000-follower gate. Strategy question, not a bug.\n\nWant me to check whether yesterday's sweep actually produced uploads, or is the 9:40 Telegram report enough?",
-      "next_run": 1787295600.0,
-      "runs": 14,
+      "last_output": "Good morning. Here's your briefing for **Friday, 21 August 2026**.\n\n---\n\n## What's actually running\n\n**VPS pipelines** (13.49.223.119): Both daemons re-fixed 08-19 with dual triggers (Daily 08:45 shorts / 08:49 ranking + AtStartup). They should fire this morning on their own. The `pipeline-driver` routine runs at 09:40 — that's your automated verifier, it'll telegram you results.\n\n## The elephant sitting on the table\n\n**YouTube extraction is still blocked on the VPS.** Since ~8/17 11:30, yt-dlp gets UNPLAYABLE on most videos from that IP — not an IP block (browser plays fine), it's GVS PO-token bot-fingerprint escalation. bgutil POT provider didn't fix it. This was marked \"needs real-browser extraction or wait out the experiment\" three days ago. **Three days of pipeline output lost.** This needs a decision: build the real-browser extraction path, or accept the wait. It won't fix itself.\n\n## Open work, ranked\n\n1. **VPS extraction block** — the only thing stopping the money engine. Status unchanged since 08-18. This is the bottleneck.\n2. **flick_shorts OAuth client deleted from Google Cloud** — channel token dead (`deleted_client` error). Needs a new OAuth client created in Cloud Console, or re-auth using the wealth_mindset client (the known live one). NXS was re-authed this way on 08-18; same playbook works.\n3. **wealth_mindset wrong-channel bug** — token now correctly authenticates as Wealth Mindset (fixed 08-18), but 4 rogue clips (ids 465-468) sit on Chop UG from the old token. Awaiting your call on whether to delete those.\n4. **Alibaba trial** — was ~3 days from expiring as of 08-15. Likely expired or imminently. Check before assuming the VPS billing is covered.\n\n## What's healthy\n\n- capital_mindset is the earner: **18,460+ views, 11 subs** as of last pull.\n- Cookie-clobber fix holding; when extraction works, uploads land clean.\n- Repo, memory, vault all clean per 08-19 doctor check.\n\n## My take\n\nThe extraction block is the only item that matters today. Everything else is housekeeping. If you're not going to build the real-browser extraction path, tell me and I'll stop flagging it — but then the daemons are burning cycles for nothing. **One question: are we building the fix, or waiting it out?**",
+      "next_run": 1787382000.0,
+      "runs": 15,
       "failures": 1
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787291311.9780533,
+      "last_run": 1787295226.7557833,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~6952 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787294932.662143,
-      "runs": 123,
+      "next_run": 1787298850.5112722,
+      "runs": 124,
       "failures": 5
     },
     {
