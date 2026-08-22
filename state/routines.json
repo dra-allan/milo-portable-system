@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787376822.807025,
+  "updated_at": 1787382326.724604,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787375609.0002906,
+      "last_run": 1787379509.1133487,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     215\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1787379239.290705,
-      "runs": 723,
+      "next_run": 1787383134.192363,
+      "runs": 724,
       "failures": 32
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787375908.6752481,
+      "last_run": 1787379808.5380325,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787379518.8855321,
-      "runs": 717,
+      "next_run": 1787383418.9941165,
+      "runs": 718,
       "failures": 89
     },
     {
@@ -131,11 +131,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1787295812.2990305,
+      "last_run": 1787382209.4468212,
       "last_status": "ok",
-      "last_output": "Good morning. Here's your briefing for **Friday, 21 August 2026**.\n\n---\n\n## What's actually running\n\n**VPS pipelines** (13.49.223.119): Both daemons re-fixed 08-19 with dual triggers (Daily 08:45 shorts / 08:49 ranking + AtStartup). They should fire this morning on their own. The `pipeline-driver` routine runs at 09:40 — that's your automated verifier, it'll telegram you results.\n\n## The elephant sitting on the table\n\n**YouTube extraction is still blocked on the VPS.** Since ~8/17 11:30, yt-dlp gets UNPLAYABLE on most videos from that IP — not an IP block (browser plays fine), it's GVS PO-token bot-fingerprint escalation. bgutil POT provider didn't fix it. This was marked \"needs real-browser extraction or wait out the experiment\" three days ago. **Three days of pipeline output lost.** This needs a decision: build the real-browser extraction path, or accept the wait. It won't fix itself.\n\n## Open work, ranked\n\n1. **VPS extraction block** — the only thing stopping the money engine. Status unchanged since 08-18. This is the bottleneck.\n2. **flick_shorts OAuth client deleted from Google Cloud** — channel token dead (`deleted_client` error). Needs a new OAuth client created in Cloud Console, or re-auth using the wealth_mindset client (the known live one). NXS was re-authed this way on 08-18; same playbook works.\n3. **wealth_mindset wrong-channel bug** — token now correctly authenticates as Wealth Mindset (fixed 08-18), but 4 rogue clips (ids 465-468) sit on Chop UG from the old token. Awaiting your call on whether to delete those.\n4. **Alibaba trial** — was ~3 days from expiring as of 08-15. Likely expired or imminently. Check before assuming the VPS billing is covered.\n\n## What's healthy\n\n- capital_mindset is the earner: **18,460+ views, 11 subs** as of last pull.\n- Cookie-clobber fix holding; when extraction works, uploads land clean.\n- Repo, memory, vault all clean per 08-19 doctor check.\n\n## My take\n\nThe extraction block is the only item that matters today. Everything else is housekeeping. If you're not going to build the real-browser extraction path, tell me and I'll stop flagging it — but then the daemons are burning cycles for nothing. **One question: are we building the fix, or waiting it out?**",
-      "next_run": 1787382000.0,
-      "runs": 15,
+      "last_output": "**MORNING BRIEFING — 22 Aug 2026**\n\n---\n\n### What's running (don't touch)\n- **Shorts engine**: 2 pipelines (shorts + ranking) on VPS. Daemons fixed 08-19 (dual triggers: daily 08:45/08:49 + boot, `IgnoreNew` prevents double runs). Upload caps: 6/ch/day shorts, 6/day ranking. `capital_mindset` earning (18k+ views, 11 subs).\n- **Campaign clipper**: Built, autopilot spec written (08-18), **not yet implemented**. Channel lock: campaigns → `capital_mindset`, `wealth_mindset`, `flick_shorts`, `moviegasm`, `NXS` only.\n- **POV pipeline** (ExplaiNation): WW1 video done. Whisper fallback for bot-blocked videos.\n- **MM pipeline**: 7 agents built, **never run end-to-end**.\n- **Flow image gen**: Works unattended (NARWHAL model, 0 credits). Recipe in memory.\n- **Milo core**: AWS VPS live (t3.small, eu-north-1). `MiloRoutines` task ticks every 5 min. Backup branches per machine.\n\n---\n\n### Open fires (decide today)\n\n| # | Issue | Impact |\n|---|-------|--------|\n| 1 | **flick_shorts OAuth client DELETED** from Google Cloud → token dead, channel can't upload | Only live client is `wealth_mindset`'s. Need to recreate flick_shorts client (or per-channel) under correct gmail, then re-auth. |\n| 2 | **Clipster eligibility wall**: all 47 Roobet submissions `Ineligible` — 1k min followers required, all channels under | No payment despite 50+ videos. Direction: find campaigns with **no follower gate** (Azura 1%, Betr 13%) or grow subs. |\n| 3 | **4 rogue Chop UG uploads** (08-16) — wealth_mindset clips posted to Chop UG via wrong token | Token fixed. Clips still live. **Ask before deleting.** |\n| 4 | **Two-week underperformer trial ends 2026-08-26** (4 days) | Keep posting: `flick_shorts`, `wealth_mindset`, `NXS`, `ExplaiNation`, `capital_mindset`. No pickup → pivot/off. |\n\n---\n\n### Parked but not forgotten\n- **Website flip** — idle since 08-08 (23 sites, 19 emails, 0 closes). Not a git repo. Decision: resume (100+ prospects, 12 demos/wk) or park.\n- **MM pipeline first run** — 7 agents, never executed.\n- **Telegram morning briefing** — channel verified, briefs still failing (NSSM gone, runtime is `miloctl` routines).\n- **chop_ug title cleanup** — ~15 Luganda-gibberish titles need audit.\n- **Voice mode identity gate** — `milo voice` works; wire `MILO_IDENTITY_PASSPHRASE` before sensitive actions.\n\n---\n\n### Quick wins available\n- Run `mm_pipeline` once end-to-end (validation only).\n- Recreate flick_shorts OAuth client → re-auth → unblock that channel.\n- Check Azura/Betr campaign follower gates on Clipster.\n\n---\n\n**One question:** Flick_shorts OAuth recreation — do you want per-channel clients (cleaner long-term) or just re-create the single flick_shorts client under the right gmail?",
+      "next_run": 1787468400.0,
+      "runs": 16,
       "failures": 1
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787376807.9141438,
+      "last_run": 1787380708.2566607,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~6952 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787380422.7799988,
-      "runs": 145,
+      "next_run": 1787384322.756637,
+      "runs": 146,
       "failures": 5
     },
     {
