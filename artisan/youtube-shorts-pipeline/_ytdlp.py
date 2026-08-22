@@ -85,16 +85,17 @@ logger = logging.getLogger(__name__)
 # they are dead ends that also prevent the provider from ever being asked. Add
 # them back through YTDLP_PLAYER_CLIENTS if a future experiment makes them
 # useful again.
-DEFAULT_PLAYER_CLIENTS = ('mweb', 'tv', 'web_safari')
+DEFAULT_PLAYER_CLIENTS = ('web_embedded', 'default')
 
-# bgutil-ytdlp-pot-provider's HTTP server. 4416 is the port MiloRoutines starts
-# it on; upstream's own default is 4416 as well.
-DEFAULT_POT_BASE_URL = 'http://127.0.0.1:4416'
+# bgutil-ytdlp-pot-provider DISABLED per upstream recommendation:
+# https://github.com/yt-dlp/yt-dlp/issues/17368#issuecomment-...
+# "Disable the plugin and use default player clients"
+DEFAULT_POT_BASE_URL = ''
 
 # curl_cffi impersonation target. 'chrome' tracks the newest Chrome build the
 # installed curl_cffi knows about, which is what we want -- pinning a version
 # here would go stale silently.
-DEFAULT_IMPERSONATE = 'chrome'
+DEFAULT_IMPERSONATE = ''
 
 DEFAULT_JS_RUNTIMES = ('node',)
 
@@ -102,7 +103,7 @@ DEFAULT_JS_RUNTIMES = ('node',)
 # that predates this file (downloader._client_opts defaulted to android_vr/ios),
 # so the hardened value wins rather than losing a merge to stale config.
 _AUTHORITATIVE = {
-    'youtube': ('player_client', 'fetch_pot', 'formats'),
+    'youtube': ('player_client',),
 }
 
 _LOGGED_ONCE = set()
@@ -273,27 +274,14 @@ def _merge_extractor_args(existing: Optional[Dict], extra: Dict) -> Dict:
 def youtube_extractor_args() -> Dict[str, Dict[str, List[str]]]:
     """The extractor-args half of the fix.
 
-    ``fetch_pot=always`` matters more than it looks: yt-dlp only *requests* a
-    token when its policy for the chosen client says the token is required.
-    Under the GVS binding experiment the policy still reports "recommended" for
-    some clients, so the provider is skipped and the request 403s / comes back
-    UNPLAYABLE. ``always`` removes that judgement call.
-
-    ``formats=missing_pot`` keeps a failed token fetch survivable: the formats
-    that need a token are still listed (and may still work), instead of the run
-    dying with "Requested format is not available".
+    PO token provider disabled per upstream recommendation (yt-dlp#17368).
+    Use web_embedded + default clients which don't require GVS PO tokens.
     """
-    args: Dict[str, Dict[str, List[str]]] = {
+    return {
         'youtube': {
             'player_client': player_clients(),
-            'fetch_pot': ['always'],
-            'formats': ['missing_pot'],
         },
     }
-    base = pot_base_url()
-    if base:
-        args['youtubepot-bgutilhttp'] = {'base_url': [base]}
-    return args
 
 
 def harden(params: Optional[Dict]) -> Dict:

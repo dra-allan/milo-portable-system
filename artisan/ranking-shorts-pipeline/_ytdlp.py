@@ -28,13 +28,13 @@ import yt_dlp
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PLAYER_CLIENTS = ('mweb', 'tv', 'web_safari')
-DEFAULT_POT_BASE_URL = 'http://127.0.0.1:4416'
-DEFAULT_IMPERSONATE = 'chrome'
+DEFAULT_PLAYER_CLIENTS = ('web_embedded', 'default')
+DEFAULT_POT_BASE_URL = ''
+DEFAULT_IMPERSONATE = ''
 DEFAULT_JS_RUNTIMES = ('node',)
 
 _AUTHORITATIVE = {
-    'youtube': ('player_client', 'fetch_pot', 'formats'),
+    'youtube': ('player_client',),
 }
 
 _LOGGED_ONCE = set()
@@ -156,17 +156,11 @@ def _merge_extractor_args(existing: Optional[Dict], extra: Dict) -> Dict:
 
 
 def youtube_extractor_args() -> Dict[str, Dict[str, List[str]]]:
-    args: Dict[str, Dict[str, List[str]]] = {
+    return {
         'youtube': {
             'player_client': player_clients(),
-            'fetch_pot': ['always'],
-            'formats': ['missing_pot'],
         },
     }
-    base = pot_base_url()
-    if base:
-        args['youtubepot-bgutilhttp'] = {'base_url': [base]}
-    return args
 
 
 def harden(params: Optional[Dict]) -> Dict:
