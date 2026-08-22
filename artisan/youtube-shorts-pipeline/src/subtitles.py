@@ -146,17 +146,20 @@ def parse_subtitle_file(path: str) -> Optional[List[Dict]]:
             continue
 
         # YouTube's ASR tracks emit "rolling" cues where each cue repeats the
-        # tail of the previous one. Left alone this triples the transcript and
-        # wrecks keyword scoring, so drop an exact continuation.
+        # tail of the previous one and adds more words. Left alone this triples
+        # the transcript and wrecks keyword scoring, so merge them by extending
+        # the previous segment's end time rather than creating new segments.
         if segments:
             prev = segments[-1]
             if text == prev['text']:
                 prev['end'] = max(prev['end'], end)
                 continue
             if text.startswith(prev['text']) and len(prev['text']) > 8:
-                text = text[len(prev['text']):].strip()
-                if not text:
-                    continue
+                # New cue extends the previous one -- keep the EARLIER start time
+                # of the first cue and just update the end time/text.
+                prev['end'] = end
+                prev['text'] = text
+                continue
 
         segments.append({
             'text': text,
