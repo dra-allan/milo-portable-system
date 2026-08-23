@@ -1,7 +1,7 @@
 """YouTube Shorts uploader with OAuth, identity verification and cleanup.
 
-TWO SAFETY PROPERTIES THIS FILE NOW HAS
----------------------------------------
+FOUR SAFETY PROPERTIES THIS FILE NOW HAS
+----------------------------------------
 1. **It cannot upload to the wrong channel.** The uploader already asked YouTube
    "who am I?" during auth and threw the answer away. On 2026-08-16 that cost
    four clips published to Chop UG under the ``wealth_mindset`` key. The answer
@@ -16,7 +16,24 @@ TWO SAFETY PROPERTIES THIS FILE NOW HAS
    opt-in (``MILO_ALLOW_INTERACTIVE_AUTH=1``); otherwise it fails fast and names
    the channel to re-auth.
 
-Both are refusals rather than warnings. A failed run costs a sweep; a wrong-
+3. **It cannot borrow the default token (added 2026-08-23).** The token path was
+   ``candidate if candidate.exists() else base``: a channel whose own token was
+   missing or expired silently authenticated with the shared default token
+   instead. That token belongs to a real channel, so the guard would then compare
+   it against the requested key -- and because every ``channel_id`` in
+   channels.yaml was still blank, ``learn`` mode *bound the wrong channel to the
+   key* instead of rejecting it. The 8/16 failure mode with an extra layer of
+   indirection. A missing token is now a refusal naming the channel to re-auth.
+
+4. **It cannot publish with no channel key at all (added 2026-08-23).**
+   ``verify_identity and channel`` meant ``channel=None`` skipped verification
+   entirely and uploaded via the default token -- to whichever channel that
+   happened to be. Twenty niches in ``config/niches.yaml`` declare no
+   ``upload_channels``, and each of them constructs the uploader exactly that
+   way. Set ``MILO_ALLOW_UNROUTED_UPLOAD=1`` if you ever genuinely want the old
+   behaviour; nothing in the pipelines does.
+
+All four are refusals rather than warnings. A failed run costs a sweep; a wrong-
 channel upload costs a channel.
 """
 import os
@@ -42,9 +59,17 @@ _VIDEO_ID_RE = re.compile(
     r'youtube\.com/watch\?v=([A-Za-z0-9_-]{11})|youtu\.be/([A-Za-z0-9_-]{11})')
 
 
+def _flag(name: str) -> bool:
+    return (os.getenv(name) or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 def _interactive_allowed() -> bool:
-    raw = (os.getenv('MILO_ALLOW_INTERACTIVE_AUTH') or '').strip().lower()
-    return raw in ('1', 'true', 'yes', 'on')
+    return _flag('MILO_ALLOW_INTERACTIVE_AUTH')
+
+
+def _lane() -> str:
+    """Which pipeline is publishing. Shorts and clipper share this uploader."""
+    return (os.getenv('MILO_PIPELINE_LANE') or 'shorts').strip().lower()
 
 
 def _build(credentials):
@@ -55,8 +80,22 @@ def _build(credentials):
 class YouTubeUploader:
     def __init__(self, channel: Optional[str] = None, credentials_path: Optional[str] = None,
                  token_file: Optional[str] = None, privacy_status: Optional[str] = None,
-                 verify_identity: bool = True):
+                 verify_identity: bool = True, niche: str = ''):
+        # Canonicalise before anything derives a filename or a binding from it.
+        channel = channel_guard.resolve_key(channel) if channel else channel
         self.channel = channel
+        self.niche = (niche or '').strip()
+        if not channel and not _flag('MILO_ALLOW_UNROUTED_UPLOAD'):
+            raise RuntimeError(
+                'refusing to upload with no channel key. Without one this would '
+                'authenticate with the shared default token and publish to '
+                'whichever channel that token owns, with no identity check at '
+                'all. Give the niche an upload_channels: entry in '
+                'config/niches.yaml pointing at a key from '
+                'artisan/yt-secrets/channels.yaml'
+                + (f' (niche: {self.niche})' if self.niche else '')
+                + '. Override with MILO_ALLOW_UNROUTED_UPLOAD=1 only if you '
+                  'genuinely want the old behaviour.')
         self.privacy_status = (privacy_status or config.privacy_status).lower()
         # client_from: in channels.yaml lets a channel borrow another channel's
         # OAuth client. flick_shorts needs this: its own Google Cloud client was
@@ -70,9 +109,11 @@ class YouTubeUploader:
             or (config.project_root / 'credentials.json')
         )
         base = Path(config.oauth_token_file)
+        # NO FALLBACK TO `base`. See property 3 in the module docstring: falling
+        # back to the default token is how a missing token became a wrong-channel
+        # binding rather than an error.
         candidate = base.with_name(f'youtube_token_{channel}.json') if channel else base
-        self.token_file = Path(token_file) if token_file else (
-            candidate if candidate.exists() else base)
+        self.token_file = Path(token_file) if token_file else candidate
         self.credentials = self._get_credentials()
         self.youtube = _build(self.credentials)
         self.actual_channel_id, self.actual_channel_title = self._channel_snapshot()
@@ -83,9 +124,15 @@ class YouTubeUploader:
             channel_guard.assert_identity(
                 channel, self.actual_channel_id, self.actual_channel_title,
                 context='shorts upload')
-        logger.info('CHANNEL_READY key=%s channel_id=%s title=%s',
+            # Right channel, wrong content is its own accident: a ranking
+            # channel or a Luganda gossip channel can hold a perfectly valid
+            # token and still be the wrong home for this clip.
+            channel_guard.assert_content(
+                channel, pipeline=_lane(), niche=self.niche,
+                context=f'{_lane()} upload')
+        logger.info('CHANNEL_READY key=%s channel_id=%s title=%s niche=%s',
                     self.channel, self.actual_channel_id or 'unknown',
-                    self.actual_channel_title or 'unknown')
+                    self.actual_channel_title or 'unknown', self.niche or '-')
 
     # ------------------------------------------------------------------
     def _get_credentials(self):
@@ -128,8 +175,10 @@ class YouTubeUploader:
                 f'no usable token for channel {self.channel!r} at '
                 f'{self.token_file}. Refusing to open an interactive OAuth '
                 'flow in a non-interactive process (it would block until the '
-                'run is killed). Re-auth it in your own terminal:\n'
-                f'  cd artisan && python -m yt_secrets auth --channel {self.channel}\n'
+                'run is killed), and refusing to fall back to the shared '
+                'default token (that would publish to the wrong channel). '
+                'Re-auth it:\n'
+                f'  reauth_all_channels.bat --channel {self.channel}\n'
                 'Or set MILO_ALLOW_INTERACTIVE_AUTH=1 for a human-run session.'
             )
         from google_auth_oauthlib.flow import InstalledAppFlow
@@ -230,8 +279,9 @@ class YouTubeUploader:
             # channel_id is logged on every upload on purpose: it is what makes
             # a wrong-channel incident findable in the log afterwards instead of
             # only visible on YouTube.
-            logger.info('UPLOAD_DONE channel=%s channel_id=%s video_id=%s privacy=%s',
-                        self.channel, self.actual_channel_id or 'unknown', vid, status)
+            logger.info('UPLOAD_DONE channel=%s channel_id=%s video_id=%s privacy=%s niche=%s',
+                        self.channel, self.actual_channel_id or 'unknown', vid, status,
+                        self.niche or '-')
             return vid
         except Exception as exc:
             logger.error('UPLOAD_FAIL channel=%s error=%s', self.channel, str(exc)[:240])
@@ -262,7 +312,12 @@ class YouTubeUploader:
         Identity is verified here too, so a first-time auth binds the key and a
         re-auth against the wrong Google account is rejected rather than
         silently overwriting a good token.
+
+        Prefer ``reauth_all_channels.bat --channel <key>``: it opens the consent
+        page in the right Chrome profile and writes the resolved channel id back
+        into channels.yaml, neither of which happens here.
         """
+        channel = channel_guard.resolve_key(channel)
         base = Path(config.oauth_token_file)
         token_file = token_file or str(base.with_name(f'youtube_token_{channel}.json'))
         uploader = YouTubeUploader(channel=channel, credentials_path=credentials_path,
