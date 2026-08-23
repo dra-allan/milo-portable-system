@@ -70,14 +70,11 @@ channels:
     content: Life lessons, hard truths and mindset clips from long-form podcasts
     niches: [flick_shorts]
     channel_id: ''
-    # LANDMINE: this channel's own OAuth client (929304292327-aggfh...) was
-    # DELETED in Google Cloud, so a fresh auth returns `deleted_client`. The
-    # existing token still works, but it cannot be re-minted against its own
-    # client. Borrowing wealth_mindset's live client is the documented
-    # workaround; recreating a Desktop client in the yt-flick-shorts project is
-    # the real fix (and restores this channel's own 10k/day quota).
-    client_from: wealth_mindset
-    client_status: deleted-recreate-in-google-cloud
+    # CLIENT RECREATED (2026-08-23): the original flick-shorts OAuth client
+    # (…-aggfh…) was deleted in Google Cloud; a new Desktop client (…-e00rk…)
+    # now lives in the same yt-flick-shorts project and sits in
+    # draallan0/credentials.json. This channel authenticates against its OWN
+    # project again, which restores its separate 10k/day quota.
 
   capital_mindset:
     email: draallan0@gmail.com
@@ -103,7 +100,7 @@ channels:
     niches: [wealth_mindset]
     # Re-authed correctly on 2026-08-18 after the Chop UG mix-up. The auth flow
     # now writes the id here automatically, so the mix-up cannot recur silently.
-    channel_id: ''
+    channel_id: 'UCHBboDmff-Ns2z0vDp2aYEg'
 
   NXS:
     email: draallan12@gmail.com
@@ -120,7 +117,7 @@ channels:
     # of Duty clips here. Never point a general niche at NXS.
     content: GTA 6 news and franchise breakdowns - fast news-beat clips only
     niches: [gta_hype]
-    channel_id: ''
+    channel_id: 'UCK88b8L-4ggp0u9GfQk2Ung'
 
   chop_ug:
     email: daadaallan0@gmail.com
