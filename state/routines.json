@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787505529.6870508,
+  "updated_at": 1787509425.4755456,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787504307.2065175,
+      "last_run": 1787508207.6666286,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     215\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1787507933.275947,
-      "runs": 756,
+      "next_run": 1787511833.1597893,
+      "runs": 757,
       "failures": 32
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787504608.0110323,
+      "last_run": 1787508512.90362,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787508217.6638436,
-      "runs": 750,
+      "next_run": 1787512126.7762024,
+      "runs": 751,
       "failures": 89
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787505508.9911592,
+      "last_run": 1787509408.3462882,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~7265 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787509129.626991,
-      "runs": 178,
+      "next_run": 1787513025.4555907,
+      "runs": 179,
       "failures": 5
     },
     {
