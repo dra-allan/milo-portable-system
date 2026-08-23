@@ -13,15 +13,30 @@
 # that into channel_identity.json (machine-written, do not hand-edit), then
 # enforces it from then on. A value here always wins over the ledger.
 #
-# Get a channel id with:  cd artisan && python -m yt_secrets status
+# Since 2026-08-23 you do NOT paste channel_id by hand: a successful
+# `auth`/`sync` writes it into this file itself (comments preserved, .bak kept).
+#   Re-auth everything, one channel at a time:  reauth_all_channels.bat
+#   Backfill ids from tokens you already have:  reauth_all_channels.bat --sync
+#   Audit this file for mismatches:             reauth_all_channels.bat --doctor
 #
 # New channel checklist: stable key, owner email, project slug, pipelines,
-# token_dir, then  cd artisan && python -m yt_secrets auth --channel <key>
-# and paste the reported channel id into channel_id.
+# token_dir -- or just run  reauth_all_channels.bat --add  which asks for those,
+# writes the block below, authenticates it and records its channel_id.
+#
+# chrome_profile: <Chrome profile directory>
+#   Which Chrome profile is signed into `email`. The auth flow launches the
+#   consent page in that profile instead of the default browser, so the account
+#   picker starts on the right account. "Default", "Profile 1", "Profile 2"...
 #
 # client_from: <other key>
 #   Use that channel's OAuth client instead of this one's. Only needed when a
 #   channel's own Google Cloud client is gone (see flick_shorts).
+#
+# token_dir must match the pipeline: shorts and clipper share
+# artisan/youtube-shorts-pipeline/config, ranking uses
+# artisan/ranking-shorts-pipeline/config, pov uses artisan/pov_pipeline/config.
+# `--doctor` fails on a mismatch, because a token minted into the wrong config
+# dir authenticates perfectly and then publishes nothing.
 channels:
   flick_shorts:
     email: draallan0@gmail.com
@@ -29,6 +44,7 @@ channels:
     active: true
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
+    chrome_profile: Profile 3
     channel_id: ''
     # LANDMINE: this channel's own OAuth client (929304292327-aggfh...) was
     # DELETED in Google Cloud, so a fresh auth returns `deleted_client`. The
@@ -44,6 +60,7 @@ channels:
     active: true
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
+    chrome_profile: Profile 3
     channel_id: ''
 
   wealth_mindset:
@@ -52,9 +69,9 @@ channels:
     active: true
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
-    # Re-authed correctly on 2026-08-18 after the Chop UG mix-up. Paste the id
-    # reported by `python -m yt_secrets status` here so the mix-up can never
-    # recur silently.
+    chrome_profile: Default
+    # Re-authed correctly on 2026-08-18 after the Chop UG mix-up. The auth flow
+    # now writes the id here automatically, so the mix-up cannot recur silently.
     channel_id: ''
   dra_allan_official:
     email: adrasaltsxxx@gmail.com
@@ -62,6 +79,7 @@ channels:
     active: false
     pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
+    chrome_profile: Default
     channel_id: ''
   NXS:
     email: draallan12@gmail.com
@@ -71,7 +89,8 @@ channels:
     token_dir: artisan/youtube-shorts-pipeline/config
     # Owned by draallan12 but rides project B (adrasaltsxxx). Consent must be
     # approved while signed in as draallan12 -- the single most common cause of
-    # a wrong-channel bind on this account.
+    # a wrong-channel bind on this account, which is why the profile is pinned.
+    chrome_profile: Profile 4
     channel_id: ''
   explaination:
     email: draallan12@gmail.com
@@ -79,6 +98,7 @@ channels:
     active: true
     pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
+    chrome_profile: Profile 4
     channel_id: ''
 
   chop_ug:
@@ -87,6 +107,7 @@ channels:
     active: false
     pipelines: [shorts]
     token_dir: artisan/youtube-shorts-pipeline/config
+    chrome_profile: Profile 1
     # This is the channel the 8/16 rogue uploads landed on (ids 465-468). Its
     # id is worth filling in first: with it recorded, any token that resolves
     # here under another key is rejected outright.
@@ -97,6 +118,7 @@ channels:
     active: false
     pipelines: [ranking]
     token_dir: artisan/ranking-shorts-pipeline/config
+    chrome_profile: Profile 1
     channel_id: ''
   money_matrix:
     email: adrasaltsx@gmail.com
@@ -104,6 +126,7 @@ channels:
     active: false
     pipelines: [pov]
     token_dir: artisan/pov_pipeline/config
+    chrome_profile: Profile 2
     channel_id: ''
   god_did_fx:
     email: draallan84@gmail.com
@@ -111,6 +134,7 @@ channels:
     active: true
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
+    chrome_profile: Profile 5
     channel_id: ''
   the_other_guys:
     email: allandaada@gmail.com
@@ -118,6 +142,7 @@ channels:
     active: false
     pipelines: [shorts]
     token_dir: artisan/youtube-shorts-pipeline/config
+    chrome_profile: Profile 6
     channel_id: ''
   moviegasm:
     email: allandaada@gmail.com
@@ -125,4 +150,5 @@ channels:
     active: true
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
+    chrome_profile: Profile 6
     channel_id: ''
