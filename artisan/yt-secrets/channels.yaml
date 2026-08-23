@@ -1,5 +1,5 @@
 # Single source of truth for YouTube channel keys, owners, projects, token
-# destinations -- and, since 2026-08-19, channel IDENTITY.
+# destinations, channel IDENTITY (2026-08-19) and CONTENT ROUTING (2026-08-23).
 #
 # WHY channel_id MATTERS
 # ---------------------
@@ -13,15 +13,39 @@
 # that into channel_identity.json (machine-written, do not hand-edit), then
 # enforces it from then on. A value here always wins over the ledger.
 #
-# Since 2026-08-23 you do NOT paste channel_id by hand: a successful
-# `auth`/`sync` writes it into this file itself (comments preserved, .bak kept).
+# You do NOT paste channel_id by hand any more: a successful auth/sync writes it
+# into this file itself (comments preserved, .bak kept).
 #   Re-auth everything, one channel at a time:  reauth_all_channels.bat
 #   Backfill ids from tokens you already have:  reauth_all_channels.bat --sync
 #   Audit this file for mismatches:             reauth_all_channels.bat --doctor
 #
-# New channel checklist: stable key, owner email, project slug, pipelines,
-# token_dir -- or just run  reauth_all_channels.bat --add  which asks for those,
-# writes the block below, authenticates it and records its channel_id.
+# WHY content/niches/variant MATTER
+# ---------------------------------
+# Identity only proves WHICH channel a token controls. It cannot tell that a
+# Luganda gossip clip is about to be published to a forex channel, or that a
+# ranked countdown is being pushed through the shorts lane. Those routing facts
+# used to live in a different file (youtube-shorts-pipeline/config/niches.yaml)
+# with nothing tying the two together.
+#
+#   pipelines:  the ONLY lanes allowed to publish with this channel's token.
+#               shorts | clipper | ranking | pov. A publish from any other lane
+#               is refused (MILO_CHANNEL_CONTENT=enforce, the default).
+#   niches:     allow-list of niches.yaml keys that may publish here. A niche
+#               outside the list is refused.
+#   variant:    ranking lane only. normal = ranked countdowns, contrast =
+#               "OTHERS VS THIS GUY". Routing the wrong variant is refused.
+#   content:    plain English, for humans and for the error message you will
+#               read six months from now.
+#
+# token_dir must match the pipeline: shorts and clipper share
+# artisan/youtube-shorts-pipeline/config, ranking uses
+# artisan/ranking-shorts-pipeline/config, pov uses artisan/pov_pipeline/config.
+# `--doctor` fails on a mismatch, because a token minted into the wrong config
+# dir authenticates perfectly and then publishes nothing.
+#
+# New channel: run  reauth_all_channels.bat --add  which asks for the key, owner,
+# project slug, lanes and Chrome profile, writes the block, authenticates it and
+# records its channel_id. Then add content/niches by hand.
 #
 # chrome_profile: <Chrome profile directory>
 #   Which Chrome profile is signed into `email`. The auth flow launches the
@@ -31,13 +55,11 @@
 # client_from: <other key>
 #   Use that channel's OAuth client instead of this one's. Only needed when a
 #   channel's own Google Cloud client is gone (see flick_shorts).
-#
-# token_dir must match the pipeline: shorts and clipper share
-# artisan/youtube-shorts-pipeline/config, ranking uses
-# artisan/ranking-shorts-pipeline/config, pov uses artisan/pov_pipeline/config.
-# `--doctor` fails on a mismatch, because a token minted into the wrong config
-# dir authenticates perfectly and then publishes nothing.
 channels:
+
+  # ---------------------------------------------------------------------
+  # SHORTS lane (+ clipper). Long-form podcast/talk sources cut into Shorts.
+  # ---------------------------------------------------------------------
   flick_shorts:
     email: draallan0@gmail.com
     slug: draallan0
@@ -45,6 +67,8 @@ channels:
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
     chrome_profile: Profile 3
+    content: Life lessons, hard truths and mindset clips from long-form podcasts
+    niches: [flick_shorts]
     channel_id: ''
     # LANDMINE: this channel's own OAuth client (929304292327-aggfh...) was
     # DELETED in Google Cloud, so a fresh auth returns `deleted_client`. The
@@ -54,6 +78,7 @@ channels:
     # the real fix (and restores this channel's own 10k/day quota).
     client_from: wealth_mindset
     client_status: deleted-recreate-in-google-cloud
+
   capital_mindset:
     email: draallan0@gmail.com
     slug: draallan0
@@ -61,6 +86,8 @@ channels:
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
     chrome_profile: Profile 3
+    content: Business, sales and founder clips - how companies and money work
+    niches: [capital_mindset]
     channel_id: ''
 
   wealth_mindset:
@@ -70,17 +97,14 @@ channels:
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
     chrome_profile: Default
+    # Same subject matter as capital_mindset but its own niche with independent
+    # per-source budgets, so the two never publish the same clip.
+    content: Wealth building and money mindset clips
+    niches: [wealth_mindset]
     # Re-authed correctly on 2026-08-18 after the Chop UG mix-up. The auth flow
     # now writes the id here automatically, so the mix-up cannot recur silently.
     channel_id: ''
-  dra_allan_official:
-    email: adrasaltsxxx@gmail.com
-    slug: adrasaltsxxx
-    active: false
-    pipelines: [pov]
-    token_dir: artisan/pov_pipeline/config
-    chrome_profile: Default
-    channel_id: ''
+
   NXS:
     email: draallan12@gmail.com
     slug: adrasaltsxxx
@@ -91,14 +115,11 @@ channels:
     # approved while signed in as draallan12 -- the single most common cause of
     # a wrong-channel bind on this account, which is why the profile is pinned.
     chrome_profile: Profile 4
-    channel_id: ''
-  explaination:
-    email: draallan12@gmail.com
-    slug: adrasaltsxxx
-    active: true
-    pipelines: [pov]
-    token_dir: artisan/pov_pipeline/config
-    chrome_profile: Profile 4
+    # A news channel, not an evergreen one: the gta_hype niche runs a topic gate
+    # (require_keywords) so broad gaming sources cannot publish Nintendo or Call
+    # of Duty clips here. Never point a general niche at NXS.
+    content: GTA 6 news and franchise breakdowns - fast news-beat clips only
+    niches: [gta_hype]
     channel_id: ''
 
   chop_ug:
@@ -108,26 +129,16 @@ channels:
     pipelines: [shorts]
     token_dir: artisan/youtube-shorts-pipeline/config
     chrome_profile: Profile 1
+    # Luganda, captions deliberately OFF in the niche (Whisper invents English
+    # words for Luganda). An English niche routed here would also get no
+    # captions, so the niche allow-list matters more than usual.
+    content: Luganda Ugandan celebrity gossip and talk-show clips
+    niches: [chop_ug]
     # This is the channel the 8/16 rogue uploads landed on (ids 465-468). Its
     # id is worth filling in first: with it recorded, any token that resolves
     # here under another key is rejected outright.
     channel_id: ''
-  rankdrop:
-    email: daadaallan0@gmail.com
-    slug: draallan0
-    active: false
-    pipelines: [ranking]
-    token_dir: artisan/ranking-shorts-pipeline/config
-    chrome_profile: Profile 1
-    channel_id: ''
-  money_matrix:
-    email: adrasaltsx@gmail.com
-    slug: adrasaltsxxx
-    active: false
-    pipelines: [pov]
-    token_dir: artisan/pov_pipeline/config
-    chrome_profile: Profile 2
-    channel_id: ''
+
   god_did_fx:
     email: draallan84@gmail.com
     slug: adrasaltsxxx
@@ -135,15 +146,10 @@ channels:
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
     chrome_profile: Profile 5
+    content: Forex trading education - strategy, psychology, risk management
+    niches: [forex_god_fx]
     channel_id: ''
-  the_other_guys:
-    email: allandaada@gmail.com
-    slug: draallan0
-    active: false
-    pipelines: [shorts]
-    token_dir: artisan/youtube-shorts-pipeline/config
-    chrome_profile: Profile 6
-    channel_id: ''
+
   moviegasm:
     email: allandaada@gmail.com
     slug: draallan0
@@ -151,4 +157,80 @@ channels:
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
     chrome_profile: Profile 6
+    # UNROUTED: active: true but no niche in niches.yaml points here, so this
+    # channel currently receives nothing. Either add its niche and list it below,
+    # or set active: false. --doctor flags this every run until one of the two
+    # happens. An active channel with no declared content is how a clip from
+    # whatever niche ran last ends up here.
+    content: ''
+    niches: []
+    channel_id: ''
+
+  # ---------------------------------------------------------------------
+  # RANKING lane. Separate pipeline, separate token dir, two variants.
+  # ---------------------------------------------------------------------
+  rankdrop:
+    email: daadaallan0@gmail.com
+    slug: draallan0
+    active: false
+    pipelines: [ranking]
+    token_dir: artisan/ranking-shorts-pipeline/config
+    chrome_profile: Profile 1
+    variant: normal
+    content: Top-N ranked countdowns (the normal ranking variant)
+    channel_id: ''
+
+  the_other_guys:
+    email: allandaada@gmail.com
+    slug: draallan0
+    active: false
+    # WAS pipelines: [shorts] with the shorts token_dir until 2026-08-23. It is
+    # a ranking channel: the contrast variant. Registered on the wrong lane, its
+    # token was minted into artisan/youtube-shorts-pipeline/config where the
+    # ranking publisher never looks, and a shorts niche could legitimately have
+    # been routed to it.
+    pipelines: [ranking]
+    token_dir: artisan/ranking-shorts-pipeline/config
+    chrome_profile: Profile 6
+    variant: contrast
+    content: "OTHERS VS THIS GUY contrast clips (the contrast ranking variant)"
+    channel_id: ''
+
+  # ---------------------------------------------------------------------
+  # POV lane.
+  # ---------------------------------------------------------------------
+  explaination:
+    email: draallan12@gmail.com
+    slug: adrasaltsxxx
+    active: true
+    # POV only. Never shorts and never ranking: it shares an owner and an OAuth
+    # project with NXS, which makes it the easiest channel in this file to
+    # mis-route.
+    pipelines: [pov]
+    token_dir: artisan/pov_pipeline/config
+    chrome_profile: Profile 4
+    content: POV explainer videos
+    niches: []
+    channel_id: ''
+
+  dra_allan_official:
+    email: adrasaltsxxx@gmail.com
+    slug: adrasaltsxxx
+    active: false
+    pipelines: [pov]
+    token_dir: artisan/pov_pipeline/config
+    chrome_profile: Default
+    content: Personal POV channel
+    niches: []
+    channel_id: ''
+
+  money_matrix:
+    email: adrasaltsx@gmail.com
+    slug: adrasaltsxxx
+    active: false
+    pipelines: [pov]
+    token_dir: artisan/pov_pipeline/config
+    chrome_profile: Profile 2
+    content: Money and finance POV videos
+    niches: []
     channel_id: ''
