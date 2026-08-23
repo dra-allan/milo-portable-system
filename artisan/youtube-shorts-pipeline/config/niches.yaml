@@ -1460,6 +1460,11 @@ documentaries_society:
   min_views: 150000
 
 creator_economy_marketing:
+  # Allan 2026-08-23: this niche has no channel of its own; its renders
+  # publish to capital_mindset (same money/creator audience).
+  upload_channels:
+    - capital_mindset
+  channel: capital_mindset
   channels:
     - "@ThinkMediaTV"
     - "@RobertoBlake"
