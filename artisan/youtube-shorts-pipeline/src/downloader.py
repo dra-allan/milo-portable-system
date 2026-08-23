@@ -227,7 +227,9 @@ class YouTubeDownloader:
             'format': format_string,
             # Prefer higher resolution, then higher bitrate, and avoid AV1
             # (many ffmpeg builds decode it slowly or not at all).
-            'format_sort': ['res', 'vbr', 'abr'],
+            # 'lang' first: auto-dubbed videos can expose a dubbed track as
+            # the default; this tie-break keeps the original language.
+            'format_sort': ['lang', 'res', 'vbr', 'abr'],
             # Download straight to the id-prefixed name: no post-hoc rename,
             # so the file is findable by ID forever.
             'outtmpl': str(self.temp_dir / f'%(id)s{ID_SEPARATOR}%(title).80B.%(ext)s'),
@@ -286,6 +288,10 @@ class YouTubeDownloader:
         """
         opts = {
             'format': 'bestaudio/best',
+            # Discovery audio must be the original language too: Whisper
+            # transcribes whatever lands here, so a dubbed track poisons
+            # vetting and the captions downstream.
+            'format_sort': ['lang', 'abr'],
             'outtmpl': str(self.audio_dir / f'%(id)s{ID_SEPARATOR}%(title).80B.%(ext)s'),
             'writeinfojson': True,
             'skip_unavailable_fragments': True,
@@ -479,7 +485,10 @@ class YouTubeDownloader:
             'format': (f'bestvideo[height<={height}][vcodec!*=av01]+bestaudio/'
                        f'bestvideo[height<={height}]+bestaudio/'
                        f'best[height<={height}]/best'),
-            'format_sort': ['res', 'vbr', 'abr'],
+            # 'lang' first: on auto-dubbed videos YouTube may mark a dubbed
+            # track as the default, and without this tie-break yt-dlp happily
+            # downloads it. 'lang' prefers the video's original language.
+            'format_sort': ['lang', 'res', 'vbr', 'abr'],
             'outtmpl': str(
                 self.sections_dir
                 / f'{video_id}{ID_SEPARATOR}sec_{int(round(start))}_{int(round(end))}.%(ext)s'

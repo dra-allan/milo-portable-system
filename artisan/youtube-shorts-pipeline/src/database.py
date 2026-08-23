@@ -339,6 +339,7 @@ class PipelineDatabase:
                               ON p.youtube_video_id = g.source_video_id
                        WHERE g.youtube_short_id IS NULL
                          AND g.local_path IS NOT NULL AND g.local_path != ''
+                         AND (g.status IS NULL OR g.status = '' OR g.status = 'queued')
                        ORDER BY g.id ASC LIMIT ?""",
                     (limit,),
                 ).fetchall()

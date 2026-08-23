@@ -24,6 +24,7 @@ ROUTES = {
     'chop_ug': 'chop_ug',
     'nxs': 'NXS',  # token/channel compatibility; canonical display name is nxs
     'wealth_mindset': 'wealth_mindset',
+    'forex_god_fx': 'god_did_fx',
 }
 ALIASES = {'gta_hype': 'nxs'}
 

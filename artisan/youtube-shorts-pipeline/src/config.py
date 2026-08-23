@@ -464,8 +464,10 @@ class Config:
         # Increased from 0.12 to 0.18 for more lenient tracking across frames.
         self.smart_track_tol = self._float('SMART_TRACK_TOL', 0.18,
                                            minimum=0.01, maximum=0.5)
-        # Backdrop used when smart framing finds nobody.
-        self.smart_fallback_mode = (os.getenv('SMART_FALLBACK_MODE') or 'cheap').lower()
+        # Backdrop used when smart framing finds nobody. Default is 'crop',
+        # NOT 'cheap': a missing env var must never silently produce the
+        # blurred-bars look Allan rejected. Blur is now strictly opt-in.
+        self.smart_fallback_mode = (os.getenv('SMART_FALLBACK_MODE') or 'crop').lower()
         if self.smart_fallback_mode not in ('cheap', 'blur', 'black', 'crop'):
             self.smart_fallback_mode = 'cheap'
 
