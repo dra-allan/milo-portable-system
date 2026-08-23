@@ -12,6 +12,17 @@ Three things this lane gained on 2026-08-19, all shared with the shorts lane:
   token looked like a slow run instead of a broken credential.
 * **deleted_client gets the runbook** rather than an opaque OAuth error.
 
+And two more on 2026-08-23:
+
+* **the channel key is canonicalised.** ``RANKING_UPLOAD_CHANNEL`` and
+  ``channel_profiles`` were handing this class display names like ``'RankDrop'``
+  and ``'the other guys'``, which became token filenames and identity bindings
+  for keys that are not in channels.yaml at all -- so the guard verified two
+  channels that do not exist while the two real ones went unchecked.
+* **the lane is verified too.** A channel registered for ``shorts`` is not a
+  valid ranking target (``the_other_guys`` was exactly that until 8/23), and a
+  ranking publish to one is now refused rather than uploaded.
+
 Uploads here still delete the local file on success: in this lane an upload is
 the end of the job (unlike the clipper, where the board submission comes after).
 """
@@ -32,6 +43,7 @@ SCOPES = ['https://www.googleapis.com/auth/youtube.upload',
           'https://www.googleapis.com/auth/youtube',
           'https://www.googleapis.com/auth/youtube.force-ssl']
 DEFAULT_CATEGORY_ID = '24'
+PIPELINE = 'ranking'
 
 
 def _interactive_allowed() -> bool:
@@ -83,8 +95,17 @@ def _client_secrets(channel: Optional[str] = None) -> Path:
 class RankingPublisher:
     def __init__(self, channel: Optional[str] = None,
                  privacy_status: Optional[str] = None,
-                 verify_identity: bool = True):
-        self.channel = channel or (os.getenv('RANKING_UPLOAD_CHANNEL') or 'rankdrop').strip()
+                 verify_identity: bool = True,
+                 variant: str = ''):
+        requested = channel or os.getenv('RANKING_UPLOAD_CHANNEL') or 'rankdrop'
+        # Canonicalise BEFORE anything derives a filename from it. Everything
+        # downstream (token path, client secrets, identity binding) keys off
+        # this string, so a display name here poisons all three at once.
+        self.channel = channel_guard.resolve_key(requested)
+        if self.channel != str(requested).strip():
+            logger.info('CHANNEL_KEY_RESOLVED requested=%s key=%s',
+                        requested, self.channel)
+        self.variant = (variant or '').strip().lower()
         self.privacy_status = (privacy_status or os.getenv('UPLOAD_PRIVACY') or 'public').lower()
         self.credentials_path = _client_secrets(self.channel)
         self.token_file = _token_path(self.channel)
@@ -97,9 +118,15 @@ class RankingPublisher:
             channel_guard.assert_identity(
                 self.channel, self.actual_channel_id, self.actual_channel_title,
                 context='ranking upload')
-        logger.info('CHANNEL_READY key=%s actual_channel_id=%s title=%s',
+            # Right channel is not the same question as right content. A shorts
+            # channel can hold a perfectly valid token and still be the wrong
+            # place for a ranked countdown.
+            channel_guard.assert_content(
+                self.channel, pipeline=PIPELINE, variant=self.variant,
+                context='ranking upload')
+        logger.info('CHANNEL_READY key=%s actual_channel_id=%s title=%s variant=%s',
                     self.channel, self.actual_channel_id or 'unknown',
-                    self.actual_channel_title or 'unknown')
+                    self.actual_channel_title or 'unknown', self.variant or '-')
 
     def _credentials(self):
         from google.auth.exceptions import RefreshError
@@ -131,8 +158,7 @@ class RankingPublisher:
                 f'no usable token for channel {self.channel!r} at '
                 f'{self.token_file}. Refusing to start an interactive OAuth '
                 'flow in a non-interactive process. Re-auth in your own '
-                f'terminal:\n  cd artisan && python -m yt_secrets auth '
-                f'--channel {self.channel}')
+                f'terminal:\n  reauth_all_channels.bat --channel {self.channel}')
         from google_auth_oauthlib.flow import InstalledAppFlow
         if not self.credentials_path.exists():
             raise FileNotFoundError(
@@ -195,8 +221,9 @@ class RankingPublisher:
                 except OSError:
                     pass
             logger.info('UPLOAD_DONE channel_key=%s actual_channel_id=%s '
-                        'video_id=%s privacy=%s', self.channel,
-                        self.actual_channel_id or 'unknown', vid, status)
+                        'video_id=%s privacy=%s variant=%s', self.channel,
+                        self.actual_channel_id or 'unknown', vid, status,
+                        self.variant or '-')
             return vid
         except Exception as exc:
             logger.error('UPLOAD_FAIL channel_key=%s error=%s', self.channel,
@@ -208,5 +235,14 @@ class RankingPublisher:
 
 
 def auth(channel: str) -> Optional[str]:
+    """DEPRECATED. Use ``reauth_all_channels.bat --channel <key>`` instead.
+
+    Kept only so old scripts keep importing. It authenticates through the
+    publisher, which means it inherits the identity and content gates -- but it
+    does NOT write the resolved channel id back into channels.yaml, so the
+    registry stays incomplete when you use it. The guarded CLI does.
+    """
+    logger.warning('publisher.auth() is deprecated; prefer '
+                   'reauth_all_channels.bat --channel %s', channel)
     return RankingPublisher(channel=channel,
                            privacy_status='private').actual_channel_id

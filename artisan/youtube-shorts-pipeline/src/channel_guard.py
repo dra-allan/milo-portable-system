@@ -12,6 +12,14 @@ loads it by path.
 If it cannot be found, the guard degrades to a **loud warning**, not a silent
 pass and not a hard failure: a missing registry on a half-copied machine should
 not brick uploads, but it must never look like a successful verification.
+
+Two kinds of check are exposed:
+
+* :func:`assert_identity` -- is this the right CHANNEL? (the 2026-08-16 fix)
+* :func:`assert_content` / :func:`assert_lane` -- is this the right CONTENT for
+  that channel? (the 2026-08-23 fix; a ranking countdown routed onto a shorts
+  channel, or a forex niche routed onto a Luganda gossip channel, is the same
+  class of accident from the audience's side)
 """
 from __future__ import annotations
 
@@ -34,6 +42,10 @@ class ChannelIdentityError(RuntimeError):
     """
 
 
+class ChannelContentError(ChannelIdentityError):
+    """Fallback content-mismatch type; replaced once the module loads."""
+
+
 def _candidate_paths() -> list:
     here = Path(__file__).resolve()
     out = []
@@ -48,7 +60,7 @@ def _candidate_paths() -> list:
 
 
 def _identity():
-    global _IDENTITY, _LOADED, ChannelIdentityError
+    global _IDENTITY, _LOADED, ChannelIdentityError, ChannelContentError
     if _LOADED:
         return _IDENTITY
     _LOADED = True
@@ -60,6 +72,8 @@ def _identity():
             spec.loader.exec_module(module)
             _IDENTITY = module
             ChannelIdentityError = module.ChannelIdentityError
+            ChannelContentError = getattr(module, 'ChannelContentError',
+                                          module.ChannelIdentityError)
             logger.debug('channel identity loaded from %s', path)
             return _IDENTITY
         except Exception as exc:
@@ -69,6 +83,26 @@ def _identity():
         'channel identity module not found; wrong-channel protection is '
         'DISABLED for this process. Expected artisan/yt_secrets/identity.py.')
     return None
+
+
+def resolve_key(channel: Optional[str]) -> str:
+    """Canonicalise anything human into the exact registry key.
+
+    Everything that accepts a channel from config, an env var or a CLI argument
+    should pass through here. ``'RankDrop'`` and ``'the other guys'`` were being
+    used as channel keys directly, which produced token filenames and identity
+    bindings for channels that are not in the registry at all.
+    """
+    raw = str(channel or '').strip()
+    if not raw:
+        return ''
+    module = _identity()
+    if module is None or not hasattr(module, 'resolve_key'):
+        return raw
+    try:
+        return module.resolve_key(raw) or raw
+    except Exception:
+        return raw
 
 
 def assert_identity(channel_key: str, observed_id: Optional[str],
@@ -82,6 +116,53 @@ def assert_identity(channel_key: str, observed_id: Optional[str],
         return str(observed_id or '')
     return module.assert_identity(channel_key, observed_id or '',
                                  observed_title, context)
+
+
+def assert_lane(channel_key: str, pipeline: str, context: str = '') -> None:
+    """Refuse when ``pipeline`` is not a lane this channel is registered on."""
+    module = _identity()
+    if module is None or not hasattr(module, 'assert_lane'):
+        return
+    module.assert_lane(channel_key, pipeline, context)
+
+
+def assert_content(channel_key: str, pipeline: str = '', variant: str = '',
+                   niche: str = '', context: str = '') -> None:
+    """Refuse a publish whose lane, variant or niche is not this channel's.
+
+    Only DECLARED facts are compared, so passing whatever the caller happens to
+    know is always safe: a channel that declares nothing is never blocked.
+    """
+    module = _identity()
+    if module is None or not hasattr(module, 'assert_content'):
+        logger.warning('CHANNEL_CONTENT_UNVERIFIED key=%s pipeline=%s '
+                       'variant=%s niche=%s', channel_key, pipeline or '-',
+                       variant or '-', niche or '-')
+        return
+    module.assert_content(channel_key, pipeline=pipeline, variant=variant,
+                          niche=niche, context=context)
+
+
+def content_summary(channel_key: str) -> str:
+    """Plain-English description of what this channel posts, or ''."""
+    module = _identity()
+    if module is None or not hasattr(module, 'content_summary'):
+        return ''
+    try:
+        return module.content_summary(channel_key)
+    except Exception:
+        return ''
+
+
+def channels_for_variant(pipeline: str, variant: str) -> list:
+    """Registry keys on ``pipeline`` that declare ``variant``."""
+    module = _identity()
+    if module is None or not hasattr(module, 'channels_for_variant'):
+        return []
+    try:
+        return list(module.channels_for_variant(pipeline, variant))
+    except Exception:
+        return []
 
 
 def client_source(channel_key: str) -> str:

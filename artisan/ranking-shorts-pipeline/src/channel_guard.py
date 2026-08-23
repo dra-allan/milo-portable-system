@@ -21,6 +21,10 @@ class ChannelIdentityError(RuntimeError):
     """Fallback type; replaced by the real one once the module loads."""
 
 
+class ChannelContentError(ChannelIdentityError):
+    """Fallback content-mismatch type; replaced once the module loads."""
+
+
 def _candidate_paths() -> list:
     here = Path(__file__).resolve()
     out = []
@@ -33,7 +37,7 @@ def _candidate_paths() -> list:
 
 
 def _identity():
-    global _IDENTITY, _LOADED, ChannelIdentityError
+    global _IDENTITY, _LOADED, ChannelIdentityError, ChannelContentError
     if _LOADED:
         return _IDENTITY
     _LOADED = True
@@ -45,6 +49,8 @@ def _identity():
             spec.loader.exec_module(module)
             _IDENTITY = module
             ChannelIdentityError = module.ChannelIdentityError
+            ChannelContentError = getattr(module, 'ChannelContentError',
+                                          module.ChannelIdentityError)
             return _IDENTITY
         except Exception as exc:
             logger.warning('could not load channel identity from %s: %s',
@@ -52,6 +58,20 @@ def _identity():
     logger.warning('channel identity module not found; wrong-channel '
                    'protection is DISABLED for this process')
     return None
+
+
+def resolve_key(channel: Optional[str]) -> str:
+    """Canonicalise anything human into the exact registry key."""
+    raw = str(channel or '').strip()
+    if not raw:
+        return ''
+    module = _identity()
+    if module is None or not hasattr(module, 'resolve_key'):
+        return raw
+    try:
+        return module.resolve_key(raw) or raw
+    except Exception:
+        return raw
 
 
 def assert_identity(channel_key: str, observed_id: Optional[str],
@@ -63,6 +83,44 @@ def assert_identity(channel_key: str, observed_id: Optional[str],
         return str(observed_id or '')
     return module.assert_identity(channel_key, observed_id or '',
                                  observed_title, context)
+
+
+def assert_lane(channel_key: str, pipeline: str, context: str = '') -> None:
+    module = _identity()
+    if module is None or not hasattr(module, 'assert_lane'):
+        return
+    module.assert_lane(channel_key, pipeline, context)
+
+
+def assert_content(channel_key: str, pipeline: str = '', variant: str = '',
+                   niche: str = '', context: str = '') -> None:
+    module = _identity()
+    if module is None or not hasattr(module, 'assert_content'):
+        logger.warning('CHANNEL_CONTENT_UNVERIFIED key=%s pipeline=%s variant=%s',
+                       channel_key, pipeline or '-', variant or '-')
+        return
+    module.assert_content(channel_key, pipeline=pipeline, variant=variant,
+                          niche=niche, context=context)
+
+
+def content_summary(channel_key: str) -> str:
+    module = _identity()
+    if module is None or not hasattr(module, 'content_summary'):
+        return ''
+    try:
+        return module.content_summary(channel_key)
+    except Exception:
+        return ''
+
+
+def channels_for_variant(pipeline: str, variant: str) -> list:
+    module = _identity()
+    if module is None or not hasattr(module, 'channels_for_variant'):
+        return []
+    try:
+        return list(module.channels_for_variant(pipeline, variant))
+    except Exception:
+        return []
 
 
 def client_source(channel_key: str) -> str:
