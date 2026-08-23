@@ -251,18 +251,22 @@ scorer:
   loses the payoff structure).
 
 The flag defaults to `false`, so every other niche scores exactly as before.
-The reference implementation is the `ranking_general_commentary` niche.
+(The niche that motivated it, `ranking_general_commentary`, was removed on
+2026-08-23 -- its upload target was never a real channel. Set `ranking_mode:
+true` on any countdown niche you add; see `git log` for its tuned keyword
+lists.)
 
 **Onboarding a ranking channel:**
 ```bash
-# 1. Authenticate the upload channel (creates config/youtube_token_<niche>.json)
-python -m src.add_channel ranking_general_commentary
+# 1. Register + authenticate the upload channel first:
+#    cd ../yt-secrets && python -m yt_secrets add --channel <key> ...
+#    (creates config/youtube_token_<key>.json via reauth_all_channels.bat)
 
 # 2. Dry-run discovery: no downloads, just show what would be picked up
-python -m src.main --mode discover --niche ranking_general_commentary
+python -m src.main --mode discover --niche <your_niche>
 
 # 3. Render locally without uploading, to sanity-check clip quality first
-python -m src.main --mode once --niche ranking_general_commentary --no-upload
+python -m src.main --mode once --niche <your_niche> --no-upload
 ```
 
 ## Database Schema

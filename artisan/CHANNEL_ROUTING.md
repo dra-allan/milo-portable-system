@@ -35,7 +35,6 @@ Two separate guards enforce this at publish time:
 | NXS | shorts + clipper | GTA 6 news only (topic-gated) | niche `gta_hype` |
 | chop_ug | shorts | Luganda Ugandan gossip, captions off | niche `chop_ug` |
 | god_did_fx | shorts + clipper | Forex education | niche `forex_god_fx` |
-| moviegasm | shorts + clipper | **nothing yet** | no niche |
 | rankdrop | ranking | Top-N countdowns (`normal`) | ranking lane |
 | the_other_guys | ranking | OTHERS VS THIS GUY (`contrast`) | ranking lane |
 | explaination | pov | POV explainers | POV lane |
@@ -85,22 +84,19 @@ Then fill in `content:` and `niches:` (and `variant:` for ranking) by hand, and
 add the channel to a niche's `upload_channels` so it actually receives work.
 `--doctor` will keep flagging it until both ends are connected.
 
-## Known unresolved mismatch
+## Removed 2026-08-23 (Allan's call)
 
-`niches.yaml` has a **`ranking_general_commentary`** niche (top-10 / countdown
-sources: WatchMojo, Screen Rant, The Infographics Show) whose
-`upload_channels: [ranking_general_commentary]` names a channel key that does not
-exist in `channels.yaml`. Nothing can authenticate that key, so the niche can
-build clips and then publish nowhere.
+The **`ranking_general_commentary`** niche was deleted from `niches.yaml`: its
+`upload_channels` named a channel key that never existed in `channels.yaml`, so
+it could build clips and then publish nowhere. The countdown-aware scoring it
+motivated (`ranking_mode`) is generic processor logic and stays, covered by
+`tests/test_ranking_niche.py`.
 
-It is left unrouted on purpose. Pointing it at `rankdrop` is the obvious guess,
-but the ranking lane already produces countdowns for that channel from its own
-pipeline, and "obvious guess" is exactly how content lands on a channel it was
-never meant for. `--doctor` reports it as an ERROR every run until it is either
-routed deliberately or deleted.
+Same day, **moviegasm** went `active: false` on the shorts/clipper lanes: it
+had no niche feeding it. It remains a campaign target through the campaign
+clipper's own config, which this registry does not govern.
 
-Same category, lower stakes: **twenty** research niches (`future_tech_daily`,
-`peak_human_lab`, `psychology_behavior`, `crypto_web3`, ...) declare no
-`upload_channels`. They can discover and build, and a publish attempt is now
-refused instead of falling through to the default token. `moviegasm` is the
-mirror image: `active: true` with no niche feeding it.
+Still true: about twenty research niches (`future_tech_daily`,
+`peak_human_lab`, `psychology_behavior`, ...) declare no `upload_channels`.
+They can discover and build, and a publish attempt is refused instead of
+falling through to the default token.

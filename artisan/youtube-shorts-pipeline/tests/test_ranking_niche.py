@@ -12,8 +12,10 @@ These lock in three things that were broken or missing:
    Shorts: ones that OPEN on an enumeration cue and ones containing the #1
    payoff, over mid-item narration with no setup.
 
-3. The ranking_general_commentary niche is wired end to end, and enabling it
-   did not disturb the 24 pre-existing niches.
+(The ranking_general_commentary niche these were built for was REMOVED from
+niches.yaml on 2026-08-23 -- its upload target was never a real channel, so it
+could build clips and then publish nowhere. The matching/scoring behaviour the
+niche motivated is generic processor logic and stays covered here.)
 """
 
 import os
@@ -279,83 +281,6 @@ class TestRankingModeScoring(unittest.TestCase):
         self.assertTrue(clips)
         for c in clips:
             self.assertGreater(c['end'], c['start'])
-
-
-# ---------------------------------------------------------------------------
-# 3. Niche configuration wiring
-# ---------------------------------------------------------------------------
-class TestRankingNicheConfig(unittest.TestCase):
-    NICHE = 'ranking_general_commentary'
-
-    def _cfg(self):
-        from src.config import config
-        return config.get_niche_config(self.NICHE)
-
-    def test_niche_exists_with_ranking_mode_enabled(self):
-        cfg = self._cfg()
-        self.assertTrue(cfg['channels'], "niche must have source channels")
-        self.assertIs(cfg['ranking_mode'], True)
-
-    def test_upload_channel_bound(self):
-        cfg = self._cfg()
-        self.assertEqual(cfg['upload_channels'], [self.NICHE])
-
-    def test_ranking_mode_defaults_off_for_other_niches(self):
-        from src.config import config
-        for other in ('flick_shorts', 'capital_mindset'):
-            with self.subTest(niche=other):
-                self.assertFalse(config.get_niche_config(other)['ranking_mode'])
-
-    def test_no_keyword_is_also_a_negative_keyword(self):
-        """A word in both lists would filter out the content it targets."""
-        cfg = self._cfg()
-        pos = {k.lower() for k in cfg['keywords']}
-        neg = {k.lower() for k in cfg['negative_keywords']}
-        self.assertEqual(pos & neg, set())
-
-    def test_negative_keywords_do_not_reject_healthy_ranking_titles(self):
-        """The regression that broke the niche in the first place."""
-        from src.discovery import matches_keyword
-
-        cfg = self._cfg()
-        titles = [
-            "Top 10 Most Expensive Cars Ever Delivered",
-            "Top 10 Times Abundance Changed Everything",
-            "Top 5 Guided Missiles In History",
-            "Top 10 Deadliest Animals In The Amazon",
-            "Ranked: Every Ferrari From Worst To Best",
-        ]
-        for title in titles:
-            hits = [k for k in cfg['negative_keywords']
-                    if matches_keyword(title, k)]
-            with self.subTest(title=title):
-                self.assertEqual(hits, [], f"wrongly rejected by {hits}")
-
-    def test_real_junk_titles_are_still_rejected(self):
-        """The filter must not be so loose that it accepts anything."""
-        from src.discovery import matches_keyword
-
-        cfg = self._cfg()
-        junk = [
-            "Top 10 Fails Compilation",
-            "My reaction to the new trailer",
-            "Official Music Video",
-            "Minecraft gameplay walkthrough part 4",
-            "#shorts quick tip",
-        ]
-        for title in junk:
-            hits = [k for k in cfg['negative_keywords']
-                    if matches_keyword(title, k)]
-            with self.subTest(title=title):
-                self.assertTrue(hits, "junk title should have been rejected")
-
-    def test_yaml_still_parses_and_other_niches_intact(self):
-        from src.config import config
-        # 24 pre-existing + the new one.
-        self.assertGreaterEqual(len(config.niches), 25)
-        self.assertIn(self.NICHE, config.niches)
-        for required in ('flick_shorts', 'capital_mindset'):
-            self.assertIn(required, config.niches)
 
 
 if __name__ == '__main__':

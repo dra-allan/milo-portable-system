@@ -161,16 +161,20 @@ channels:
   moviegasm:
     email: allandaada@gmail.com
     slug: draallan0
-    active: true
+    # INACTIVE on the shorts/clipper lanes (2026-08-23, Allan's call): no niche
+    # in niches.yaml feeds it, so an active registration here only advertised a
+    # lane that could never legitimately publish to it. Campaigns still target
+    # moviegasm via the campaign clipper's own channel config, which is
+    # unaffected by this flag.
+    active: false
     pipelines: [shorts, clipper]
     token_dir: artisan/youtube-shorts-pipeline/config
     # allandaada@gmail.com = Profile 7 on this machine.
     chrome_profile: Profile 7
-    # UNROUTED: active: true but no niche in niches.yaml points here, so this
-    # channel currently receives nothing. Either add its niche and list it below,
-    # or set active: false. --doctor flags this every run until one of the two
-    # happens. An active channel with no declared content is how a clip from
-    # whatever niche ran last ends up here.
+    # No declared shorts-lane content yet. When a niche is ever pointed here,
+    # fill content:/niches: and flip active: back to true -- an active channel
+    # with undeclared content is how a clip from whatever niche ran last ends
+    # up here.
     content: ''
     niches: []
     channel_id: 'UCjSnx-VZDUhRxMFiYHqnk3Q'
