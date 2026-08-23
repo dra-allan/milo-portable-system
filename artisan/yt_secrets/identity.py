@@ -1,4 +1,4 @@
-"""Channel identity: the binding between a channel KEY and a YouTube channel.
+"""Channel identity and content routing: what a key means, and what it may post.
 
 THE INCIDENT THIS PREVENTS
 --------------------------
@@ -13,17 +13,41 @@ That is a data problem, not a discipline problem: there was nowhere to record
 "``wealth_mindset`` means channel ``UC...``", so there was nothing to compare
 against. This module is that record, plus the comparison.
 
-HOW IT WORKS
-------------
+THE SECOND CLASS OF MISMATCH (added 2026-08-23)
+-----------------------------------------------
+Identity only answers *"is this the right channel?"*. It cannot answer *"is this
+the right content for this channel?"* -- and the pipelines had no answer either:
+
+* The ranking lane routed to ``'RankDrop'`` and ``'the other guys'``: display
+  names, not registry keys. Those produced token filenames
+  (``youtube_token_the other guys.json``) and identity bindings for channels that
+  do not exist in the registry, so the whole guard was being applied to phantom
+  keys while the real ones went unchecked.
+* ``the_other_guys`` was registered on the ``shorts`` lane with the shorts token
+  dir, while actually being a ranking channel. A token minted that way lands
+  where the ranking publisher will never look for it.
+* A channel's *subject matter* lived in a different file entirely
+  (``youtube-shorts-pipeline/config/niches.yaml``), with nothing tying the two
+  together, so a Luganda gossip niche and a forex niche were one typo apart from
+  each other's audience.
+
+So a channel now declares what it is for -- ``pipelines``, ``variant``,
+``niches``, ``content`` -- and :func:`assert_content` refuses a publish whose
+lane or variant contradicts the declaration. Same philosophy as identity: the
+cheapest outcome is a failed run.
+
+HOW IDENTITY WORKS
+------------------
 Two sources of truth, checked in this order:
 
 1. ``channels.yaml`` -> ``channels.<key>.channel_id`` (hand-maintained, wins).
 2. ``yt-secrets/channel_identity.json`` -- the ledger, written automatically the
    first time a key resolves to a channel.
 
-The YAML stays hand-edited and comment-rich; the ledger is machine-written. They
+The YAML stays comment-rich and reviewable; the ledger is machine-written. They
 are deliberately separate files so an automated bind can never reformat the
-registry or drop its comments.
+registry or drop its comments. Since 2026-08-23 the auth CLI writes verified ids
+into the YAML too, via :mod:`yt_secrets.registry` (line-based, comments kept).
 
 MODES (``MILO_CHANNEL_IDENTITY``)
 ---------------------------------
@@ -39,6 +63,17 @@ MODES (``MILO_CHANNEL_IDENTITY``)
     No checks. Present so a genuine channel migration is possible without
     editing code, and for nothing else.
 
+MODES (``MILO_CHANNEL_CONTENT``)
+--------------------------------
+``enforce`` (default)
+    A lane or variant that contradicts ``channels.yaml`` raises. Only DECLARED
+    facts are checked, so a channel that declares nothing is never blocked --
+    which is why enforce can be the default without breaking a single run.
+``warn``
+    Log the mismatch and continue. For a deliberate one-off cross-post.
+``off``
+    No content checks at all.
+
 DESIGN CONSTRAINT
 -----------------
 Zero imports from any pipeline. All three lanes load this file by path (see each
@@ -50,9 +85,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +96,11 @@ HERE = Path(__file__).resolve().parent
 LEGACY_DIR = HERE.parent / 'yt-secrets'
 REGISTRY_PATH = LEGACY_DIR / 'channels.yaml'
 LEDGER_PATH = LEGACY_DIR / 'channel_identity.json'
+NICHES_PATH = HERE.parent / 'youtube-shorts-pipeline' / 'config' / 'niches.yaml'
 
 MODE_LEARN = 'learn'
 MODE_ENFORCE = 'enforce'
+MODE_WARN = 'warn'
 MODE_OFF = 'off'
 
 
@@ -72,6 +110,16 @@ class ChannelIdentityError(RuntimeError):
     Raised rather than logged on purpose. The cheapest possible outcome here is
     a failed run; the expensive outcome is a published video on someone else's
     channel, which cannot be un-published from a git branch.
+    """
+
+
+class ChannelContentError(ChannelIdentityError):
+    """The right channel, the wrong content.
+
+    Subclasses :class:`ChannelIdentityError` so every ``except
+    ChannelIdentityError`` already written in the pipelines treats a content
+    mismatch with the same seriousness as a wrong-channel token. It is the same
+    class of accident: the audience gets something that was never meant for them.
     """
 
 
@@ -88,9 +136,19 @@ def ledger_path() -> Path:
     return Path(override).expanduser() if override else LEDGER_PATH
 
 
+def niches_path() -> Path:
+    override = (os.getenv('MILO_NICHES_FILE') or '').strip()
+    return Path(override).expanduser() if override else NICHES_PATH
+
+
 def mode() -> str:
     raw = (os.getenv('MILO_CHANNEL_IDENTITY') or MODE_LEARN).strip().lower()
     return raw if raw in (MODE_LEARN, MODE_ENFORCE, MODE_OFF) else MODE_LEARN
+
+
+def content_mode() -> str:
+    raw = (os.getenv('MILO_CHANNEL_CONTENT') or MODE_ENFORCE).strip().lower()
+    return raw if raw in (MODE_ENFORCE, MODE_WARN, MODE_OFF) else MODE_ENFORCE
 
 
 def load_registry() -> Dict[str, Dict]:
@@ -117,6 +175,27 @@ def load_registry() -> Dict[str, Dict]:
         return {}
 
 
+def load_niches() -> Dict[str, Dict]:
+    """``niches.yaml`` as a dict, or {} when unavailable.
+
+    Only used by the audit. The lanes must keep running without it: it lives in
+    the shorts pipeline and the ranking/POV lanes have no business requiring it.
+    """
+    path = niches_path()
+    if not path.exists():
+        return {}
+    try:
+        import yaml
+    except ImportError:
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding='utf-8')) or {}
+        return {str(k): (v or {}) for k, v in data.items() if isinstance(v, dict)}
+    except Exception as exc:
+        logger.warning('Could not read niches file %s: %s', path, exc)
+        return {}
+
+
 def load_ledger() -> Dict[str, Dict]:
     path = ledger_path()
     if not path.exists():
@@ -136,6 +215,51 @@ def _save_ledger(ledger: Dict[str, Dict]) -> None:
     tmp.write_text(json.dumps(ledger, indent=2, sort_keys=True) + '\n',
                    encoding='utf-8')
     tmp.replace(path)
+
+
+# ---------------------------------------------------------------------------
+# Canonical keys
+# ---------------------------------------------------------------------------
+def channel_keys() -> List[str]:
+    return list(load_registry())
+
+
+def resolve_key(value: str) -> str:
+    """Turn anything human into the exact registry key, or return it unchanged.
+
+    The ranking lane routed on display names (``'RankDrop'``, ``'the other
+    guys'``). Those became token filenames and identity bindings, so the guard
+    was protecting keys that do not exist while the real ones were never
+    checked. Everything that accepts a channel from config, an env var or a CLI
+    argument should pass it through here first.
+
+    Matching order: exact key, case-insensitive key, then slugified
+    (lowercase, non-alphanumerics collapsed to ``_``) against slugified keys.
+    Unknown values come back untouched so the caller can produce its own error
+    naming the value the operator actually typed.
+    """
+    raw = str(value or '').strip()
+    if not raw:
+        return ''
+    channels = load_registry()
+    if raw in channels:
+        return raw
+    lowered = raw.lower()
+    for key in channels:
+        if key.lower() == lowered:
+            return key
+
+    def slug(text: str) -> str:
+        return re.sub(r'[^a-z0-9]+', '_', text.lower()).strip('_')
+
+    wanted = slug(raw)
+    if not wanted:
+        return raw
+    for key in channels:
+        if slug(key) == wanted:
+            return key
+    # 'the other guys' -> 'the_other_guys' even with no registry available.
+    return raw
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +369,132 @@ def assert_identity(key: str, observed_id: str, observed_title: str = '',
 
     logger.info('CHANNEL_IDENTITY_OK key=%s channel_id=%s', key, observed_id)
     return observed_id
+
+
+# ---------------------------------------------------------------------------
+# Content routing: what this channel is FOR
+# ---------------------------------------------------------------------------
+def _declared_list(key: str, field: str) -> List[str]:
+    raw = (load_registry().get(key) or {}).get(field)
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [part.strip() for part in raw.split(',') if part.strip()]
+    if isinstance(raw, (list, tuple, set)):
+        return [str(item).strip() for item in raw if str(item).strip()]
+    return []
+
+
+def expected_pipelines(key: str) -> List[str]:
+    return [p.lower() for p in _declared_list(key, 'pipelines')]
+
+
+def expected_niches(key: str) -> List[str]:
+    return _declared_list(key, 'niches')
+
+
+def expected_variant(key: str) -> str:
+    return str((load_registry().get(key) or {}).get('variant') or '').strip().lower()
+
+
+def content_summary(key: str) -> str:
+    return str((load_registry().get(key) or {}).get('content') or '').strip()
+
+
+def channels_for_variant(pipeline: str, variant: str) -> List[str]:
+    """Registry keys on ``pipeline`` that declare ``variant``.
+
+    This is the inverse of the routing table the ranking lane hardcoded in
+    ``DEFAULT_PROFILES``. Deriving it from the registry means a channel can
+    never be routed to by a lane it is not registered on.
+    """
+    pipeline = (pipeline or '').lower()
+    variant = (variant or '').lower()
+    out = []
+    for key in load_registry():
+        lanes = expected_pipelines(key)
+        if pipeline and pipeline not in lanes:
+            continue
+        if variant and expected_variant(key) != variant:
+            continue
+        out.append(key)
+    return out
+
+
+def _content_failure(message: str, context: str = '') -> None:
+    current = content_mode()
+    where = f' during {context}' if context else ''
+    if current == MODE_OFF:
+        return
+    if current == MODE_WARN:
+        logger.warning('CHANNEL_CONTENT_MISMATCH%s -- %s (MILO_CHANNEL_CONTENT='
+                       'warn, continuing anyway)', where, message)
+        return
+    raise ChannelContentError(message + where + '. Nothing was published. Set '
+                              'MILO_CHANNEL_CONTENT=warn for a deliberate '
+                              'one-off cross-post, or fix the channel entry in '
+                              'artisan/yt-secrets/channels.yaml.')
+
+
+def assert_lane(key: str, pipeline: str, context: str = '') -> None:
+    """Refuse when ``pipeline`` is not a lane this channel is registered on.
+
+    Catches the ``the_other_guys``-on-shorts class of error: a channel whose
+    registry entry names the wrong lane mints its token into a config dir the
+    real publisher never reads, and publishes content its audience never asked
+    for. Skipped silently when the channel declares no pipelines, so an
+    incompletely described channel is never blocked by this.
+    """
+    pipeline = (pipeline or '').strip().lower()
+    if not pipeline or content_mode() == MODE_OFF:
+        return
+    lanes = expected_pipelines(key)
+    if not lanes or pipeline in lanes:
+        return
+    summary = content_summary(key)
+    _content_failure(
+        f'WRONG LANE: {key!r} is registered for {lanes} but a {pipeline!r} '
+        f'publish was attempted'
+        + (f'. That channel posts: {summary}' if summary else ''),
+        context)
+
+
+def assert_content(key: str, pipeline: str = '', variant: str = '',
+                   niche: str = '', context: str = '') -> None:
+    """Full content-routing check for a publish about to happen.
+
+    Every argument is optional and only DECLARED facts are compared, so this is
+    safe to call from anywhere with whatever the caller happens to know. What it
+    catches:
+
+    * ``pipeline`` not among the channel's ``pipelines``
+    * ``variant`` (ranking's normal/contrast) disagreeing with ``variant:``
+    * ``niche`` not among the channel's ``niches:`` allow-list
+    """
+    if content_mode() == MODE_OFF:
+        return
+    assert_lane(key, pipeline, context)
+
+    variant = (variant or '').strip().lower()
+    declared_variant = expected_variant(key)
+    if variant and declared_variant and variant != declared_variant:
+        _content_failure(
+            f'WRONG VARIANT: {key!r} publishes {declared_variant!r} content per '
+            f'channels.yaml, but a {variant!r} item was routed to it',
+            context)
+
+    niche = (niche or '').strip()
+    allowed = expected_niches(key)
+    if niche and allowed and niche not in allowed:
+        summary = content_summary(key)
+        _content_failure(
+            f'WRONG NICHE: {key!r} accepts {allowed} but niche {niche!r} was '
+            f'routed to it'
+            + (f'. That channel posts: {summary}' if summary else ''),
+            context)
+
+    logger.info('CHANNEL_CONTENT_OK key=%s pipeline=%s variant=%s niche=%s',
+                key, pipeline or '-', variant or '-', niche or '-')
 
 
 # ---------------------------------------------------------------------------
