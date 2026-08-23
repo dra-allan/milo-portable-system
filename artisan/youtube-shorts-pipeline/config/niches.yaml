@@ -1,4 +1,4 @@
-﻿# niches.yaml
+# niches.yaml
 # Optimized for discovering long-form videos that can be cut into viral shorts.
 # Channel entries may be YouTube channel IDs or quoted @handles.
 # If your pipeline only supports channel IDs, resolve @handles before running.
