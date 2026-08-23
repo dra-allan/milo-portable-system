@@ -95,13 +95,19 @@ printed on screen per channel, so this table is only for reference:
 
 | Channel | Approve as | Chrome profile |
 |---|---|---|
-| flick_shorts, capital_mindset | draallan0@gmail.com | Profile 3 |
+| flick_shorts, capital_mindset | draallan0@gmail.com | Profile 4 |
 | wealth_mindset, dra_allan_official | adrasaltsxxx@gmail.com | Default |
-| NXS, explaination | draallan12@gmail.com | Profile 4 |
-| chop_ug, rankdrop | daadaallan0@gmail.com | Profile 1 |
-| money_matrix | adrasaltsx@gmail.com | Profile 2 |
-| god_did_fx | draallan84@gmail.com | Profile 5 |
-| the_other_guys, moviegasm | allandaada@gmail.com | Profile 6 |
+| NXS, explaination | draallan12@gmail.com | Profile 5 |
+| chop_ug, rankdrop | daadaallan0@gmail.com | Profile 12 |
+| money_matrix | adrasaltsx@gmail.com | (none yet — sign into Chrome first) |
+| god_did_fx | draallan84@gmail.com | Profile 6 |
+| the_other_guys, moviegasm | allandaada@gmail.com | Profile 7 |
+
+These are Chrome's real profile directories on the main PC (read from
+`Local State`, verified 2026-08-23). A `chrome_profile:` value that does not
+exist makes Chrome silently spawn a fresh unsigned profile -- which is how a
+consent page opens on no account at all. If a consent tab ever opens signed-out,
+check this table against `Local State` before clicking anything.
 
 ### 4. Verify
 
