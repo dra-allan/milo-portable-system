@@ -76,7 +76,7 @@ channels:
     chrome_profile: Profile 4
     content: Life lessons, hard truths and mindset clips from long-form podcasts
     niches: [flick_shorts]
-    channel_id: ''
+    channel_id: 'UCFWY9jrOMuauvho3XpIzACw'
     # CLIENT RECREATED (2026-08-23): the original flick-shorts OAuth client
     # (…-aggfh…) was deleted in Google Cloud; a new Desktop client (…-e00rk…)
     # now lives in the same yt-flick-shorts project and sits in
@@ -92,7 +92,7 @@ channels:
     chrome_profile: Profile 4
     content: Business, sales and founder clips - how companies and money work
     niches: [capital_mindset]
-    channel_id: ''
+    channel_id: 'UCycs2dZT3bA4zUVLFWYI3Iw'
 
   wealth_mindset:
     email: adrasaltsxxx@gmail.com
@@ -144,7 +144,7 @@ channels:
     # This is the channel the 8/16 rogue uploads landed on (ids 465-468). Its
     # id is worth filling in first: with it recorded, any token that resolves
     # here under another key is rejected outright.
-    channel_id: ''
+    channel_id: 'UC6JRCEnk0a3_LxHhfgfn7Xg'
 
   god_did_fx:
     email: draallan84@gmail.com
@@ -156,7 +156,7 @@ channels:
     chrome_profile: Profile 6
     content: Forex trading education - strategy, psychology, risk management
     niches: [forex_god_fx]
-    channel_id: ''
+    channel_id: 'UCkMwgXBh41U0C_lgIGZ2Uzw'
 
   moviegasm:
     email: allandaada@gmail.com
@@ -173,7 +173,7 @@ channels:
     # whatever niche ran last ends up here.
     content: ''
     niches: []
-    channel_id: ''
+    channel_id: 'UCjSnx-VZDUhRxMFiYHqnk3Q'
 
   # ---------------------------------------------------------------------
   # RANKING lane. Separate pipeline, separate token dir, two variants.
@@ -188,7 +188,7 @@ channels:
     chrome_profile: Profile 12
     variant: normal
     content: Top-N ranked countdowns (the normal ranking variant)
-    channel_id: ''
+    channel_id: 'UCL3jT63WNf3e9vjzGB9wPww'
 
   the_other_guys:
     email: allandaada@gmail.com
@@ -205,7 +205,7 @@ channels:
     chrome_profile: Profile 7
     variant: contrast
     content: "OTHERS VS THIS GUY contrast clips (the contrast ranking variant)"
-    channel_id: ''
+    channel_id: 'UCYSxmqdfuLz0kcEP31ohAig'
 
   # ---------------------------------------------------------------------
   # POV lane.
@@ -223,7 +223,7 @@ channels:
     chrome_profile: Profile 5
     content: POV explainer videos
     niches: []
-    channel_id: ''
+    channel_id: 'UCyD7omG_-cNXKCO1zD6cgWQ'
 
   dra_allan_official:
     email: adrasaltsxxx@gmail.com
@@ -234,7 +234,7 @@ channels:
     chrome_profile: Default
     content: Personal POV channel
     niches: []
-    channel_id: ''
+    channel_id: 'UCFC7rfcl-Kn4sYxy2zEZsig'
 
   money_matrix:
     email: adrasaltsx@gmail.com
@@ -249,4 +249,4 @@ channels:
     chrome_profile: ''
     content: Money and finance POV videos
     niches: []
-    channel_id: ''
+    channel_id: 'UCvQB_a4wkvWHiGRary3zGcg'

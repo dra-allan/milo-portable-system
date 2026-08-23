@@ -43,3 +43,6 @@ artisan/pov_pipeline/scripts/transcripts/
 cookies.txt
 # OAuth client secrets (per-channel Google Cloud projects)
 youtube_client_secrets_*.json
+# Machine-written auth ledger + registry backup (state, per machine).
+artisan/yt-secrets/channel_identity.json
+artisan/yt-secrets/channels.yaml.bak
