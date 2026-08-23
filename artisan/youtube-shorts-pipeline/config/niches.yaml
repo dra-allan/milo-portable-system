@@ -1973,3 +1973,176 @@ gta_hype:
   # news is how a news channel loses its audience.
   preferred_upload_days: 45
   min_views: 8000
+
+# ---------------------------------------------------------------------------
+# forex_god_fx
+#
+# Forex trading education clips from top educators. Clips focus on strategy,
+# psychology, risk management, and market analysis. Uploads to god_did_fx channel.
+# ---------------------------------------------------------------------------
+forex_god_fx:
+  upload_channels:
+    - god_did_fx
+  channel: god_did_fx
+  max_videos: 3
+  channels:
+    # Core forex educators (requested)
+    - "@InnerCircleTrader"           # ICT - The Inner Circle Trader
+    - "@TJRTrades"                   # TJR
+    - "@mambafx"                     # MambaFx
+    - "@Vidollar"                    # Vidollar
+    - "@JeaFxForexTrading"           # JeaFx
+    - "@JeffreyBenson"               # Jeffrey Benson Forex
+    - "@TheMovingAverage"            # The Moving Average
+    - "@PhotonTrading"               # Matt Donlevey - Photon Trading
+    - "@presenterali"                # Presenter Ali
+    - "@TheTradingGeek"              # The Trading Geek
+    - "@tradingwithrayner"           # Rayner Teo
+    # Additional top forex educators
+    - "@UKspreadbetting"             # UK Spread Betting
+    - "@TraderNick"                  # Trader Nick
+    - "@TheDuomoInitiative"          # The Duomo Initiative
+    - "@ForexSignalsTV"              # Forex Signals
+    - "@AdamKhoo"                    # Adam Khoo
+    - "@KarenFoo"                    # Karen Foo
+    - "@Trading212"                  # Trading 212
+    - "@Wysetrade"                   # Wyse Trade
+    - "@TheTradingChannel"           # The Trading Channel
+    - "@AkilStokes"                  # Akil Stokes (Tier One Trading)
+    - "@RagheeHorner"                # Raghee Horner
+    - "@NoNonsenseForex"             # No Nonsense Forex
+    - "@BlueberryMarkets"            # Blueberry Markets
+    - "@PipSociety"                  # Pip Society
+    - "@TheFundedTrader"             # The Funded Trader
+    - "@FTMO_Official"               # FTMO
+    - "@TopstepTrader"               # Topstep
+  keywords:
+    # Strategy & Setups
+    - "forex strategy"
+    - "trading setup"
+    - "price action"
+    - "smart money concept"
+    - "smart money concepts"
+    - "SMC"
+    - "order block"
+    - "fair value gap"
+    - "FVG"
+    - "liquidity"
+    - "market structure"
+    - "break of structure"
+    - "BOS"
+    - "change of character"
+    - "CHoCH"
+    - "supply and demand"
+    - "support and resistance"
+    - "trend line"
+    - "fibonacci"
+    - "risk to reward"
+    - "risk reward ratio"
+    - "position sizing"
+    - "trade management"
+    - "entry criteria"
+    - "confluence"
+    - "kill zone"
+    - "asian session"
+    - "london session"
+    - "new york session"
+    - "london open"
+    - "new york open"
+    - "session overlap"
+    # Psychology & Mindset
+    - "trading psychology"
+    - "discipline"
+    - "patience"
+    - "fear of missing out"
+    - "FOMO"
+    - "revenge trading"
+    - "overtrading"
+    - "consistency"
+    - "trading plan"
+    - "journal"
+    - "mindset"
+    - "emotional control"
+    # Risk Management
+    - "risk management"
+    - "stop loss"
+    - "take profit"
+    - "drawdown"
+    - "compound"
+    - "compounding"
+    - "account growth"
+    - "prop firm"
+    - "funded account"
+    - "FTMO"
+    - "challenge"
+    - "verification"
+    # Analysis
+    - "technical analysis"
+    - "fundamental analysis"
+    - "market analysis"
+    - "weekly outlook"
+    - "daily bias"
+    - "market review"
+    - "gold analysis"
+    - "XAUUSD"
+    - "EURUSD"
+    - "GBPUSD"
+    - "USDJPY"
+    - "USDCAD"
+    - "AUDUSD"
+    - "NZDUSD"
+    - "US30"
+    - "NAS100"
+    - "indices"
+    # Education
+    - "how to trade"
+    - "learn to trade"
+    - "beginner"
+    - "mistake"
+    - "avoid"
+    - "secret"
+    - "professional"
+    - "institutional"
+    - "bank strategy"
+    - "algorithm"
+    - "algorithmic"
+  negative_keywords:
+    - "#shorts"
+    - "shorts"
+    - "clip"
+    - "clips"
+    - "compilation"
+    - "reaction"
+    - "livestream"
+    - "live stream"
+    - "music video"
+    - "giveaway"
+    - "signal"
+    - "copy trade"
+    - "copy trading"
+    - "telegram"
+    - "discord"
+    - "mentorship"
+    - "course sale"
+    - "paid group"
+    - "vip"
+    - "guaranteed"
+    - "100% win"
+    - "no loss"
+    - "risk free"
+    - "get rich quick"
+    - "lambo"
+    - "flex"
+    - "lifestyle"
+    - "day in the life"
+    - "morning routine"
+    - "what i eat"
+    - "my setup"
+    - "monitor"
+    - "keyboard"
+  language: en
+  min_duration: 300
+  max_duration: 7200
+  min_score: 0.52
+  preferred_upload_days: 365
+  min_views: 25000

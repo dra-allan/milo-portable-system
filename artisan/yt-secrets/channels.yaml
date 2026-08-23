@@ -108,9 +108,9 @@ channels:
   god_did_fx:
     email: draallan84@gmail.com
     slug: adrasaltsxxx
-    active: false
-    pipelines: [pov]
-    token_dir: artisan/pov_pipeline/config
+    active: true
+    pipelines: [shorts, clipper]
+    token_dir: artisan/youtube-shorts-pipeline/config
     channel_id: ''
   the_other_guys:
     email: allandaada@gmail.com
