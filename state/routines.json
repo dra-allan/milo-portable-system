@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787454824.9367168,
+  "updated_at": 1787458725.817917,
   "routines": [
     {
       "name": "curate-skills",
@@ -22,11 +22,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0468326,
-      "last_run": 1787371416.6927795,
+      "last_run": 1787457808.356716,
       "last_status": "ok",
-      "last_output": "------------------------------------------------------------------------------\n curator\n------------------------------------------------------------------------------\n  0 stale, 0 archived, 0 revived, 1 lint errors, 0 possible duplicates\n  !   ('brand', 'warn', 'description repeats the skill name')\n  !   ('design', 'warn', 'marketing words in description')\n  !   ('design', 'warn', 'description repeats the skill name')\n  !   ('gpt-taste', 'warn', 'marketing words in description')\n  !   ('image-to-code', 'warn', 'description repeats the skill name')\n  !   ('test-skill', 'error', 'missing description â€” it will never route')\n  !   ('webgpu-threejs-tsl', 'warn', 'marketing words in description')",
-      "next_run": 1787457600.0,
-      "runs": 16,
+      "last_output": "curator not due yet",
+      "next_run": 1787544000.0,
+      "runs": 17,
       "failures": 0
     },
     {
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787453608.1162047,
+      "last_run": 1787457508.2563505,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     215\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1787457234.3362286,
-      "runs": 743,
+      "next_run": 1787461135.8664837,
+      "runs": 744,
       "failures": 32
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787453912.5062218,
+      "last_run": 1787457808.995797,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787457535.6805634,
-      "runs": 737,
+      "next_run": 1787461419.4854057,
+      "runs": 738,
       "failures": 89
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787454808.7567084,
+      "last_run": 1787458708.872132,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~6952 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787458424.9208176,
-      "runs": 165,
+      "next_run": 1787462325.788193,
+      "runs": 166,
       "failures": 5
     },
     {
@@ -183,11 +183,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0510957,
-      "last_run": 1787435916.6640077,
+      "last_run": 1787457819.4937093,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787457592.750703,
-      "runs": 62,
+      "next_run": 1787479424.593311,
+      "runs": 63,
       "failures": 9
     }
   ]
