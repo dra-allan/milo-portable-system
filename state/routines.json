@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787525028.658306,
+  "updated_at": 1787528925.8356748,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787523809.4828598,
+      "last_run": 1787527708.972445,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     215\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1787527429.622749,
-      "runs": 761,
+      "next_run": 1787531337.8956769,
+      "runs": 762,
       "failures": 32
     },
     {
@@ -76,12 +76,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787524108.5999768,
-      "last_status": "ok",
-      "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787527718.0088487,
-      "runs": 755,
-      "failures": 89
+      "last_run": 1787528008.9591966,
+      "last_status": "failed (1)",
+      "last_output": "[x] hint: See the 'Note about fast-forwards' in 'git push --help' for details.",
+      "next_run": 1787531621.2606292,
+      "runs": 756,
+      "failures": 90
     },
     {
       "name": "memory-hygiene",
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787525008.3098216,
+      "last_run": 1787528908.845906,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~7265 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787528628.626823,
-      "runs": 183,
+      "next_run": 1787532525.8077488,
+      "runs": 184,
       "failures": 5
     },
     {
