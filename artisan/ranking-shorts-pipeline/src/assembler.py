@@ -336,7 +336,7 @@ def render_clip(clip: Dict, video_title: str, clips_total: int,
     src_label = f'{silent_index}:a' if silent_index is not None else '0:a'
     chains.append(
         f'[{src_label}]aformat=sample_fmts=fltp:sample_rates=48000:'
-        'channel_layouts=stereo,loudnorm=I=-16:TP=-1.5:LRA=11[src]')
+        'channel_layouts=stereo,loudnorm=I=-16:TP=-2.0:LRA=11[src]')
 
     mix_labels: List[str] = []
     if vo_index is not None:
@@ -385,6 +385,10 @@ def render_clip(clip: Dict, video_title: str, clips_total: int,
         '-pix_fmt', 'yuv420p',
         '-colorspace', 'bt709', '-color_primaries', 'bt709',
         '-color_trc', 'bt709',
+        # Strip source/container metadata (incl. the "produced by Google
+        # Inc." stream handler that survives re-encodes) from delivery.
+        '-map_metadata', '-1', '-map_chapters', '-1',
+        '-map_metadata:s:v', '-1', '-map_metadata:s:a', '-1',
     ] + _audio_args() + [str(out_path)]
 
     if not run_ffmpeg(args):
@@ -505,6 +509,9 @@ def stitch(stage_paths: List[Path], out_path: Path,
     ] + video_encode_args() + [
         '-pix_fmt', 'yuv420p', '-colorspace', 'bt709',
         '-color_primaries', 'bt709', '-color_trc', 'bt709',
+        # Final delivery file: no source/container metadata rides along.
+        '-map_metadata', '-1', '-map_chapters', '-1',
+        '-map_metadata:s:v', '-1', '-map_metadata:s:a', '-1',
     ] + _audio_args() + ['-movflags', '+faststart', str(out_path)]
 
     if not run_ffmpeg(args):

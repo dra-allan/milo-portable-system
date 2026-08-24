@@ -916,6 +916,12 @@ class VideoEditor:
             cmd += ['-an']
 
         cmd += self._video_encode_args(threads=threads)
+        # Strip source/container metadata (incl. the "produced by Google
+        # Inc." stream handler that survives re-encodes) from delivery.
+        cmd += [
+            '-map_metadata', '-1', '-map_chapters', '-1',
+            '-map_metadata:s:v', '-1', '-map_metadata:s:a', '-1',
+        ]
         cmd += ['-movflags', '+faststart']
 
         target_fps = self._choose_fps(str(src))
@@ -1052,7 +1058,7 @@ class VideoEditor:
         bed is present it is attenuated, side-chain ducked *by the speech* (so
         it drops under dialogue and swells in the gaps) and mixed underneath.
         """
-        loudnorm = 'loudnorm=I=-16:TP=-1.5:LRA=11'
+        loudnorm = 'loudnorm=I=-16:TP=-2.0:LRA=11'
         src_label = in_label if in_label.startswith('[') else f'[{in_label}]'
 
         if not with_music:
@@ -1168,7 +1174,7 @@ class VideoEditor:
         cmd = [
             self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
             '-i', input_path,
-            '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
+            '-af', 'loudnorm=I=-16:TP=-2.0:LRA=11',
             '-c:v', 'copy', '-c:a', 'aac', '-b:a', config.audio_bitrate,
             '-ar', str(config.audio_sample_rate), '-y', output_path,
         ]
