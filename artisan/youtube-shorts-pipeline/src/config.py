@@ -252,6 +252,28 @@ class Config:
         # channel -- the round-robin and the per-channel budget together keep
         # every channel at a steady, algo-friendly 6/day max.
         self.upload_max_per_channel = self._int('UPLOAD_MAX_PER_CHANNEL', 6, minimum=1)
+        # Per-channel cap overrides (2026-08-24): one global cap could not
+        # express "capital_mindset is suppressed and posts at 4/day while the
+        # winners stay at 6". Format: "channel=n,channel=n" (case-insensitive).
+        self.upload_cap_overrides = {}
+        raw_caps = os.getenv('UPLOAD_CAP_OVERRIDES', '')
+        for chunk in raw_caps.split(','):
+            chunk = chunk.strip()
+            if not chunk or '=' not in chunk:
+                continue
+            name, _, value = chunk.partition('=')
+            try:
+                self.upload_cap_overrides[name.strip().lower()] = max(0, int(value))
+            except ValueError:
+                print(f'config: ignoring bad UPLOAD_CAP_OVERRIDES entry {chunk!r}')
+        # Per-machine upload lanes (2026-08-24): caps were counted per machine,
+        # so two active boxes doubled the intended cadence onto one channel.
+        # Comma list of channel keys THIS machine may publish to. Empty/absent
+        # keeps the legacy behaviour (all channels) -- set it on every machine.
+        self.lane_channels = [
+            s.strip().lower()
+            for s in os.getenv('PIPELINE_LANES', '').split(',') if s.strip()
+        ]
         # When a run has room left in its cap, fill it with older clips that
         # were rendered but never uploaded (the "new mixed with old" queue).
         self.upload_backlog = self._bool('UPLOAD_BACKLOG', True)
@@ -496,6 +518,7 @@ class Config:
         # --- Niches (never raise at import time) -------------------------
         self.niches_file = PROJECT_ROOT / 'config' / 'niches.yaml'
         self.niches, self.niches_error = self._load_niches()
+        self._handles = None
 
     # ------------------------------------------------------------------
 
@@ -569,6 +592,35 @@ class Config:
             return {}, f"could not parse niches.yaml: {exc}"
 
     # ------------------------------------------------------------------
+    def channel_cap(self, channel: str) -> int:
+        """Daily upload cap for one channel (override map beats the global)."""
+        key = str(channel or '').strip().lower()
+        return self.upload_cap_overrides.get(key, self.upload_max_per_channel)
+
+    def channel_handle(self, channel: str) -> str:
+        """@handle for *channel* from config/channel_handles.yaml ('' if none)."""
+        if self._handles is None:
+            self._handles = {}
+            path = PROJECT_ROOT / 'config' / 'channel_handles.yaml'
+            try:
+                import yaml as _yaml
+                if path.exists():
+                    data = _yaml.safe_load(path.read_text(encoding='utf-8')) or {}
+                    if isinstance(data, dict):
+                        self._handles = {
+                            str(k).strip().lower(): str(v).strip()
+                            for k, v in data.items() if v
+                        }
+            except Exception as exc:
+                print(f'config: could not read channel_handles.yaml: {exc}')
+        return self._handles.get(str(channel or '').strip().lower(), '')
+
+    def lane_allows(self, channel: str) -> bool:
+        """True when this machine owns *channel* (or no lanes configured)."""
+        if not self.lane_channels:
+            return True
+        return str(channel or '').strip().lower() in self.lane_channels
+
     def get_niche_config(self, niche_name: str) -> dict:
         """Return a niche config, merged over defaults so keys always exist.
 
@@ -580,6 +632,8 @@ class Config:
           falls back to the legacy ``channel`` string as a single-item list.
           Still empty -> the niche has no upload binding (sweeps skip it).
         * ``channels`` / ``channel``: passed through untouched for discovery.
+        * ``active: false`` freezes a niche entirely: zero discovery, zero
+          uploads (the 2026-08-24 fleet audit froze the seven dead channels).
         """
         merged = dict(DEFAULT_NICHE)
         raw = (self.niches or {}).get(niche_name)
@@ -609,6 +663,13 @@ class Config:
         # from and must never be mistaken for upload targets.
         if not isinstance(merged.get('channels'), list):
             merged['channels'] = []
+
+        # Frozen niche (active: false): zero discovery, zero uploads. Applied
+        # AFTER the legacy `channel:` fallback above, which would otherwise
+        # repopulate upload_channels for a niche we deliberately froze.
+        if merged.get('active') is False:
+            merged['max_videos'] = 0
+            merged['upload_channels'] = []
 
         # For keywords, we keep the existing conversion (string to list, non-list to empty list)
         key_val = merged.get('keywords')

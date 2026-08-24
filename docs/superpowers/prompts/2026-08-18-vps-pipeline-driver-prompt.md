@@ -37,15 +37,25 @@ these two pipelines.
   bot-block. Report size; if broken, say it and stop — do NOT repair unless
   you have the CDP re-export recipe.
 
-### 4. Pull live channel totals
+### 4. Run the channel health check (added 2026-08-24)
+- From `C:\milo-portable-system\artisan\youtube-shorts-pipeline`:
+  `python channel_health.py` (report-only), then `python channel_health.py --apply`.
+- It computes each channel's median views over recent uploads and flags
+  SUPPRESSED channels (median < 15). With --apply, flagged channels land in
+  `data/suppressed_channels.yaml` and the upload paths refuse them until the
+  entry expires (7 days) or a later healthy run clears it.
+- Why: capital_mindset was suppressed ~2026-08-11 and nobody noticed for 13
+  days because nothing read view counts back. This is that read-back loop.
+- Report every SUPPRESSED channel and every AUTH/API ERROR line — an auth
+  error means a dead token and needs Allan's reauth flow.
 - Do NOT trust the DB attribution, which is known-unreliable. Pull live
-  totals via the pipeline's token verification (channels().list) or YouTube
-  Studio public pages. Report per-channel where you have data.
+  totals via channel_health output or YouTube public pages.
 
 ### 5. Report to Telegram
 One consolidated message:
 - Daemons: fired / did not fire (which, when)
 - Shorts: built N, uploaded N, per-channel where it matters, lane errors
+- Channel health: SUPPRESSED list + any token errors
 - Ranking: built N, uploaded N, topic errors
 - Cookies: size
 - Anything needing a human's eyes
@@ -55,7 +65,9 @@ upload count — report what you verified; mark unverified claims unverified.
 
 ## When to escalate (do not push through)
 - Cookies file broken and you cannot repair by re-export.
-- A token invalid or authenticates as the wrong channel.
+- A token invalid or authenticates as the wrong channel (channel_health
+  AUTH/API ERROR lines are the early signal — e.g. the_other_guys went
+  invalid_grant on 2026-08-24).
 - "Sign in to confirm you're not a bot" recurs across multiple videos —
   re-export cookies first (they rotate); only if fresh cookies still blocked
   do you escalate.
@@ -72,3 +84,13 @@ daily time trigger (08:45 shorts / 08:49 ranking) + AtStartup, principal
 SYSTEM / ServiceAccount, MultipleInstances IgnoreNew (single instance),
 StartWhenAvailable, no execution-time cap. Verified live: both daemons start
 and log "Scheduler running (X 9 * * *)".
+
+## Machine lanes (2026-08-24)
+Upload caps are counted in each machine's LOCAL processed_videos.db. To stop
+two machines double-posting onto one channel, each .env sets PIPELINE_LANES =
+the channels THAT machine may publish to. PC lanes: capital_mindset,chop_ug.
+The VPS shorts daemon must set its own non-overlapping lanes in its .env —
+if it is empty, legacy behaviour applies (all channels). Frozen niches
+(`active: false` in config/niches.yaml: flick_shorts, wealth_mindset,
+creator_economy_marketing, gta_hype, forex_god_fx) never discover or upload,
+on any machine.

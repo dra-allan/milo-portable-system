@@ -19,6 +19,27 @@ def _isolate_config(tmp: Path):
     os.environ['LOG_DIR'] = str(tmp / 'logs')
     os.environ['SHORTS_DIR'] = str(tmp / 'shorts')
     os.environ['DB_PATH'] = str(tmp / 'data' / 'test.db')
+    _neutralize_fleet_config()
+
+
+def _neutralize_fleet_config():
+    """Tests must be hermetic against THIS machine's .env and niches.yaml.
+
+    The 2026-08-24 fleet controls (PIPELINE_LANES, UPLOAD_CAP_OVERRIDES,
+    `active: false` freezes) describe the live deployment, not test fixtures.
+    Without this, every backlog test silently posts nothing.
+    """
+    os.environ.pop('PIPELINE_LANES', None)
+    os.environ.pop('UPLOAD_CAP_OVERRIDES', None)
+    try:
+        from src.config import config
+        config.lane_channels = []
+        config.upload_cap_overrides = {}
+        for entry in (config.niches or {}).values():
+            if isinstance(entry, dict):
+                entry.pop('active', None)
+    except Exception:
+        pass
 
 
 def _close_log_file_handlers():

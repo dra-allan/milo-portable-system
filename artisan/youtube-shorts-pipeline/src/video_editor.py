@@ -680,6 +680,52 @@ class VideoEditor:
         sheet.save(out_path)
         return out_path
 
+    def _render_watermark_sheet(self, text: str, out_path: Path) -> Optional[Path]:
+        """Small semi-transparent @handle sheet for the bottom-right corner.
+
+        Fleet audit 2026-08-24: 107K fleet views converted to 99 subs because
+        anonymous compilation clips give viewers nothing to attach to. The
+        watermark is cheap brand hygiene, not a growth strategy.
+        """
+        if not text:
+            return None
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+        except ImportError:
+            logger.warning("PIL not available; skipping watermark")
+            return None
+
+        font_path = None
+        for candidate in (
+            'C:/Windows/Fonts/arialbd.ttf',
+            'C:/Windows/Fonts/arial.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+            '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+        ):
+            if Path(candidate).exists():
+                font_path = candidate
+                break
+        size = max(22, int(SHORT_WIDTH * 0.026))
+        try:
+            font = ImageFont.truetype(font_path, size) if font_path else ImageFont.load_default()
+        except Exception:
+            font = ImageFont.load_default()
+
+        sheet = Image.new('RGBA', (SHORT_WIDTH, SHORT_HEIGHT), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(sheet)
+        if hasattr(font, 'getlength'):
+            text_w = font.getlength(text)
+        else:
+            text_w = len(text) * size * 0.55
+        x = int(SHORT_WIDTH - text_w - int(SHORT_WIDTH * 0.03))
+        y = int(SHORT_HEIGHT * 0.955) - size
+        # Shadow then the handle itself at ~55% opacity.
+        draw.text((x + 2, y + 2), text, font=font, fill=(0, 0, 0, 140))
+        draw.text((x, y), text, font=font, fill=(255, 255, 255, 150))
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        sheet.save(out_path)
+        return out_path
+
     # ------------------------------------------------------------------
     def create_short_from_segment(self, video_path: str, start_time: float,
                                   end_time: float, transcript_segments: List[Dict],
@@ -689,6 +735,7 @@ class VideoEditor:
                                   threads: Optional[int] = None,
                                   keywords: Optional[List[str]] = None,
                                   caption_style: Optional[str] = None,
+                                  watermark_text: Optional[str] = None,
                                   edit_plan: Optional[Any] = None) -> bool:
         """Render one vertical Short in a single FFmpeg pass.
 
@@ -813,6 +860,17 @@ class VideoEditor:
                 last_label = 'captioned'
             else:
                 logger.warning("No caption lines fell inside the clip; skipping captions")
+
+        # Burn @handle watermark if present (bottom-right, brand hygiene)
+        if watermark_text:
+            watermark_path = Path(output_path).with_name(
+                Path(output_path).stem + '_wm.png')
+            wm_sheet = self._render_watermark_sheet(watermark_text, watermark_path)
+            if wm_sheet and wm_sheet.exists():
+                filters.append(f"movie='{self._escape_filter_path(wm_sheet)}'[wm0]")
+                filters.append(
+                    f"[{last_label}][wm0]overlay=0:0:format=auto[wmtexted]")
+                last_label = 'wmtexted'
 
         # Final conversion to delivery format
         filters.append(f"[{last_label}]format=yuv420p[vout]")

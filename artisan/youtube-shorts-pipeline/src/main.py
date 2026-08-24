@@ -43,12 +43,14 @@ try:
     from .processor import ContentProcessor
     from .utils import cleanup_temp_files, sanitize_filename, setup_logger
     from . import story_edit
+    from . import suppression
 except ImportError:  # pragma: no cover
     from config import config
     from database import PipelineDatabase
     from processor import ContentProcessor
     from utils import cleanup_temp_files, sanitize_filename, setup_logger
     import story_edit
+    import suppression
 
 logger = setup_logger(__name__, log_file=Path(config.logs_dir) / 'pipeline.log')
 
@@ -632,6 +634,7 @@ class ShortsPipeline:
                     captions_are_clip_relative=clip_relative,
                     threads=per_render_threads,
                     keywords=niche_keywords,
+                    watermark_text=self.config.channel_handle(niche),
                     edit_plan=edit_plan,
                 )
                 return i, highlight, output_path, edit_plan, ok
@@ -696,6 +699,8 @@ class ShortsPipeline:
                     pass
 
     def _generate_unique_title(self, hook_text: str, niche: str, clip_index: int) -> str:
+        from .title_quality import clean_full_title, clean_hook, title_is_spammy
+        hook_text = clean_hook(hook_text)
         base = hook_text
         if self.config.title_optimizer:
             try:
@@ -726,7 +731,12 @@ class ShortsPipeline:
         base = ' '.join((base or '').split()).strip()
         if not base:
             return f"{niche} clip #{clip_index} #Shorts"
-        return f"{base} #{niche} #Shorts"
+        full = f"{base} #{niche} #Shorts"
+        reasons = title_is_spammy(full)
+        if reasons:
+            logger.warning("Title lint: %s for %r", ', '.join(reasons), full)
+            full = clean_full_title(full)
+        return full
 
     def _upload_clips(self, created: List[Dict], video_id: str, niche: str,
                       niche_keywords: List[str]) -> None:
@@ -820,14 +830,23 @@ class ShortsPipeline:
             filtered.append(item)
         queue = filtered
 
-        per_channel_cap = self.config.upload_max_per_channel
         channel_budget = {
-            ch: max(0, per_channel_cap - self.db.uploaded_count_for_channel_since(ch))
-            for ch in channels
+            ch: max(0, self.config.channel_cap(ch)
+                    - self.db.uploaded_count_for_channel_since(ch))
+            for ch in channels if self.config.lane_allows(ch)
+                and not suppression.is_suppressed(ch)
         }
+        skipped_lanes = [ch for ch in channels if not self.config.lane_allows(ch)]
+        skipped_supp = [ch for ch in channels if suppression.is_suppressed(ch)]
+        if skipped_lanes:
+            logger.info("Lane skips (owned by another machine): %s",
+                        ', '.join(skipped_lanes))
+        if skipped_supp:
+            logger.info("Suppression pauses: %s", ', '.join(skipped_supp))
         logger.info(
             "Per-channel daily budget: %s",
-            ', '.join(f"{ch}={b}/{per_channel_cap}" for ch, b in channel_budget.items()) or '(none)',
+            ', '.join(f"{ch}={b}/{self.config.channel_cap(ch)}"
+                      for ch, b in channel_budget.items()) or '(none)',
         )
 
         for item in (queue if cap == float('inf') else queue[:cap]):
@@ -1466,7 +1485,23 @@ def _upload_existing_shorts(pipeline: 'ShortsPipeline', args) -> int:
             errors += 1
             continue
 
-        per_channel_cap = pipeline.config.upload_max_per_channel
+        if not pipeline.config.lane_allows(channel):
+            logger.info(
+                "Channel '%s' is on another machine's lane -- skipping %s#%s",
+                channel, source_video_id, segment_index
+            )
+            errors += 1
+            continue
+        if suppression.is_suppressed(channel):
+            logger.warning(
+                "Channel '%s' is flagged suppressed (see data/"
+                "suppressed_channels.yaml) -- skipping %s#%s",
+                channel, source_video_id, segment_index
+            )
+            errors += 1
+            continue
+
+        per_channel_cap = pipeline.config.channel_cap(channel)
         used_this_channel = pipeline.db.uploaded_count_for_channel_since(channel)
         if used_this_channel >= per_channel_cap:
             logger.info(
@@ -1710,6 +1745,7 @@ def _render_more_from_clip_plan(pipeline: 'ShortsPipeline', video_id: str,
             transcript_segments=clip_transcript,
             output_path=output_path,
             add_branding=False,
+            watermark_text=config.channel_handle(niche),
             edit_plan=edit_plan,
         )
         if not ok or not Path(output_path).exists():
@@ -1840,11 +1876,12 @@ def _get_queue_health(pipeline: 'ShortsPipeline', niche: str,
     health['eligible_clips'] = eligible
     health['capped_sources'] = capped
 
-    per_channel_cap = getattr(pipeline.config, 'upload_max_per_channel', 6)
     channel_remaining = 0
     for ch in channels:
+        if not pipeline.config.lane_allows(ch) or suppression.is_suppressed(ch):
+            continue
         used = pipeline.db.uploaded_count_for_channel_since(ch)
-        channel_remaining += max(0, per_channel_cap - used)
+        channel_remaining += max(0, pipeline.config.channel_cap(ch) - used)
     health['channel_remaining'] = channel_remaining
 
     try:
@@ -1929,7 +1966,6 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
         return 0
 
     per_source_cap = getattr(config, 'upload_max_per_source', 3)
-    per_channel_cap = getattr(config, 'upload_max_per_channel', 6)
     src_left = {}
     for clip in supply:
         src = clip['source_video_id']
@@ -1938,8 +1974,11 @@ def _upload_backlog_supply(pipeline: 'ShortsPipeline', niche: str, cap: int,
             src_left[src] = max(0, per_source_cap - used)
     channel_left = {}
     for ch in channels:
+        if not config.lane_allows(ch) or suppression.is_suppressed(ch):
+            channel_left[ch] = 0
+            continue
         used = pipeline.db.uploaded_count_for_channel_since(ch)
-        channel_left[ch] = max(0, per_channel_cap - used)
+        channel_left[ch] = max(0, config.channel_cap(ch) - used)
 
     selected = []
     cursor = 0

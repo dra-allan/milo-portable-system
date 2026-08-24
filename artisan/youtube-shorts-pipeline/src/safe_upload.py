@@ -38,10 +38,12 @@ from typing import Callable, Dict, List, Optional, Tuple
 try:  # package-relative first (python -m src.safe_upload)
     from .config import config
     from .database import PipelineDatabase
+    from . import suppression
     from .uploader import YouTubeUploader
 except ImportError:  # pragma: no cover - direct execution / tests on sys.path
     from config import config
     from database import PipelineDatabase
+    import suppression
     from uploader import YouTubeUploader
 
 try:
@@ -164,6 +166,11 @@ def select_uploads(rows: List[Dict], channel_budgets: Dict[str, int],
 def _title_and_description(row: Dict, channel: str) -> Tuple[str, str]:
     niche = row.get('niche') or channel
     hook = ' '.join(str(row.get('title') or channel).split()).strip()
+    try:
+        from .title_quality import clean_hook
+        hook = clean_hook(hook)
+    except Exception:
+        pass
     title = hook
     if optimize_title:
         try:
@@ -171,7 +178,12 @@ def _title_and_description(row: Dict, channel: str) -> Tuple[str, str]:
                                    clip_index=row['segment_index'])
         except Exception:
             title = hook
-    title = f'{title} #{niche} #Shorts'[:100]
+    from .title_quality import clean_full_title, title_is_spammy
+    title = f'{title} #{niche} #Shorts'
+    reasons = title_is_spammy(title)
+    if reasons:
+        print(f'  [title] spammy ({", ".join(reasons)}): {title!r} -- cleaning')
+    title = clean_full_title(title)[:100]
     description = (
         f"Full video: https://youtube.com/watch?v={row['source_video_id']}\n\n"
         f'Follow for more {niche} content!\n#Shorts #{niche}'
@@ -196,7 +208,7 @@ def run(niche: Optional[str] = None, channel_override: Optional[str] = None,
               '  message: no pending clips')
         return 0
 
-    channel_cap = int(getattr(config, 'upload_max_per_channel', 6) or 6)
+    channel_cap_default = int(getattr(config, 'upload_max_per_channel', 6) or 6)
     source_cap = int(getattr(config, 'upload_max_per_source', 3) or 3)
     run_limit = int(limit or getattr(config, 'upload_max_per_run', 0) or 0)
 
@@ -206,6 +218,24 @@ def run(niche: Optional[str] = None, channel_override: Optional[str] = None,
         if channel and channel not in channels:
             channels.append(channel)
 
+    # Lane gate (2026-08-24): caps are counted in each machine's local DB, so
+    # two active boxes doubled the real cadence onto one channel. A machine
+    # only publishes the channels listed in PIPELINE_LANES.
+    off_lane = [c for c in channels if not config.lane_allows(c)]
+    if off_lane:
+        rows = [r for r in rows if channel_of(r) not in off_lane]
+        channels = [c for c in channels if c not in off_lane]
+        print(f'  lane skips (owned by another machine): {", ".join(off_lane)}')
+
+    # Suppression gate (2026-08-24): a channel YouTube stopped distributing
+    # must not keep consuming renders and uploads.
+    suppressed = [c for c in channels if suppression.is_suppressed(c)]
+    if suppressed:
+        rows = [r for r in rows if channel_of(r) not in suppressed]
+        channels = [c for c in channels if c not in suppressed]
+        print(f'  suppression pauses: {", ".join(suppressed)} '
+              f'(run channel_health.py for details)')
+
     authed = set(config.authenticated_channels())
     default_token = Path(config.oauth_token_file).exists()
 
@@ -213,7 +243,8 @@ def run(niche: Optional[str] = None, channel_override: Optional[str] = None,
         return (not authed and default_token) or channel in authed
 
     channel_budgets = {
-        channel: max(0, channel_cap - db.uploaded_count_for_channel_since(channel))
+        channel: max(0, config.channel_cap(channel)
+                     - db.uploaded_count_for_channel_since(channel))
         for channel in channels
     }
     sources = {str(r.get('source_video_id') or '') for r in rows}
@@ -224,10 +255,14 @@ def run(niche: Optional[str] = None, channel_override: Optional[str] = None,
 
     print('UPLOAD RUN')
     print(f'  queued: {len(rows)}')
-    print(f'  caps: {channel_cap}/channel/day, {source_cap}/source/day'
+    print(f'  caps: {channel_cap_default}/channel/day'
+          + (f' (overrides: {config.upload_cap_overrides})'
+             if config.upload_cap_overrides else '')
+          + f', {source_cap}/source/day'
           + (f', {run_limit} this run' if run_limit else ''))
     for channel in channels:
-        print(f'  {channel}: budget {channel_budgets[channel]}/{channel_cap}, '
+        cap = config.channel_cap(channel)
+        print(f'  {channel}: budget {channel_budgets[channel]}/{cap}, '
               f'authenticated={"yes" if is_authenticated(channel) else "no"}')
     exhausted = [s for s, left in source_budgets.items() if left <= 0]
     if exhausted:

@@ -1,0 +1,16 @@
+# Channel key -> public @handle. Used by the renderer to burn a small
+# bottom-right watermark into every Short (brand hygiene; the 2026-08-24
+# fleet audit showed 107K fleet views converting to only 99 subscribers).
+# Keys match artisan/yt-secrets/channels.yaml slugs, case-insensitive.
+NXS: "@nxs-f5s"
+wealth_mindset: "@wealthmindset-q2w"
+capital_mindset: "@capitalmindsetshorts"
+dra_allan_official: "@dra_allan"
+god_did_fx: "@god-did-fx"
+explaination: "@thepovseat"
+flick_shorts: "@flickshorts12"
+chop_ug: "@chop_ug"
+moviegasm: "@moviegasmx"
+the_other_guys: "@theotherguysclips"
+rankdrop: "@rankdrop-p7e"
+money_matrix: "@moneymatrix-k2v"

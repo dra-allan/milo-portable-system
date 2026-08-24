@@ -19,6 +19,8 @@ def _isolate_config(tmp: Path):
     os.environ['LOG_DIR'] = str(tmp / 'logs')
     os.environ['SHORTS_DIR'] = str(tmp / 'shorts')
     os.environ['DB_PATH'] = str(tmp / 'data' / 'test.db')
+    from test_schedule_mode import _neutralize_fleet_config
+    _neutralize_fleet_config()
 
 
 def _close_log_file_handlers():
