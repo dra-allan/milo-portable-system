@@ -46,3 +46,6 @@ youtube_client_secrets_*.json
 # Machine-written auth ledger + registry backup (state, per machine).
 artisan/yt-secrets/channel_identity.json
 artisan/yt-secrets/channels.yaml.bak
+
+# isolated feature worktrees
+.worktrees/
