@@ -20,6 +20,8 @@ Coordination ledger for the two Milo machines sharing this repo.
 
 (claim format: `- [<machine>] YYYY-MM-DD <task>`)
 
+- [pc] 2026-08-24 vendor openshorts modules into artisan (active_speaker, camera_inset, punch_in, reframe engine, snap_clip_to_words) on branch feature/openshorts-vendor; worktree .worktrees/openshorts-vendor; merge to main only after tests green
+
 ## Actions the main PC must take (from the AWS brain, 2026-08-15)
 
 1. `git pull --rebase origin main` (state/ no longer tracked — the old
