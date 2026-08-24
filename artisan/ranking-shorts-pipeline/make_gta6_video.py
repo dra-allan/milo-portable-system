@@ -79,7 +79,8 @@ DESCRIPTION = (
     'Footage sources:\n'
     + '\n'.join(f"- {s['label']}: https://www.youtube.com/watch?v={s['video_id']}"
                 for s in SOURCES)
-    + '\n\nNarration and editing are our own.'
+    + '\n\nNarration and editing are our own. '
+      'Music: in-house instrumental bed (royalty-free).'
 )
 TAGS = ['gta6', 'gtavi', 'gta6news', 'rockstar', 'deadmanswitch',
         'gamingnews', 'shorts']
@@ -264,20 +265,12 @@ def caption_sheet(config, overlays, seg, work: Path) -> str:
 
 def render_segment(config, assembler, overlays, utils, index, clip,
                    out_path: Path) -> Path:
-    from src.utils import probe_media
     duration = clip['duration']
-    media = probe_media(clip['path'])
-    inputs = []
-    src_audio = '0:a'
-    next_index = 1
-    if not media['has_audio']:
-        inputs += ['-f', 'lavfi', '-t', f'{duration:.3f}',
-                   '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000']
-        src_audio = f'{next_index}:a'
-        next_index += 1
-    inputs += ['-ss', f"{clip['start']:.3f}", '-t', f'{duration:.3f}',
-               '-i', clip['path'], '-i', clip['vo_path']]
-    vo_index = next_index
+    inputs = ['-ss', f"{clip['start']:.3f}", '-t', f'{duration:.3f}',
+              '-i', clip['path'],
+              '-f', 'lavfi', '-t', f'{duration:.3f}',
+              '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000',
+              '-i', clip['vo_path']]
     chains = []
     chains += overlays.fill_chain('0:v', 'filled')
     chains.append(f"movie={overlays._quote(clip['sheet'])}[cap]")
@@ -288,18 +281,12 @@ def render_segment(config, assembler, overlays, utils, index, clip,
     else:
         last_v = 'texted'
     chains.append(f'[{last_v}]fps={config.fps},format=yuv420p,setsar=1[vout]')
-    chains.append(f'[{src_audio}]aformat=sample_fmts=fltp:sample_rates=48000:'
-                  'channel_layouts=stereo,loudnorm=I=-16:TP=-1.5:LRA=11[src]')
     offset_ms = int(float(config.get('vo_offset', VO_LEAD)) * 1000)
     gain = float(config.get('vo_gain', 1.6))
-    chains.append(f'[{vo_index}:a]aformat=sample_fmts=fltp:sample_rates=48000:'
+    chains.append(f'[2:a]aformat=sample_fmts=fltp:sample_rates=48000:'
                   f'channel_layouts=stereo,volume={gain},'
-                  f'adelay={offset_ms}|{offset_ms},asplit=2[vo][vokey]')
-    threshold = float(config.get('duck_threshold', 0.05))
-    ratio = float(config.get('duck_ratio', 8))
-    chains.append(f'[src][vokey]sidechaincompress=threshold={threshold}:'
-                  f'ratio={ratio}:attack=15:release=350[srcduck]')
-    chains.append('[srcduck][vo]amix=inputs=2:duration=first:'
+                  f'adelay={offset_ms}|{offset_ms}[vo]')
+    chains.append('[1:a][vo]amix=inputs=2:duration=first:'
                   'dropout_transition=0:normalize=0,alimiter=limit=0.95[aout]')
     args = inputs + [
         '-filter_complex', ';'.join(chains),
@@ -325,7 +312,7 @@ def build() -> int:
 
     vo_dir = ensure_dir(config.vo_dir / SLUG)
     work = ensure_dir(config.temp_dir / SLUG)
-    sources_dir = ensure_dir(work / 'sources')
+    sources_dir = ensure_dir(config.data_dir / 'broll_cache')
     stage_dir = ensure_dir(work / 'stage')
 
     generate_vo(config, vo_dir)
@@ -387,8 +374,18 @@ def build() -> int:
 
     stamp = time.strftime('%Y%m%d_%H%M%S')
     out_path = config.output_dir / f'{SLUG}_{stamp}.mp4'
+    bed = None
+    if config.music_dir.exists():
+        tracks = sorted(p for p in config.music_dir.iterdir()
+                        if p.suffix.lower() in ('.mp3', '.wav', '.m4a', '.ogg')
+                        and p.stat().st_size > 1024)
+        bed = tracks[0] if tracks else None
+    if bed:
+        config.defaults['music_enabled'] = True
+        config.defaults['music_volume'] = float(os.getenv('BED_VOLUME', '0.22'))
+        print(f'[bed] {bed.name}')
     result = assembler.stitch([Path(p) for p in stage_paths], out_path,
-                              swoosh=config.sfx_path('swoosh'), music=None)
+                              swoosh=config.sfx_path('swoosh'), music=bed)
     if not result:
         print('[abort] stitch failed')
         return 2
