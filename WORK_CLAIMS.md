@@ -20,7 +20,7 @@ Coordination ledger for the two Milo machines sharing this repo.
 
 (claim format: `- [<machine>] YYYY-MM-DD <task>`)
 
-- [pc] 2026-08-25 verdict needed: sweep discovering 'unbound' niche intended?
+(none)
 
 ## Actions the main PC must take (from the AWS brain, 2026-08-15)
 
@@ -38,6 +38,8 @@ Coordination ledger for the two Milo machines sharing this repo.
 
 ## DONE
 
+- [pc] 2026-08-25 layout modules vendored + wired: artisan/motion gains split_layout (SPLIT_LAYOUT=1), panel_layout (PANEL_LAYOUT=1), screencast_layout (SCREENCAST_LAYOUT=1, Gemini width-fraction gate), gemini_layout (verbatim prompt subset), layout_picker (AUTO_LAYOUT=1|shadow); face_detect adds detect_face_candidates_full_res; reframe.render composes SPLIT -> speaker gate -> PANEL -> SCREENCAST/WIDE/INSET in upstream order, each upgrade degrading independently, static dispatch pinned in test_reframe_layouts; motion tests 187/187+1 skip, pipeline suite 45/45, live smoke render green defaults + layouts-on - 493911c
+- [pc] 2026-08-25 'unbound' niche verdict (Allan): intended behaviour, not a bug — row closed
 - [pc] 2026-08-25 reframe engine vendored + wired: artisan/motion gains reframe.py (sendcmd dynamic-crop render, TRACK/GENERAL + punch-in), face_detect.py (mediapipe-or-vendored-YuNet; cv2 5.x killed Haar), scene_detection.py (transnetv2->pyscenedetect->single-scene); ranking stage-1 RANKING_REFRAME=1 swaps centre-crop fill for tracked crop with fallback; motion tests 83/83, pipeline suite 45/45 - 5c1798a
 - [pc] 2026-08-25 vendor batch 1: artisan/motion (cameraman, speaker_tracker, active_speaker, punch_in, camera_inset, person_detect, word_snapping, quality_probe) + tests 62/62 + nvenc AQ both pipelines — 06a3ef5
 
