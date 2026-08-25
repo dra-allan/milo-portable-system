@@ -15,19 +15,21 @@ No raw-frame piping, no second full-res decode, one less intermediate encode.
 Callers must treat any exception as "fall back to their static crop".
 
 Deviations from upstream:
-  * SPLIT / SCREENCAST / WIDE / INSET / ALTERNATE layouts are NOT here —
-    their modules (split_layout, screencast_layout, active_speaker) are not
-    vendored yet; this file renders TRACK + GENERAL (+ punch-in on beats).
-    ``scene_frame_ranges`` still carries strategies so those layouts slot in
-    without reshaping the render loop.
+  * SPLIT / SCREENCAST / WIDE / PANEL / ALTERNATE layouts ARE vendored here
+    (siblings ``split_layout``, ``screencast_layout``, ``panel_layout``,
+    ``active_speaker``, ``camera_inset``, auto-routed by ``layout_picker``
+    under ``AUTO_LAYOUT=1``); this file composes them into the render loop.
+    Each upgrade degrades independently — a failing layout logs ``[motion]``
+    and leaves the scene on its TRACK/GENERAL verdict.
   * scene detection lives in sibling ``scene_detection`` (int-frame contract);
     face detection in sibling ``face_detect`` (mediapipe-or-Haar backends).
   * intermediate segments encode libx264 veryfast crf20 — they are re-encoded
     by the caller's final pass anyway, so hardware encoders buy nothing here.
   * prints use plain ``[motion]`` prefixes instead of emoji.
 
-Pure helpers (sendcmd/concat generation, scene slicing, delivery sizing)
-have no heavy imports so they stay unit-testable without cv2/numpy.
+Pure helpers (sendcmd/concat generation, scene slicing, delivery sizing,
+static-layout graph dispatch) have no heavy imports so they stay unit-testable
+without cv2/numpy.
 """
 import os
 import shutil
@@ -164,6 +166,48 @@ def track_filtergraph(cmd_path, init, out_w, out_h):
         f"crop@c={init},"
         f"scale={out_w}:{out_h},setsar=1[v]"
     )
+
+
+def static_scene_graph(strategy, start_f, orig_w, orig_h, out_w, out_h,
+                       splits=None, panels=None, screencasts=None, inset=None):
+    """Filtergraph for one non-TRACK scene.
+
+    Pure dispatch over the vendored layouts' graph builders. A static strategy
+    whose payload is missing (a key lost between analysis and render) degrades
+    to the GENERAL graph — never silently to TRACK, because these strategies
+    were chosen precisely because a tracked crop would cut someone or
+    something out of frame.
+    """
+    if strategy == 'INSET':
+        if inset is not None:
+            import camera_inset
+            return camera_inset.inset_filtergraph(
+                orig_w, orig_h, out_w, out_h, inset)
+    elif strategy == 'SCREENCAST':
+        centre = (screencasts or {}).get(start_f)
+        if centre is not None:
+            import screencast_layout
+            return screencast_layout.screencast_filtergraph(
+                orig_w, orig_h, out_w, out_h, centre)
+    elif strategy == 'WIDE':
+        # GENERAL with side-cropping disabled: the content keeps its full
+        # width (the discarded columns are the point of the scene).
+        return general_filtergraph(
+            out_w, out_h, full_width_content_height(orig_w, orig_h, out_w))
+    elif strategy == 'SPLIT':
+        pair = (splits or {}).get(start_f)
+        if pair is not None:
+            import split_layout
+            left, right = pair
+            return split_layout.split_filtergraph(
+                orig_w, orig_h, out_w, out_h, left, right)
+    elif strategy == 'PANEL':
+        centres = (panels or {}).get(start_f)
+        if centres:
+            import panel_layout
+            return panel_layout.panel_filtergraph(
+                orig_w, orig_h, out_w, out_h, centres)
+    return general_filtergraph(out_w, out_h)
 
 
 # --- strategy ---------------------------------------------------------------
@@ -319,6 +363,19 @@ def analyze_trajectory(input_video, scene_boundaries, scene_strategies,
     return xs
 
 
+def _safe(label, fn):
+    """Run one layout upgrade; a failure logs and returns None.
+
+    Layouts are enhancements on top of TRACK/GENERAL routing, so any failure
+    in one of them must cost that layout alone — never the whole reframe.
+    """
+    try:
+        return fn()
+    except Exception as e:
+        print(f"   [motion] {label} failed ({type(e).__name__}: {e})")
+        return None
+
+
 # --- render -----------------------------------------------------------------
 
 # Intermediate-segment encode: these get re-encoded again by the caller's
@@ -344,6 +401,121 @@ def render(input_video, final_output_video, aspect_ratio=9 / 16):
     scene_boundaries = list(scenes)
     strategies = analyze_scenes_strategy(input_video, scenes)
 
+    _, total_frames = _probe_fps_total(input_video)
+    clip_duration = total_frames / fps
+
+    # --- optional layout upgrades (all no-ops unless env-gated) ------------
+    # Order mirrors upstream reframe_v2.render: SPLIT first, the active-speaker
+    # gate second, PANEL third (it only claims scenes still on GENERAL),
+    # SCREENCAST/WIDE/INSET last — a screen beats any arrangement of faces,
+    # because the chart is what the shot is about.
+    import active_speaker
+    import layout_picker
+    import panel_layout
+    import screencast_layout
+    import split_layout
+
+    if layout_picker.ENABLED:
+        _safe('layout picker', lambda: layout_picker.pick_and_apply(
+            input_video, clip_duration))
+
+    splits, split_scene_of = {}, {}
+    panels = {}
+    screencasts = {}
+    alternates = {}
+    inset = None
+
+    for scene_idx, pair in (_safe(
+            'SPLIT detection', lambda: split_layout.detect_split_scenes(
+                input_video, scene_boundaries, strategies)) or {}).items():
+        strategies[scene_idx] = 'SPLIT'
+        start_f = scene_boundaries[scene_idx][0]
+        splits[start_f] = pair
+        split_scene_of[start_f] = scene_idx
+
+    # Geometry alone will stack a scene where one person never speaks. Ask who
+    # is actually talking before spending half the frame on the other one.
+    if splits and active_speaker.ENABLED:
+        for start_f in list(splits):
+            scene_idx = split_scene_of[start_f]
+            end_f = scene_boundaries[scene_idx][1]
+            verdicts = _safe(
+                'speaker check',
+                lambda s=start_f, i=scene_idx, e=end_f:
+                    active_speaker.verdicts_for_scene(
+                        input_video, s, e, fps, splits[s]))
+            if verdicts is None:
+                continue  # unknown — keep the split rather than guess
+            if not active_speaker.is_conversation(verdicts):
+                a, b = active_speaker.shares(verdicts)
+                print(f"   [motion] scene {scene_idx}: one speaker holds the "
+                      f"floor ({max(a, b):.0%}) - not stacking")
+                del splits[start_f]
+                strategies[scene_idx] = 'GENERAL'
+            elif active_speaker.CUT_MODE:
+                strategies[scene_idx] = 'ALTERNATE'
+                alternates[start_f] = (
+                    active_speaker.hold(verdicts), splits.pop(start_f))
+    if splits:
+        print(f"   [motion] SPLIT layout on {len(splits)} scene(s)")
+    if alternates:
+        print(f"   [motion] speaker-cut layout on {len(alternates)} scene(s)")
+
+    for scene_idx, centres in (_safe(
+            'PANEL detection', lambda: panel_layout.detect_panel_scenes(
+                input_video, scene_boundaries, strategies)) or {}).items():
+        strategies[scene_idx] = 'PANEL'
+        panels[scene_boundaries[scene_idx][0]] = centres
+    if panels:
+        print(f"   [motion] PANEL layout on {len(panels)} scene(s)")
+
+    content_ranges = []
+    wide_count = 0
+    inset_count = 0
+    if screencast_layout.ENABLED:
+        content_ranges = _safe(
+            'content-range check',
+            lambda: screencast_layout.detect_content_ranges(
+                input_video, clip_duration)) or []
+    if content_ranges:
+        try:
+            import camera_inset
+            # The question "is there a webcam composited into a corner of the
+            # screen" is settled geometrically, and the box is fixed for the
+            # whole video, so it is found once.
+            inset = camera_inset.detect(input_video)
+            if inset:
+                print(f"   [motion] webcam inset at {inset}")
+        except Exception as e:
+            print(f"   [motion] inset check failed ({e}) - using screen "
+                  "layouts")
+        for scene_idx, (plan, centre) in (_safe(
+                'SCREENCAST routing',
+                lambda: screencast_layout.detect_screencast_scenes(
+                    input_video, scene_boundaries, strategies,
+                    content_ranges)) or {}).items():
+            # An inset beats both screen plans: it is the only one that can
+            # show the screen whole AND the person at a readable size.
+            if inset:
+                plan, centre = 'INSET', None
+            strategies[scene_idx] = plan
+            start_f = scene_boundaries[scene_idx][0]
+            splits.pop(start_f, None)
+            panels.pop(start_f, None)
+            split_scene_of.pop(start_f, None)
+            if plan == 'SCREENCAST':
+                screencasts[start_f] = centre
+            elif plan == 'INSET':
+                inset_count += 1
+            else:
+                wide_count += 1
+    if screencasts:
+        print(f"   [motion] SCREENCAST layout on {len(screencasts)} scene(s)")
+    if wide_count:
+        print(f"   [motion] full-width layout on {wide_count} scene(s)")
+    if inset_count:
+        print(f"   [motion] camera-inset layout on {inset_count} scene(s)")
+
     cameraman = SmoothedCameraman(out_w, out_h, orig_w, orig_h,
                                   aspect_ratio=aspect_ratio)
     tracker = SpeakerTracker(cooldown_frames=30)
@@ -362,6 +534,17 @@ def render(input_video, final_output_video, aspect_ratio=9 / 16):
 
     crop_w, crop_h = cameraman.crop_width, cameraman.crop_height
 
+    # ALTERNATE renders through the TRACK path: hard cuts between two speakers
+    # are still just a list of crop x values, so no new filtergraph is needed.
+    # The trajectory is written here because the analysis pass deliberately
+    # skips these scenes rather than tracking a face through them.
+    for start_f, (held, centres) in alternates.items():
+        end_f = min(scene_boundaries[split_scene_of[start_f]][1], len(xs))
+        if end_f <= start_f:
+            continue
+        xs[start_f:end_f] = active_speaker.speaker_xs(
+            held, centres, crop_w, orig_w, end_f - start_f, fps)
+
     ranges = scene_frame_ranges(scene_boundaries, strategies, len(xs))
     if not ranges:
         raise RuntimeError("no usable scene ranges")
@@ -373,9 +556,7 @@ def render(input_video, final_output_video, aspect_ratio=9 / 16):
             ss = start_f / fps
             dur = (end_f - start_f) / fps
 
-            if strategy == 'GENERAL':
-                graph = general_filtergraph(out_w, out_h)
-            else:
+            if strategy == 'TRACK':
                 seg_xs = [x if x is not None else 0 for x in xs[start_f:end_f]]
                 cmd_path = os.path.join(workdir, f"cmd_{idx:03d}.txt")
                 if beats:
@@ -392,6 +573,11 @@ def render(input_video, final_output_video, aspect_ratio=9 / 16):
                 with open(cmd_path, "w") as f:
                     f.write("\n".join(lines) + "\n")
                 graph = track_filtergraph(cmd_path, init, out_w, out_h)
+            else:
+                graph = static_scene_graph(
+                    strategy, start_f, orig_w, orig_h, out_w, out_h,
+                    splits=splits, panels=panels, screencasts=screencasts,
+                    inset=inset)
 
             run_ffmpeg([
                 "-y",

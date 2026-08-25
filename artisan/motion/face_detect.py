@@ -88,6 +88,45 @@ def detect_face_candidates(frame):
         return _detect_yunet(frame, width, height)
 
 
+def detect_face_candidates_full_res(frame):
+    """Face boxes from the UNSCALED frame, in original coordinates.
+
+    Used by the screencast layout: ``detect_face_candidates`` runs inference on
+    a 640px copy, which is the right trade for a talking head whose face spans
+    a third of the frame but misses a presenter inset into a screen recording —
+    measured upstream on a 1920x1080 Excel walkthrough where a ~110px face
+    becomes ~37px at 640 and the detector returned zero on every sample. At
+    full width the same frames detect fine.
+    """
+    _init_backend()
+    height, width = frame.shape[:2]
+    import cv2
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    with DETECT_LOCK:
+        if _BACKEND == 'mediapipe':
+            results = _mp_face_detection.process(rgb)
+            candidates = []
+            if not results.detections:
+                return []
+            for detection in results.detections:
+                bboxC = detection.location_data.relative_bounding_box
+                x = int(bboxC.xmin * width)
+                y = int(bboxC.ymin * height)
+                w = int(bboxC.width * width)
+                h = int(bboxC.height * height)
+                candidates.append({'box': [x, y, w, h], 'score': w * h})
+            return candidates
+        _yunet.setInputSize((width, height))
+        _ret, faces = _yunet.detect(frame)
+        candidates = []
+        if faces is None:
+            return []
+        for face in faces:
+            x, y, w, h = [int(v) for v in face[:4]]
+            candidates.append({'box': [x, y, w, h], 'score': w * h})
+        return candidates
+
+
 def _detect_mediapipe(frame, width, height):
     import cv2
     small, _scale = _detection_frame(frame)
