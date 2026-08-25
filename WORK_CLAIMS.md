@@ -20,7 +20,7 @@ Coordination ledger for the two Milo machines sharing this repo.
 
 (claim format: `- [<machine>] YYYY-MM-DD <task>`)
 
-- [pc] 2026-08-24 vendor openshorts modules into artisan (active_speaker, camera_inset, punch_in, reframe engine, snap_clip_to_words) on branch feature/openshorts-vendor; worktree .worktrees/openshorts-vendor; merge to main only after tests green
+- [pc] 2026-08-25 wire motion modules into pipeline render paths; then reframe engine (reframe_v2.render sendcmd -> assembler stage-1); verdict needed: sweep discovering 'unbound' niche intended?
 
 ## Actions the main PC must take (from the AWS brain, 2026-08-15)
 
@@ -37,6 +37,8 @@ Coordination ledger for the two Milo machines sharing this repo.
    hand-rolled add/commit/push
 
 ## DONE
+
+- [pc] 2026-08-25 vendor batch 1: artisan/motion (cameraman, speaker_tracker, active_speaker, punch_in, camera_inset, person_detect, word_snapping, quality_probe) + tests 62/62 + nvenc AQ both pipelines — 06a3ef5
 
 - [brain] 2026-08-15 multi-machine sync setup: git identity, work-claims ledger, git-sync.ps1, per-machine backup branches. Decision: state/ untracked from main; `milo backup` now pushes each machine's snapshot to its own branch (`backup/brain` / `backup/pc`) via a git worktree at `.backup/<machine>`. Main = portable code only. Redacted a live COMPOSIO API key that had leaked into memory.
 - [brain] 2026-08-18 bake external_directory permission fix into harness sync (Windows backslash path matching, upstream #7279/#11042/#36681) — landed cf5f447
