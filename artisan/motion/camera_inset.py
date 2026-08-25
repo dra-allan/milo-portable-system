@@ -158,7 +158,7 @@ def detect(video_path, samples=10):
     import cv2
     import numpy as np
     import person_detect as m
-    import screencast_layout
+    from face_detect import detect_face_candidates_full_res
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -181,11 +181,11 @@ def detect(video_path, samples=10):
             # 1080p source the face inside it is often too few pixels for
             # BlazeFace even at full resolution, while YOLO still finds the
             # person.
-            faces = screencast_layout.detect_faces_full_res(frame)
+            faces = detect_face_candidates_full_res(frame)
             if faces:
                 box = max(faces, key=lambda c: c['score'])['box']
             else:
-                box = m.detect_person_yolo(frame)
+                box = m.detect_person(frame)
             if not box:
                 continue
             if not is_cornered(box, frame_w, frame_h):
