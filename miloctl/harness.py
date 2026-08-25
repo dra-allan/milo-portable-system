@@ -442,6 +442,20 @@ class Harness:
         text = (p.stdout or p.stderr).strip()
         return p.returncode, _strip_ansi(text)
 
+    def run_sessioned(self, prompt: str, *, model: str = "",
+                      timeout: int = 900, session: str = ""
+                      ) -> Tuple[int, str, str]:
+        """Like :meth:`run`, but conversational: pass ``session`` to continue
+        that thread and the harness reports back the (possibly new) session id
+        so callers can keep a per-chat conversation alive.
+
+        Base implementation is stateless — it never continues and never
+        returns a session id — because only some CLIs have the flags. Harnesses
+        with ``--session``-style support override this.
+        """
+        code, out = self.run(prompt, model=model, timeout=timeout)
+        return code, out, ""
+
     def status(self) -> Dict[str, object]:
         return {
             "name": self.name,
@@ -577,6 +591,61 @@ class OpenCodeHarness(Harness):
             argv += ["--model", model]
         argv.append(prompt)
         return argv
+
+    def run_sessioned(self, prompt: str, *, model: str = "",
+                      timeout: int = 900, session: str = ""
+                      ) -> Tuple[int, str, str]:
+        """Continue ``session`` via ``opencode run -s``; mint one otherwise.
+
+        New sessions are run with ``--format json`` so the reply can be
+        rebuilt from the ``text`` events *and* the fresh ``sessionID`` can be
+        recovered — the default formatter prints neither. Continuations keep
+        the default format (the id never changes) for clean output.
+        """
+        argv = self.invoke(prompt, model=model)
+        if not argv:
+            return 1, f"{self.label} does not support one-shot invocation", ""
+        if session:
+            argv += ["--session", session]
+        else:
+            argv += ["--format", "json"]
+        resolved = self.which()
+        if resolved and not Path(argv[0]).is_absolute():
+            argv = [resolved, *argv[1:]]
+        try:
+            p = subprocess.run(
+                argv, capture_output=True, text=True, timeout=timeout,
+                encoding="utf-8", errors="replace",
+                cwd=str(paths.workspace_dir()) if paths.workspace_dir().is_dir() else None,
+            )
+        except FileNotFoundError:
+            return 127, f"{self.binaries[0]} not found on PATH", session
+        except subprocess.TimeoutExpired:
+            return 124, f"{self.label} timed out after {timeout}s", session
+        out = (p.stdout or p.stderr).strip()
+        if p.returncode != 0:
+            return p.returncode, _strip_ansi(out), session
+        if session:
+            return 0, _strip_ansi(out), session
+
+        sid = ""
+        parts: List[str] = []
+        for line in out.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                evt = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            sid = evt.get("sessionID") or sid
+            if evt.get("type") == "text":
+                txt = ((evt.get("part") or {}).get("text") or "").strip()
+                if txt:
+                    parts.append(txt)
+        # No parsable events (format change / old CLI): surface raw output and
+        # no session rather than pretending the thread continues.
+        return 0, _strip_ansi("\n\n".join(parts) or out), sid
 
 
 # ── Claude Code ───────────────────────────────────────────────────────────────

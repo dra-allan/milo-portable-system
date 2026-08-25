@@ -38,9 +38,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from . import channels, env, ui
+from . import channels, env, paths, ui
 
 __all__ = ["Authorizer", "TelegramBot", "run"]
 
@@ -50,6 +51,10 @@ POLL_TIMEOUT = 25
 
 #: Cap on the reconnect backoff. Beyond a minute the bot feels dead.
 MAX_BACKOFF = 60
+
+
+def _sessions_path() -> Path:
+    return paths.state_dir() / "telegram_sessions.json"
 
 
 class ConflictError(RuntimeError):
@@ -139,6 +144,13 @@ class TelegramBot:
         self.offset = 0
         self.running = False
         self._me: Dict[str, Any] = {}
+        # One agent thread per chat: chat_id (as str) -> harness session id.
+        self._sessions: Dict[str, str] = {}
+        try:
+            raw = _sessions_path().read_text(encoding="utf-8")
+            self._sessions = json.loads(raw) or {}
+        except (OSError, json.JSONDecodeError):
+            self._sessions = {}
 
     # -- transport ------------------------------------------------------------
 
@@ -238,13 +250,14 @@ class TelegramBot:
         if not text:
             return
 
-        reply = self.respond(text, message)
+        reply = self.respond(text, message, chat_id=chat_id)
         if reply:
             self.send(chat_id, reply, reply_to=message.get("message_id"))
 
     # -- behaviour ------------------------------------------------------------
 
-    def respond(self, text: str, message: Dict[str, Any]) -> str:
+    def respond(self, text: str, message: Dict[str, Any],
+                chat_id: Optional[Any] = None) -> str:
         """Turn an inbound message into Milo's reply."""
         if text.startswith("/"):
             raw = text.split(maxsplit=1)
@@ -258,7 +271,7 @@ class TelegramBot:
                 except Exception as exc:
                     return channels._redact(f"that failed: {type(exc).__name__}: {exc}")
             return f"unknown command /{cmd} — try /help"
-        return self.ask_agent(text)
+        return self.ask_agent(text, chat_id)
 
     def do_start(self, rest: str, message: Dict[str, Any]) -> str:
         from . import naming
@@ -270,11 +283,18 @@ class TelegramBot:
         return (
             "/remember <text> — save something durable\n"
             "/recall <query> — search memory\n"
+            "/new — start a fresh conversation (drops this chat's thread)\n"
             "/status — health check\n"
             "/whoami — your Telegram id\n"
             "/help — this\n\n"
-            "Anything else goes to the agent."
+            "Anything else goes to the agent. Each chat keeps one ongoing "
+            "conversation; /new resets it."
         )
+
+    def do_new(self, rest: str, message: Dict[str, Any]) -> str:
+        chat_id = (message.get("chat") or {}).get("id")
+        self._drop_session(str(chat_id) if chat_id is not None else "")
+        return "fresh thread — next message starts a new conversation."
 
     def do_whoami(self, rest: str, message: Dict[str, Any]) -> str:
         user = message.get("from") or message.get("sender_chat") or {}
@@ -304,19 +324,69 @@ class TelegramBot:
                  for c in channels.all_channels()]
         return "channels\n" + "\n".join(lines)
 
-    def ask_agent(self, text: str) -> str:
-        """Hand the message to whichever agent runtime is installed."""
+    def ask_agent(self, text: str,
+                  chat_id: Optional[Any] = None) -> str:
+        """Hand the message to whichever agent runtime is installed.
+
+        With a ``chat_id``, the conversation continues in one persistent
+        harness session per chat — the whole point of a chat bot. A dead or
+        garbage-collected session falls back to a fresh one automatically.
+        """
         from . import harness
 
         runnable = [h for h in harness.detect_installed() if h.which()]
         if not runnable:
             return ("No agent runtime on this machine, so I can only do the "
                     "built-in commands — /help. (Memory still works.)")
-        code, out = runnable[0].run(text)
+        agent = runnable[0]
+        key = str(chat_id) if chat_id is not None else None
+        sid = self._sessions.get(key) if key else ""
+
+        code, out, new_sid = self._agent_turn(agent, text, sid)
+        if code != 0 and sid:
+            # Session vanished (storage cleaned, CLI updated). Drop it and
+            # retry once cold rather than telling Allan his thread broke.
+            ui.warn(f"session {sid} unusable ({code}); starting a fresh one")
+            self._drop_session(key)
+            code, out, new_sid = self._agent_turn(agent, text, "")
+        if key and new_sid:
+            self._sessions[key] = new_sid
+            self._persist_sessions()
         out = (out or "").strip()
         if code != 0 and not out:
             return "the agent exited without saying anything"
         return out or "(no output)"
+
+    def _agent_turn(self, agent: Any, text: str,
+                    sid: str) -> Tuple[int, str, str]:
+        """One agent invocation → ``(code, output, session_id)``.
+
+        Harnesses without session support return an empty id; those threads
+        simply stay stateless like they always were.
+        """
+        if hasattr(agent, "run_sessioned"):
+            return agent.run_sessioned(text, session=sid)
+        code, out = agent.run(text)
+        return code, out, ""
+
+    # -- per-chat session store ----------------------------------------------
+
+    def _persist_sessions(self) -> None:
+        try:
+            p = _sessions_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(self._sessions, indent=2), encoding="utf-8")
+        except OSError as exc:
+            ui.warn(f"could not persist telegram sessions: {exc}")
+
+    def _drop_session(self, key: str) -> None:
+        self._sessions.pop(key, None)
+        try:
+            p = _sessions_path()
+            if p.is_file():
+                p.write_text(json.dumps(self._sessions, indent=2), encoding="utf-8")
+        except OSError:
+            pass
 
     # -- loop -----------------------------------------------------------------
 
