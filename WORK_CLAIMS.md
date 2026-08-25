@@ -38,7 +38,7 @@ Coordination ledger for the two Milo machines sharing this repo.
 
 ## DONE
 
-- [pc] 2026-08-25 reframe engine vendored + wired: artisan/motion gains reframe.py (sendcmd dynamic-crop render, TRACK/GENERAL + punch-in), face_detect.py (mediapipe-or-vendored-YuNet; cv2 5.x killed Haar), scene_detection.py (transnetv2->pyscenedetect->single-scene); ranking stage-1 RANKING_REFRAME=1 swaps centre-crop fill for tracked crop with fallback; motion tests 83/83, pipeline suite 45/45
+- [pc] 2026-08-25 reframe engine vendored + wired: artisan/motion gains reframe.py (sendcmd dynamic-crop render, TRACK/GENERAL + punch-in), face_detect.py (mediapipe-or-vendored-YuNet; cv2 5.x killed Haar), scene_detection.py (transnetv2->pyscenedetect->single-scene); ranking stage-1 RANKING_REFRAME=1 swaps centre-crop fill for tracked crop with fallback; motion tests 83/83, pipeline suite 45/45 - 5c1798a
 - [pc] 2026-08-25 vendor batch 1: artisan/motion (cameraman, speaker_tracker, active_speaker, punch_in, camera_inset, person_detect, word_snapping, quality_probe) + tests 62/62 + nvenc AQ both pipelines — 06a3ef5
 
 - [brain] 2026-08-15 multi-machine sync setup: git identity, work-claims ledger, git-sync.ps1, per-machine backup branches. Decision: state/ untracked from main; `milo backup` now pushes each machine's snapshot to its own branch (`backup/brain` / `backup/pc`) via a git worktree at `.backup/<machine>`. Main = portable code only. Redacted a live COMPOSIO API key that had leaked into memory.
