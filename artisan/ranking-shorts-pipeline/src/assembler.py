@@ -103,8 +103,12 @@ def video_encode_args() -> List[str]:
                 '-preset', config.preset, '-profile:v', 'high',
                 '-level', '4.2']
     if enc == 'h264_nvenc':
+        # AQ (spatial+temporal) buys detail retention in flat/gradient areas
+        # at the same cq; cq≈crf+7 per openshorts' RTX benchmark, but our crf
+        # values are already conservative so only the AQ flags are adopted.
         return ['-c:v', 'h264_nvenc', '-rc', 'vbr', '-cq', str(crf),
-                '-preset', 'p5', '-b:v', '0']
+                '-preset', 'p5', '-b:v', '0',
+                '-spatial-aq', '1', '-temporal-aq', '1']
     if enc == 'h264_qsv':
         return ['-c:v', 'h264_qsv', '-global_quality', str(crf),
                 '-look_ahead', '1']

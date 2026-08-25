@@ -349,9 +349,12 @@ class VideoEditor:
         if encoder == 'h264_nvenc':
             # NVENC: -cq is its constant-quality control, on the same 0-51
             # scale as CRF. 'film' has no NVENC equivalent and -tune film
-            # would be rejected, so hq is used instead.
+            # would be rejected, so hq is used instead. AQ flags adopted from
+            # openshorts' RTX benchmark: detail retention in flat areas at the
+            # same cq.
             args = ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
-                    '-rc', 'vbr', '-cq', str(crf), '-b:v', '0']
+                    '-rc', 'vbr', '-cq', str(crf), '-b:v', '0',
+                    '-spatial-aq', '1', '-temporal-aq', '1']
         elif encoder == 'h264_qsv':
             args = ['-c:v', 'h264_qsv', '-global_quality', str(crf),
                     '-preset', 'faster']
