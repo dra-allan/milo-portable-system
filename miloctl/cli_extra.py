@@ -134,6 +134,30 @@ def cmd_prompt(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_persona(args: argparse.Namespace) -> int:
+    """show / sync / edit — the persona lifecycle the footer keeps referencing.
+
+    ``show`` prints the full assembled persona (same payload a session boot
+    gets); ``sync`` delegates to :func:`cmd_sync`; ``edit`` materialises the
+    editable identity source so there is always a file to open.
+    """
+    from . import persona
+
+    action = (getattr(args, "action", "") or "show").lower()
+    if action == "sync":
+        args.lean = getattr(args, "lean", False)
+        args.harness = list(getattr(args, "query", []) or [])
+        return cmd_sync(args)
+    if action == "edit":
+        p = persona.write_identity()
+        ui.ok(f"identity source ready: {p}")
+        ui.say(ui.dim("  edit this file, then run: milo persona sync"))
+        return 0
+    ctx = persona.build(query=_joined(getattr(args, "query", []) or []))
+    print(ctx.render())
+    return 0
+
+
 def cmd_context(args: argparse.Namespace) -> int:
     """Fresh boot context: current memory, recent sessions, vault handoff.
 
@@ -1089,6 +1113,16 @@ def register(sub) -> None:
     s.add_argument("--sections", action="store_true", help="show the size budget")
     s.add_argument("--lean", action="store_true")
     s.set_defaults(func=cmd_prompt)
+
+    s = sub.add_parser("persona", aliases=["identity"],
+                       help="show, sync or edit the assembled persona")
+    s.add_argument("action", nargs="?", default="show",
+                   choices=["show", "sync", "edit"])
+    s.add_argument("query", nargs="*",
+                   help="show: bias memory selection; sync: harness names")
+    s.add_argument("--lean", action="store_true",
+                   help="sync: identity + skills only, no memory or vault")
+    s.set_defaults(func=cmd_persona)
 
     s = sub.add_parser("context", help="fresh boot context (memory + handoff + sessions)")
     s.add_argument("--budget", type=int, default=8000,
