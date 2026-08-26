@@ -17,6 +17,9 @@ export const FLOW_BASE = 'https://aisandbox-pa.googleapis.com/v1';
 export const FLOW_ORIGIN = 'https://labs.google';
 export const FLOW_HOME = 'https://labs.google/fx/zh/tools/flow';
 
+/** Google API key for Flow credit endpoints. Comes from env - never hardcode. */
+export const FLOW_API_KEY = process.env.FLOW_API_KEY ?? '';
+
 const STATE_DIR = path.join(os.homedir(), '.opencli', 'clis', 'flow');
 const STATE_FILE = path.join(STATE_DIR, 'state.json');
 const MEDIA_CACHE_FILE = path.join(STATE_DIR, 'media-cache.json');

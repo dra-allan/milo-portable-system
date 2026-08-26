@@ -1,9 +1,7 @@
 /** flow credits: show the current Flow credit balance and tier. */
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { SITE, FLOW_BASE, inFlowPage, flowFetch, classifyError } from './_shared.js';
+import { SITE, FLOW_BASE, inFlowPage, flowFetch, classifyError, FLOW_API_KEY } from './_shared.js';
 import { tierFriendly } from './_format.js';
-
-const FLOW_API_KEY = '***REMOVED***';
 
 cli({
   site: SITE,

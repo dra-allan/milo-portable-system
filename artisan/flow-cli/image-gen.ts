@@ -9,6 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   SITE, FLOW_BASE, inFlowPage, flowFetch, getRecaptchaToken, classifyError, FlowError, loadState,
+  FLOW_API_KEY,
 } from './_shared.js';
 import {
   resolveRefToken,
@@ -134,7 +135,7 @@ cli({
     }
 
     // Always check current balance + tier for the preview.
-    const balResp = await flowFetch(page, `${FLOW_BASE}/credits?key=***REMOVED***`);
+    const balResp = await flowFetch(page, `${FLOW_BASE}/credits?key=${FLOW_API_KEY}`);
     const balance = balResp.ok ? Number(balResp.body?.credits ?? 0) : 0;
     const userPaygateTier: string = balResp.body?.userPaygateTier ?? 'PAYGATE_TIER_ONE';
 

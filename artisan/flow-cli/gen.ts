@@ -12,6 +12,7 @@ import { cli, Strategy } from '@jackwener/opencli/registry';
 import * as crypto from 'node:crypto';
 import {
   SITE, FLOW_BASE, inFlowPage, flowFetch, getRecaptchaToken, classifyError, FlowError, loadState,
+  FLOW_API_KEY,
 } from './_shared.js';
 import {
   OMNI, VALID_LENGTHS, VALID_ASPECTS, aspectToEnum, pickModel, totalCost, validateAgainstModel,
@@ -124,7 +125,7 @@ cli({
     // sent back to the server in clientContext.userPaygateTier; hard-coding a
     // wrong tier causes silent failures (request looks like a different account
     // tier than the OAuth subject), so we mirror what /v1/credits reports.
-    const balResp = await flowFetch(page, `${FLOW_BASE}/credits?key=***REMOVED***`);
+    const balResp = await flowFetch(page, `${FLOW_BASE}/credits?key=${FLOW_API_KEY}`);
     const balance = balResp.ok ? Number(balResp.body?.credits ?? 0) : 0;
     const userPaygateTier: string = balResp.body?.userPaygateTier ?? 'PAYGATE_TIER_ONE';
 
