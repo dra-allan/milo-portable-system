@@ -59,6 +59,23 @@ logger = setup_logger(__name__)
 SHORT_WIDTH = 1080
 SHORT_HEIGHT = 1920
 
+# Subject-tracked 9:16 pre-render for BACKGROUND_MODE=reframe, shared with the
+# ranking pipeline. Lives in its own package so both pipelines can use it; the
+# sys.path shim mirrors how the vendored modules flat-import each other.
+_MOTION_DIR = Path(__file__).resolve().parents[2] / 'motion'
+_motion_ready = False
+
+
+def _motion_reframe():
+    """Import the vendored reframe engine once; raise if unavailable."""
+    global _motion_ready
+    if not _motion_ready:
+        import sys
+        sys.path.insert(0, str(_MOTION_DIR))
+        _motion_ready = True
+    import reframe
+    return reframe
+
 
 # The reference blur strength, applied at full 1080x1920 by the original code.
 # Every cheaper backdrop mode is calibrated to look like this one.
@@ -818,7 +835,16 @@ class VideoEditor:
         # --- video filter chain ------------------------------------------
         scaler = getattr(config, 'video_scaler', 'lanczos')
 
-        if config.background_mode == 'smart':
+        video_src, video_seek, bg_mode, master_path = self._plan_reframe(
+            video_path, start_time, duration, is_reordered)
+
+        if master_path is not None:
+            # The reframe pre-pass produced a framed vertical master: pass it
+            # through untouched. Caption timing still anchors to the SOURCE
+            # timeline (write_ass subtracts start_time), which matches the
+            # master's window-local timeline exactly.
+            bg_filters, last_label = [], video_in_label
+        elif bg_mode == 'smart':
             # Handle smart person-aware cropping
             bg_filters, last_label = self._build_smart_background_filters(
                 video_path, start_time, end_time, width=SHORT_WIDTH, height=SHORT_HEIGHT,
@@ -826,7 +852,7 @@ class VideoEditor:
             )
         else:
             bg_filters, last_label = build_background_filters(
-                config.background_mode, scaler=scaler, in_label=video_in_label
+                bg_mode, scaler=scaler, in_label=video_in_label
             )
         filters.extend(bg_filters)
 
@@ -889,8 +915,8 @@ class VideoEditor:
         else:
             cmd = [
                 self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
-                '-ss', f"{start_time:.3f}",
-                '-i', str(src),
+                '-ss', f"{video_seek:.3f}",
+                '-i', str(video_src),
             ]
 
         if music_track:
@@ -944,11 +970,11 @@ class VideoEditor:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             logger.error("FFmpeg timed out after %ss rendering %s", timeout, out.name)
-            self._cleanup(staging, ass_path, sheet_path)
+            self._cleanup(staging, ass_path, sheet_path, master_path)
             return False
         except Exception as exc:
             logger.error("FFmpeg could not be launched: %s", exc)
-            self._cleanup(staging, ass_path, sheet_path)
+            self._cleanup(staging, ass_path, sheet_path, master_path)
             return False
 
         if result.returncode != 0:
@@ -957,12 +983,12 @@ class VideoEditor:
                 result.returncode, out.name,
                 (result.stderr or '').strip()[-800:],
             )
-            self._cleanup(staging, ass_path, sheet_path)
+            self._cleanup(staging, ass_path, sheet_path, master_path)
             return False
 
         if not staging.exists() or staging.stat().st_size == 0:
             logger.error("FFmpeg reported success but produced no output for %s", out.name)
-            self._cleanup(staging, ass_path, sheet_path)
+            self._cleanup(staging, ass_path, sheet_path, master_path)
             return False
 
         try:
@@ -971,7 +997,7 @@ class VideoEditor:
             shutil.move(str(staging), str(out))
         except Exception as exc:
             logger.error("Could not move rendered clip into place: %s", exc)
-            self._cleanup(staging, ass_path, sheet_path)
+            self._cleanup(staging, ass_path, sheet_path, master_path)
             return False
 
         self._cleanup(None, ass_path, sheet_path)
@@ -1119,8 +1145,14 @@ class VideoEditor:
             return False
         # Reuse the shared (and much cheaper) backdrop graph rather than
         # keeping a second copy of the expensive full-resolution blur.
+        # 'reframe' is not a filtergraph mode (it is a pre-pass in
+        # create_short_from_segment), so this legacy helper degrades to the
+        # configured fallback.
+        mode = config.background_mode
+        if mode == 'reframe':
+            mode = config.reframe_fallback
         filters, last_label = build_background_filters(
-            config.background_mode, scaler=getattr(config, 'video_scaler', 'lanczos')
+            mode, scaler=getattr(config, 'video_scaler', 'lanczos')
         )
         filters.append(f"[{last_label}]format=yuv420p[vout]")
         cmd = [
@@ -1186,6 +1218,76 @@ class VideoEditor:
             logger.error("Audio normalisation failed: %s", (result.stderr or '')[-500:])
             return False
         return Path(output_path).exists()
+
+    # ------------------------------------------------------------------
+    # BACKGROUND_MODE=reframe: vendored motion engine pre-pass
+    # ------------------------------------------------------------------
+    def _plan_reframe(self, video_path: str, start_time: float,
+                      duration: float,
+                      is_reordered: bool) -> Tuple[str, float, str, Optional[Path]]:
+        """Decide what the render consumes for this clip.
+
+        Returns ``(video_src, video_seek, bg_mode, master_path)``:
+
+        * reframe disabled or failed -> original source, real seek, fallback
+          mode (the exact pre-reframe behaviour);
+        * reframe succeeded -> window-cut vertical master, seek 0, passthrough
+          background (``master_path`` set).
+        """
+        if config.background_mode != 'reframe':
+            return video_path, start_time, config.background_mode, None
+        if is_reordered:
+            logger.info("Reframing skipped for reordered clips; using '%s'",
+                        config.reframe_fallback)
+            return video_path, start_time, config.reframe_fallback, None
+
+        master = self._reframe_master(video_path, start_time, duration)
+        if master is None:
+            logger.warning("Reframe unavailable; using '%s' for this clip",
+                           config.reframe_fallback)
+            return video_path, start_time, config.reframe_fallback, None
+        logger.info("Reframe pre-pass produced a vertical master")
+        return str(master), 0.0, 'reframed', master
+
+    def _reframe_master(self, video_path: str, start_time: float,
+                        duration: float) -> Optional[Path]:
+        """Cut the exact window and run the vendored motion reframe over it.
+
+        The engine analyses the window (faces via mediapipe-or-YuNet, YOLO
+        person fallback), picks per-scene layouts and renders natively in
+        ffmpeg. Returns the vertical master path; ANY failure returns None so
+        the clip still renders through ``config.reframe_fallback`` — a
+        tracking miss must never kill a build.
+        """
+        tag = f"rf_{sanitize_filename(Path(video_path).stem)[:32]}_{int(start_time * 1000)}"
+        window = Path(config.temp_dir) / f".{tag}_win.mp4"
+        master = Path(config.temp_dir) / f".{tag}_master.mp4"
+        try:
+            cut = subprocess.run(
+                [self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
+                 '-ss', f'{start_time:.3f}', '-t', f'{duration:.3f}',
+                 '-i', str(video_path),
+                 '-c:v', 'libx264', '-crf', '20', '-preset', 'veryfast',
+                 '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-y', str(window)],
+                capture_output=True, text=True,
+                timeout=max(300, int(duration * 30) + 120))
+            if cut.returncode != 0 or not window.exists():
+                logger.warning("Reframe window cut failed for %s", video_path)
+                return None
+            _motion_reframe().render(str(window), str(master))
+            if master.exists() and master.stat().st_size > 0:
+                return master
+            logger.warning("Reframe produced no output for %s", video_path)
+            return None
+        except Exception as exc:
+            logger.warning("Reframe failed (%s: %s)", type(exc).__name__, exc)
+            return None
+        finally:
+            try:
+                if window.exists():
+                    window.unlink()
+            except OSError:
+                pass
 
     def _build_smart_background_filters(self, video_path: str, start_time: float,
                                         end_time: float,

@@ -217,9 +217,18 @@ class Config:
         # blurring for a visually identical result at a fraction of the cost.
         # Use 'crop' to fill frame without bars, 'black' for solid bars, or 'cheap'/'blur' for blurred bars
         # Use 'smart' for intelligent person-aware cropping (face detection based)
+        # Use 'reframe' to pre-render each window through the vendored motion
+        # engine (subject-tracked crop + scene layouts) before the normal
+        # chain; falls back to reframe_fallback on any engine failure.
         self.background_mode = (os.getenv('BACKGROUND_MODE') or 'crop').lower()
-        if self.background_mode not in ('cheap', 'blur', 'black', 'crop', 'smart'):
+        if self.background_mode not in ('cheap', 'blur', 'black', 'crop', 'smart', 'reframe'):
             self.background_mode = 'crop'
+        # BACKGROUND_MODE=reframe degrades to this mode when the motion engine
+        # is unavailable or fails on a clip. 'smart' keeps the best of the old
+        # behaviour; set 'crop' for the cheap deterministic fill.
+        self.reframe_fallback = (os.getenv('REFRAME_FALLBACK') or 'smart').lower()
+        if self.reframe_fallback not in ('cheap', 'blur', 'black', 'crop', 'smart'):
+            self.reframe_fallback = 'crop'
         # How many highlight clips a source video may produce. Allan's rule:
         # render the TOP 12 detected segments per source so the queue can't
         # explode into a 300+ clip backlog. This is the real render count:
