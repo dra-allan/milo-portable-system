@@ -17,6 +17,7 @@ Coordination ledger for the two Milo machines sharing this repo.
 4. If you resolve a rebase/merge conflict, add a DONE row noting what you kept.
 
 ## OPEN
+- [pc] 2026-08-26 ranking publisher token-path dedup (yt_secrets unprefixed vs ranking_ prefixed)
 
 (claim format: `- [<machine>] YYYY-MM-DD <task>`)
 

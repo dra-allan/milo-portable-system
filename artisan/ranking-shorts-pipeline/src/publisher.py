@@ -63,9 +63,20 @@ def _shared_dir() -> Path:
 
 def _token_path(channel: str) -> Path:
     shared = _shared_dir() / f'youtube_token_{channel}.json'
-    legacy = Path(config.oauth_token_file).with_name(
-        f'youtube_token_ranking_{channel}.json')
-    return shared if shared.exists() else legacy
+    if shared.exists():
+        return shared
+    # yt_secrets (reauth_all_channels.bat) writes youtube_token_<key>.json
+    # next to the legacy ranking_ prefixed name. Same grant, two filenames;
+    # every re-auth used to need a manual copy before the pipeline saw it.
+    # Pick whichever exists and is freshest so a re-auth lands immediately.
+    token_dir = Path(config.oauth_token_file).parent
+    candidates = [p for p in (
+        token_dir / f'youtube_token_ranking_{channel}.json',
+        token_dir / f'youtube_token_{channel}.json',
+    ) if p.exists()]
+    if not candidates:
+        return token_dir / f'youtube_token_ranking_{channel}.json'
+    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
 def _client_secrets(channel: Optional[str] = None) -> Path:
