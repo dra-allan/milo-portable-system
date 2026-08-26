@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787548433.5305684,
+  "updated_at": 1787748210.1136518,
   "routines": [
     {
       "name": "curate-skills",
@@ -23,9 +23,9 @@
       "builtin": true,
       "created_at": 1785745900.0468326,
       "last_run": 1787544208.1844997,
-      "last_status": "ok",
+      "last_status": "skipped",
       "last_output": "curator not due yet",
-      "next_run": 1787630400.0,
+      "next_run": 1787803200.0,
       "runs": 18,
       "failures": 0
     },
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787547207.9363153,
-      "last_status": "ok",
+      "last_run": 1787551110.94686,
+      "last_status": "skipped",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     215\n  notes        8\n  sessions     0\n  skills       3\n  traits       0\n  pushed âœ“",
-      "next_run": 1787550828.384943,
-      "runs": 767,
+      "next_run": 1787751810.1017036,
+      "runs": 768,
       "failures": 32
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787547508.0533538,
-      "last_status": "ok",
+      "last_run": 1787551408.8944592,
+      "last_status": "skipped",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787551118.7009494,
-      "runs": 761,
+      "next_run": 1787751810.1017036,
+      "runs": 762,
       "failures": 90
     },
     {
@@ -132,9 +132,9 @@
       "builtin": true,
       "created_at": 1785745900.0582633,
       "last_run": 1787468607.611823,
-      "last_status": "ok",
+      "last_status": "skipped",
       "last_output": "**Morning briefing — 23 Aug 2026**\n\n---\n\n### 🔴 Live fire (needs eyes)\n\n**YouTube extraction block on VPS** — still active since 08-18. Both pipelines (shorts + ranking) hitting `UNPLAYABLE` on fresh downloads. yt-dlp 2026.07.04 gets blocked on this IP across all player clients; browser on same IP plays fine. PO-token provider tested — doesn't fix it. Root cause: GVS PO-token-to-video-ID binding experiment. Options: wait for upstream yt-dlp fix, or build real-browser extraction (curl_cffi/Playwright). Backlog drained 08-18 13:51 (6 uploads from 08-15–17). Cookies refreshed mid-run (3630 bytes, SID present).\n\n**Daemons fixed 08-19** — both now on dual triggers (Daily 08:45/08:49 + AtStartup), `IgnoreNew` prevents double-daemon races. APScheduler self-schedules 9AM sweep. New `pipeline-driver` routine at 09:40 verifies + reports via Telegram (prompt at `state/prompts/pipeline-driver.md`).\n\n---\n\n### 🟡 Active priorities (from last reconciliation 08-18)\n\n| Priority | Status |\n|----------|--------|\n| **YouTube Shorts engine** | Running automated. Cookie-clobber fixed 08-17. Uploads since: capital_mindset 12, flick_shorts 12, NXS 10, wealth_mindset 6, chop_ug 3. **capital_mindset = earner** (18k+ views, 11 subs). |\n| **Channel health** | flick_shorts = dead weight (90 vids, 76 views — attribution was wrong). wealth_mindset = garbled gibberish titles (Welsh text) — needs quality gate. NXS token re-authed 08-18, verified correct. |\n| **Campaign posting** | 5 approved channels only: capital_mindset, wealth_mindset, flick_shorts, moviegasm, NXS. No min-follower gate. |\n| **MM fix / POV / website flips / Telegram reporting** | All parked. Website-flip idle since 08-08. |\n| **VPS hardening** | Alibaba trial claim (~3 days left). Harness (OpenCode/Claude Code) optional. |\n\n---\n\n### 🟢 Stable / no action needed\n\n- Multi-machine sync: `git-sync.ps1` works (backup/brain, backup/pc branches). WORK_CLAIMS.md at repo root for coordination.\n- Milo on VPS: doctor clean, Telegram verified, credentials present, no leaked secrets.\n- Milo visual identity locked (mid-20s, navy suit, cyan rim-light, waveform screen).\n\n---\n\n### 🎯 Today's suggested focus\n\n1. **Decide extraction path** — wait for yt-dlp fix vs. invest in browser-based extraction (curl_cffi/Playwright). The block is the bottleneck.\n2. **Wealth Mindset quality gate** — stop gibberish uploads before they burn the channel.\n3. **Flick_shorts OAuth client** — recreate in Google Cloud (deleted client = why token died). Use wealth_mindset client secrets + adrasaltsxxx@gmail.com flow.\n\n---\n\n**Milo here. What are we running at?**",
-      "next_run": 1787554800.0,
+      "next_run": 1787814000.0,
       "runs": 17,
       "failures": 1
     },
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787548412.7892725,
-      "last_status": "ok",
+      "last_run": 1787552309.7356904,
+      "last_status": "skipped",
       "last_output": "------------------------------------------------------------------------------\n sync  ~7146 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787552033.5022986,
-      "runs": 189,
+      "next_run": 1787751810.1017036,
+      "runs": 190,
       "failures": 5
     },
     {
@@ -184,9 +184,9 @@
       "builtin": true,
       "created_at": 1785745900.0510957,
       "last_run": 1787545408.46018,
-      "last_status": "ok",
+      "last_status": "skipped",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787567024.5137358,
+      "next_run": 1787769810.1017036,
       "runs": 67,
       "failures": 9
     }
