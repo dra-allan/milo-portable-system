@@ -105,6 +105,10 @@ def sanitize_filename(filename: str) -> str:
     import re
     # Remove or replace invalid characters
     filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    # Strip quotes: they survive sanitize but break FFmpeg filter path
+    # escaping three layers deep (python arg -> cmdline -> filtergraph),
+    # making movie=/subtitles= inputs unresolvable (fix 2026-08-26).
+    filename = filename.replace("'", '').replace('"', '')
     # Remove leading/trailing spaces and dots
     filename = filename.strip(' .')
     return filename
