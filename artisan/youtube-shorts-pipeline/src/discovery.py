@@ -51,7 +51,6 @@ class DiscoveryResult:
     skipped_off_topic: List[str]=field(default_factory=list)
     skipped_min_views: List[str]=field(default_factory=list)
     channels_queried: List[str]=field(default_factory=list)
-    daily_cap_hit: bool=False
 
 def _source_rank(channels,source_performance):
     def key(c):
@@ -60,29 +59,9 @@ def _source_rank(channels,source_performance):
         avg=float(info.get('avg_views') or 0); return (0 if avg>=200 else 2,-avg,c)
     return sorted(channels,key=key)
 
-def _niche_processed_today(db,niche):
-    """Return the most recent processed source for this niche in 24h.
-
-    This is deliberately checked before listing any YouTube channels. The DB,
-    not a batch-file variable or an in-memory counter, is the source of truth,
-    so direct `python -m src.main` runs obey the same cap as scheduled runs.
-    """
-    try:
-        with db._connect() as conn:
-            return conn.execute("SELECT youtube_video_id FROM processed_videos WHERE niche=? AND processed_at >= datetime('now','-24 hours') ORDER BY processed_at DESC LIMIT 1",(niche,)).fetchone()
-    except Exception:
-        return None
-
 def discover_candidates(downloader,db,niche,max_videos:int,lookback:int,source_performance:Dict[str,Dict]=None)->DiscoveryResult:
     from .config import config
     result=DiscoveryResult()
-    recent=_niche_processed_today(db,niche)
-    if recent:
-        result.daily_cap_hit=True
-        result.skipped_already_processed.append(recent[0])
-        logger=getattr(downloader,'logger',None)
-        if logger: logger.info("Niche '%s': daily sourcing cap hit; last source=%s",niche,recent[0])
-        return result
     cfg=config.get_niche_config(niche)
     channels=_source_rank([c for c in (cfg.get('channels') or []) if c and not str(c).startswith('UCXXXXX')],source_performance or {})
     lookback=max(lookback,max_videos)
