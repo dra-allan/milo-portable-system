@@ -882,7 +882,7 @@ class ShortsPipeline:
                 logger.info(
                     "Skipping clip %d: no bound channel has daily budget left "
                     "(cap %d/channel)",
-                    item['index'], per_channel_cap,
+                    item['index'], self.config.channel_cap(channels[0]),
                 )
                 continue
 
