@@ -6,6 +6,20 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+# When running under pythonw.exe (scheduled daemon), child processes like
+# ffmpeg and yt-dlp are console apps, so each spawn flashes a console window
+# on the desktop. Force CREATE_NO_WINDOW on every subprocess in this process.
+# Must stay a Popen *subclass* (not a wrapper function) because asyncio and
+# other stdlib code subclass subprocess.Popen.
+if os.name == 'nt' and not getattr(subprocess, '_milo_no_window', False):
+    class _NoWindowPopen(subprocess.Popen):
+        def __init__(self, *args, **kwargs):
+            kwargs.setdefault('creationflags', subprocess.CREATE_NO_WINDOW)
+            super().__init__(*args, **kwargs)
+
+    subprocess.Popen = _NoWindowPopen
+    subprocess._milo_no_window = True
 from typing import List, Optional, Sequence
 _LOG_CONFIGURED=False
 
