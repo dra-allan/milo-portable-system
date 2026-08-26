@@ -9,6 +9,9 @@ than a comment:
 * the option builder must never hand yt-dlp a client set that cannot use a GVS
   PO Token while also advertising a PO Token provider. That combination is what
   made the provider look broken for a day when it was simply never asked.
+  Since yt-dlp#17368 (GVS binding experiment) the policy is stronger: the
+  provider is not wired at all -- datacenter IPs cannot mint tokens, so we use
+  web_embedded + default clients which need none.
 
 No network, no yt-dlp invocation: only the option construction is exercised, so
 these run anywhere.
@@ -42,20 +45,22 @@ def test_default_clients_can_use_a_po_token():
     )
 
 
-def test_harden_wires_the_pot_provider(monkeypatch):
+def test_harden_omits_the_po_token_provider(monkeypatch):
+    """Provider wiring was removed on purpose (yt-dlp#17368).
+
+    Datacenter IPs cannot mint GVS tokens, so harden() must NOT advertise a
+    provider or force fetch_pot -- web_embedded/default clients need none.
+    """
     monkeypatch.setenv('YTDLP_POT_BASE_URL', 'http://127.0.0.1:4416')
     monkeypatch.setenv('YTDLP_PLAYER_CLIENTS', 'mweb')
     opts = _ytdlp.harden({})
     youtube = opts['extractor_args']['youtube']
     assert youtube['player_client'] == ['mweb']
-    # 'always' rather than the default policy: under the GVS binding experiment
-    # yt-dlp considers the token merely 'recommended' for some clients and
-    # skips the provider, which is exactly the failure being fixed.
-    assert youtube['fetch_pot'] == ['always']
-    # A failed token fetch must degrade to fewer formats, not to zero.
-    assert youtube['formats'] == ['missing_pot']
-    assert opts['extractor_args']['youtubepot-bgutilhttp']['base_url'] == [
-        'http://127.0.0.1:4416']
+    assert 'fetch_pot' not in youtube, (
+        'fetch_pot=always forces token minting that datacenter IPs cannot do'
+    )
+    assert 'formats' not in youtube
+    assert 'youtubepot-bgutilhttp' not in opts['extractor_args']
 
 
 def test_harden_overrides_stale_caller_clients(monkeypatch):

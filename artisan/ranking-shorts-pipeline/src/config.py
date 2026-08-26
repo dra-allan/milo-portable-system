@@ -47,6 +47,9 @@ class RankingConfig:
         self.width = _i('VIDEO_WIDTH', 1080); self.height = _i('VIDEO_HEIGHT', 1920); self.fps = _i('VIDEO_FPS', 30); self.crf = _i('VIDEO_CRF', 18)
         self.preset = os.getenv('VIDEO_PRESET', 'veryfast'); self.encoder = os.getenv('VIDEO_ENCODER', 'auto').lower(); self.font = os.getenv('OVERLAY_FONT', '').strip()
         self.fast_mode = _b('RANKING_FAST_MODE', True); self.render_workers = max(1, _i('RANKING_RENDER_WORKERS', 2)); self.reject_budget = max(1, _i('RANKING_REJECT_BUDGET', 2))
+        # Stage-1 reframe: subject-tracked 9:16 crop via the vendored
+        # artisan/motion engine instead of the static centre-crop fill.
+        self.reframe = _b('RANKING_REFRAME', False)
         self.vet_transcribe = _b('RANKING_VET_TRANSCRIBE', not self.fast_mode); self.vet_music = _b('RANKING_VET_MUSIC', not self.fast_mode); self.vet_ocr = _b('RANKING_VET_OCR', not self.fast_mode)
         self.vo_enabled = _b('VO_ENABLED', True); self.vo_skip_first = _b('VO_SKIP_FIRST', True); self.tts_voice = os.getenv('RANKING_TTS_VOICE', 'Puck'); self.tts_format = os.getenv('RANKING_TTS_FORMAT', 'mp3')
         # Copywriting model. gemini-2.5-flash is closed to new projects and 404s,

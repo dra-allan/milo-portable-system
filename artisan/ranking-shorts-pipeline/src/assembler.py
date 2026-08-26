@@ -19,8 +19,10 @@ Budgeting on the sum leaves videos short of the target; ignoring the overlap in
 the other direction pushes them past the 180s Shorts limit.
 """
 
+import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
@@ -31,6 +33,25 @@ from .utils import (ensure_dir, probe_media, run_ffmpeg, safe_slug,
                     setup_logger, which_ffmpeg)
 
 logger = setup_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Vendored motion intelligence (artisan/motion — openshorts reframe engine)
+# ---------------------------------------------------------------------------
+# Subject-tracked 9:16 crop for stage-1 clips, enabled with RANKING_REFRAME=1.
+# Lives in its own package so both pipelines can share it; the sys.path shim
+# mirrors how the vendored modules flat-import each other.
+_MOTION_DIR = Path(__file__).resolve().parents[2] / 'motion'
+_motion_ready = False
+
+
+def _motion_reframe():
+    """Import the vendored reframe engine once; raise if unavailable."""
+    global _motion_ready
+    if not _motion_ready:
+        sys.path.insert(0, str(_MOTION_DIR))
+        _motion_ready = True
+    import reframe
+    return reframe
 
 
 # ---------------------------------------------------------------------------
@@ -103,8 +124,12 @@ def video_encode_args() -> List[str]:
                 '-preset', config.preset, '-profile:v', 'high',
                 '-level', '4.2']
     if enc == 'h264_nvenc':
+        # AQ (spatial+temporal) buys detail retention in flat/gradient areas
+        # at the same cq; cq≈crf+7 per openshorts' RTX benchmark, but our crf
+        # values are already conservative so only the AQ flags are adopted.
         return ['-c:v', 'h264_nvenc', '-rc', 'vbr', '-cq', str(crf),
-                '-preset', 'p5', '-b:v', '0']
+                '-preset', 'p5', '-b:v', '0',
+                '-spatial-aq', '1', '-temporal-aq', '1']
     if enc == 'h264_qsv':
         return ['-c:v', 'h264_qsv', '-global_quality', str(crf),
                 '-look_ahead', '1']
@@ -252,6 +277,42 @@ def fit_windows(clips: List[Dict]) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Stage 1: one ranked clip
 # ---------------------------------------------------------------------------
+def _reframe_window(source: Path, start: float, duration: float,
+                    aspect_ratio: float, out_path: Path) -> Optional[Path]:
+    """Cut the clip's window and run the vendored motion reframe over it.
+
+    The engine analyses the window (faces via mediapipe-or-YuNet, YOLO person
+    fallback), builds a per-frame crop trajectory and renders it natively in
+    ffmpeg with sendcmd-driven dynamic crops. Returns the vertical master
+    path; ANY failure returns None so the clip still renders through the
+    static centre-crop fill — a tracking miss must never kill a build.
+    """
+    tag = f"rf_{safe_slug(source.stem)[:32]}_{int(start * 1000)}"
+    window = out_path.parent / f".{tag}_win.mp4"
+    master = out_path.parent / f".{tag}_master.mp4"
+
+    # Exact window cut first: the engine's scene/beat analysis and its
+    # concat audio map both assume they own the whole input file.
+    if not run_ffmpeg([
+        '-ss', f'{start:.3f}', '-t', f'{duration:.3f}', '-i', str(source),
+    ] + video_encode_args() + _audio_args() + [str(window)]):
+        logger.warning('reframe window cut failed for %s', source.name)
+        return None
+
+    try:
+        _motion_reframe().render(str(window), str(master), aspect_ratio)
+        return master
+    except Exception as exc:  # noqa: BLE001 - fallback contract is deliberate
+        logger.warning('reframe failed (%s: %s); falling back to '
+                       'centre-crop fill', type(exc).__name__, exc)
+        return None
+    finally:
+        try:
+            os.unlink(window)
+        except OSError:
+            pass
+
+
 def render_clip(clip: Dict, video_title: str, clips_total: int,
                 out_path: Path,
                 leaderboard: Optional[List[Dict]] = None) -> Optional[Path]:
@@ -285,6 +346,18 @@ def render_clip(clip: Dict, video_title: str, clips_total: int,
     # Fast-seek before -i, then an exact -t. Placing -ss after -i decodes the
     # whole head of the file for nothing on a long source.
     start = float(clip.get('start') or 0.0)
+
+    # RANKING_REFRAME=1: swap the static centre-crop fill for the vendored
+    # motion engine's subject-tracked crop, applied to this clip's window
+    # only (analysis cost scales with clip length, not source length). Any
+    # failure keeps the build alive through the plain fill_chain below.
+    if getattr(config, 'reframe', False) and media['width'] > media['height']:
+        master = _reframe_window(source, start, duration,
+                                 float(config.width) / float(config.height),
+                                 out_path)
+        if master:
+            source, start = master, 0.0
+
     if start > 0:
         inputs += ['-ss', f'{start:.3f}']
     inputs += ['-t', f'{duration:.3f}', '-i', str(source)]

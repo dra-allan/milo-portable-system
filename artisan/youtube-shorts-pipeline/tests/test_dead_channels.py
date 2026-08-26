@@ -86,7 +86,15 @@ class SearchVideosDeadGateTests(unittest.TestCase):
             calls = []
             fake_yt = types.SimpleNamespace()
 
+            # A real CLASS, not a lambda: search_videos_by_channel lazily
+            # imports _ytdlp, whose ``class NoWritebackYDL(yt_dlp.YoutubeDL)``
+            # needs a subclassable base whose __init__ tolerates opts.
+            # A lambda base dies at import time with "function()
+            # argument 'code' must be code, not str".
             class Boom:
+                def __init__(self, *args, **kwargs):
+                    pass
+
                 def __enter__(self):
                     return self
 
@@ -97,7 +105,7 @@ class SearchVideosDeadGateTests(unittest.TestCase):
                     calls.append(1)
                     raise RuntimeError('should never be reached')
 
-            fake_yt.YoutubeDL = lambda opts: Boom()
+            fake_yt.YoutubeDL = Boom
             old_mod = sys.modules.get('yt_dlp')
             sys.modules['yt_dlp'] = fake_yt
             try:
@@ -124,7 +132,15 @@ class SearchVideosDeadGateTests(unittest.TestCase):
             calls = []
             fake_yt = types.SimpleNamespace()
 
+            # A real CLASS, not a lambda: search_videos_by_channel lazily
+            # imports _ytdlp, whose ``class NoWritebackYDL(yt_dlp.YoutubeDL)``
+            # needs a subclassable base whose __init__ tolerates opts.
+            # A lambda base dies at import time with "function()
+            # argument 'code' must be code, not str".
             class Boom:
+                def __init__(self, *args, **kwargs):
+                    pass
+
                 def __enter__(self):
                     return self
 
@@ -135,7 +151,7 @@ class SearchVideosDeadGateTests(unittest.TestCase):
                     calls.append(1)
                     raise RuntimeError('This channel does not exist.')
 
-            fake_yt.YoutubeDL = lambda opts: Boom()
+            fake_yt.YoutubeDL = Boom
             old_mod = sys.modules.get('yt_dlp')
             sys.modules['yt_dlp'] = fake_yt
             try:
