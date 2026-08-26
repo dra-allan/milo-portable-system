@@ -26,13 +26,23 @@ _LOG_CONFIGURED=False
 def setup_logger(name: str, log_file: Optional[Path]=None)->logging.Logger:
     global _LOG_CONFIGURED
     logger=logging.getLogger(name)
+    root=logging.getLogger()
+    fmt=logging.Formatter('%(asctime)s %(levelname)-7s [%(name)s] %(message)s',datefmt='%H:%M:%S')
     if not _LOG_CONFIGURED:
         level=getattr(logging,os.getenv('LOG_LEVEL','INFO').upper(),logging.INFO)
-        fmt=logging.Formatter('%(asctime)s %(levelname)-7s [%(name)s] %(message)s',datefmt='%H:%M:%S')
-        root=logging.getLogger(); root.setLevel(level); stream=logging.StreamHandler(sys.stdout); stream.setFormatter(fmt); root.addHandler(stream)
-        if log_file:
-            log_file.parent.mkdir(parents=True,exist_ok=True); fh=logging.FileHandler(log_file,encoding='utf-8'); fh.setFormatter(fmt); root.addHandler(fh)
+        root.setLevel(level)
+        stream=logging.StreamHandler(sys.stdout)
+        stream.setFormatter(fmt)
+        root.addHandler(stream)
         _LOG_CONFIGURED=True
+    if log_file:
+        log_file = Path(log_file)
+        has_file_handler = any(isinstance(h, logging.FileHandler) and Path(getattr(h, 'baseFilename', '')).resolve() == log_file.resolve() for h in root.handlers)
+        if not has_file_handler:
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            fh=logging.FileHandler(log_file, encoding='utf-8')
+            fh.setFormatter(fmt)
+            root.addHandler(fh)
     return logger
 logger=setup_logger(__name__)
 

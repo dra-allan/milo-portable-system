@@ -224,12 +224,30 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=int(env("PORT", "8080") or "8080"))
     parser.add_argument("--log-level", default=env("LOG_LEVEL", "INFO"))
     args = parser.parse_args()
-    logging.basicConfig(level=args.log_level, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
+    
+    log_dir = Path(__file__).resolve().parent.parent
+    log_file = log_dir / "bot.log"
+    log_fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s :: %(message)s")
+    
+    root_logger = logging.getLogger()
+    root_logger.setLevel(args.log_level)
+    
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(log_fmt)
+    root_logger.addHandler(stream_handler)
+    
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setFormatter(log_fmt)
+    root_logger.addHandler(file_handler)
+    
+    LOG.info("Milo Telegram Bot starting...")
     app = make_application()
     if args.webhook:
         path = env("WEBHOOK_PATH", "/milo") or "/milo"
+        LOG.info("Starting in webhook mode on port %d...", args.port)
         app.run_webhook(listen=env("WEBHOOK_LISTEN", "127.0.0.1"), port=args.port, url_path=path, webhook_url=env("WEBHOOK_URL"))
     else:
+        LOG.info("Starting in polling mode...")
         app.run_polling()
 
 
