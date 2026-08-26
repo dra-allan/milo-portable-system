@@ -17,7 +17,6 @@ Coordination ledger for the two Milo machines sharing this repo.
 4. If you resolve a rebase/merge conflict, add a DONE row noting what you kept.
 
 ## OPEN
-- [pc] 2026-08-26 ranking publisher token-path dedup (yt_secrets unprefixed vs ranking_ prefixed)
 
 (claim format: `- [<machine>] YYYY-MM-DD <task>`)
 
@@ -36,6 +35,7 @@ Coordination ledger for the two Milo machines sharing this repo.
    hand-rolled add/commit/push
 
 ## DONE
+- [pc] 2026-08-26 ranking publisher resolves freshest OAuth token file (yt_secrets unprefixed vs ranking_ prefixed) -- re-auth needs no manual copy -- landed 071c427
 
 - [brain] 2026-08-15 multi-machine sync setup: git identity, work-claims ledger, git-sync.ps1, per-machine backup branches. Decision: state/ untracked from main; `milo backup` now pushes each machine's snapshot to its own branch (`backup/brain` / `backup/pc`) via a git worktree at `.backup/<machine>`. Main = portable code only. Redacted a live COMPOSIO API key that had leaked into memory.
 - [brain] 2026-08-18 bake external_directory permission fix into harness sync (Windows backslash path matching, upstream #7279/#11042/#36681) — landed cf5f447
