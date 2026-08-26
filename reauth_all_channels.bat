@@ -183,7 +183,7 @@ set "KEYS="
 set "FAILED_KEYS="
 set /a COUNT=0, INDEX=0, FAILED=0
 if defined ONLY goto :keys_from_args
-for /f "usebackq delims=" %%K in (`"!PY!" -m yt_secrets list --keys-only !SCOPE! !FILTERS!`) do set "KEYS=!KEYS! %%K"
+for /f "usebackq delims=" %%K in (`!PY! -m yt_secrets list --keys-only !SCOPE! !FILTERS!`) do set "KEYS=!KEYS! %%K"
 goto :keys_ready
 :keys_from_args
 for %%K in (!ONLY!) do set "KEYS=!KEYS! %%K"
@@ -223,7 +223,7 @@ set "C_STATE=?"
 set "C_PROFILE=-"
 set "C_BOUND=not bound yet"
 set "C_LANES=-"
-for /f "usebackq tokens=1-6 delims=|" %%A in (`"!PY!" -m yt_secrets list --plain --channel "!KEY!"`) do (
+for /f "usebackq tokens=1-6 delims=|" %%A in (`!PY! -m yt_secrets list --plain --channel "!KEY!"`) do (
   set "C_EMAIL=%%B"
   set "C_STATE=%%C"
   set "C_PROFILE=%%D"

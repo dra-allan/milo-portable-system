@@ -130,7 +130,7 @@ channels:
   chop_ug:
     email: daadaallan0@gmail.com
     slug: draallan0
-    active: false
+    active: true
     pipelines: [shorts]
     token_dir: artisan/youtube-shorts-pipeline/config
     # daadaallan0@gmail.com = Profile 12 on this machine (Profile 1 is the
