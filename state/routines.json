@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787759946.6137516,
+  "updated_at": 1787766838.0124953,
   "routines": [
     {
       "name": "curate-skills",
@@ -22,10 +22,10 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0468326,
-      "last_run": 1787544208.1844997,
-      "last_status": "skipped",
+      "last_run": 1787709305.5923452,
+      "last_status": "ok",
       "last_output": "curator not due yet",
-      "next_run": 1787803200.0,
+      "next_run": 1787792400.0,
       "runs": 18,
       "failures": 0
     },
@@ -49,12 +49,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787759909.1860113,
-      "last_status": "ok",
-      "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     215\n  notes        8\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1787763525.7182124,
-      "runs": 771,
-      "failures": 32
+      "last_run": 1787734506.140522,
+      "last_status": "skipped",
+      "last_output": "Snapshot â†’ C:\\Users\\user\\Desktop\\milo-portable-system\\state\n  env_keys     6\n  memories     265\n  notes        8\n  sessions     0\n  skills       6\n  traits       0\n  pushed âœ“",
+      "next_run": 1787770416.6382926,
+      "runs": 730,
+      "failures": 47
     },
     {
       "name": "frequent-vault-sync",
@@ -76,12 +76,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787759925.830118,
-      "last_status": "ok",
-      "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787763533.1517105,
-      "runs": 765,
-      "failures": 90
+      "last_run": 1787734548.3826752,
+      "last_status": "skipped",
+      "last_output": "[ok] vault clean, nothing to commit",
+      "next_run": 1787770416.6382926,
+      "runs": 724,
+      "failures": 116
     },
     {
       "name": "memory-hygiene",
@@ -104,10 +104,10 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0488555,
-      "last_run": 1787454208.8058944,
+      "last_run": 1787457325.4634886,
       "last_status": "ok",
       "last_output": "[ok] expired 0 memory(ies)",
-      "next_run": 1788058800.0,
+      "next_run": 1788048000.0,
       "runs": 4,
       "failures": 0
     },
@@ -131,12 +131,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1787468607.611823,
-      "last_status": "skipped",
-      "last_output": "**Morning briefing — 23 Aug 2026**\n\n---\n\n### 🔴 Live fire (needs eyes)\n\n**YouTube extraction block on VPS** — still active since 08-18. Both pipelines (shorts + ranking) hitting `UNPLAYABLE` on fresh downloads. yt-dlp 2026.07.04 gets blocked on this IP across all player clients; browser on same IP plays fine. PO-token provider tested — doesn't fix it. Root cause: GVS PO-token-to-video-ID binding experiment. Options: wait for upstream yt-dlp fix, or build real-browser extraction (curl_cffi/Playwright). Backlog drained 08-18 13:51 (6 uploads from 08-15–17). Cookies refreshed mid-run (3630 bytes, SID present).\n\n**Daemons fixed 08-19** — both now on dual triggers (Daily 08:45/08:49 + AtStartup), `IgnoreNew` prevents double-daemon races. APScheduler self-schedules 9AM sweep. New `pipeline-driver` routine at 09:40 verifies + reports via Telegram (prompt at `state/prompts/pipeline-driver.md`).\n\n---\n\n### 🟡 Active priorities (from last reconciliation 08-18)\n\n| Priority | Status |\n|----------|--------|\n| **YouTube Shorts engine** | Running automated. Cookie-clobber fixed 08-17. Uploads since: capital_mindset 12, flick_shorts 12, NXS 10, wealth_mindset 6, chop_ug 3. **capital_mindset = earner** (18k+ views, 11 subs). |\n| **Channel health** | flick_shorts = dead weight (90 vids, 76 views — attribution was wrong). wealth_mindset = garbled gibberish titles (Welsh text) — needs quality gate. NXS token re-authed 08-18, verified correct. |\n| **Campaign posting** | 5 approved channels only: capital_mindset, wealth_mindset, flick_shorts, moviegasm, NXS. No min-follower gate. |\n| **MM fix / POV / website flips / Telegram reporting** | All parked. Website-flip idle since 08-08. |\n| **VPS hardening** | Alibaba trial claim (~3 days left). Harness (OpenCode/Claude Code) optional. |\n\n---\n\n### 🟢 Stable / no action needed\n\n- Multi-machine sync: `git-sync.ps1` works (backup/brain, backup/pc branches). WORK_CLAIMS.md at repo root for coordination.\n- Milo on VPS: doctor clean, Telegram verified, credentials present, no leaked secrets.\n- Milo visual identity locked (mid-20s, navy suit, cyan rim-light, waveform screen).\n\n---\n\n### 🎯 Today's suggested focus\n\n1. **Decide extraction path** — wait for yt-dlp fix vs. invest in browser-based extraction (curl_cffi/Playwright). The block is the bottleneck.\n2. **Wealth Mindset quality gate** — stop gibberish uploads before they burn the channel.\n3. **Flick_shorts OAuth client** — recreate in Google Cloud (deleted client = why token died). Use wealth_mindset client secrets + adrasaltsxxx@gmail.com flow.\n\n---\n\n**Milo here. What are we running at?**",
-      "next_run": 1787814000.0,
-      "runs": 17,
-      "failures": 1
+      "last_run": 1787720114.0512645,
+      "last_status": "failed (1)",
+      "last_output": "\n> milo · x-preview-f-free\n\nError: unknown certificate verification error",
+      "next_run": 1787803200.0,
+      "runs": 19,
+      "failures": 4
     },
     {
       "name": "persona-refresh",
@@ -157,12 +157,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787759933.1846895,
-      "last_status": "ok",
-      "last_output": "------------------------------------------------------------------------------\n sync  ~6952 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787763546.6137516,
-      "runs": 193,
-      "failures": 5
+      "last_run": 1787734558.7594314,
+      "last_status": "skipped",
+      "last_output": "dc, ui-designer.mdc, ui-finish-gate-reviewer.mdc, uswds-developer.mdc, ux-architect.mdc, ux-researcher.mdc, video-optimization-specialist.mdc, video-streaming-engineer.mdc, visual-storyteller.mdc, voice-ai-integration-engineer.mdc, webassembly-engineer.mdc, wechat-mini-program-developer.mdc, wechat-official-account-manager.mdc, weibo-strategist.mdc, whimsy-injector.mdc, wordpress-performance-engineer.mdc, wordpress-shopping-cart-engineer.mdc, x-twitter-intelligence-analyst.mdc, xiaohongshu-specialist.mdc, zhihu-strategist.mdc\n    gemini         GEMINI.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, account-strategist.md, aeo-foundations-architect.md, agentic-search-optimizer.md, ai-citation-strategist.md, ai-data-remediation-engineer.md, ai-engineer.md, api-platform-engineer.md, app-store-optimizer.md, autonomous-optimization-architect.md, backend-architect.md, baidu-seo-specialist.md, behavioral-nudge-engine.md, bilibili-content-strategist.md, book-co-author.md, bookkeeper-controller.md, brand-guardian.md, carousel-growth-engine.md, china-e-commerce-operator.md, china-market-localization-strategist.md, cms-developer.md, code-reviewer.md, codebase-onboarding-engineer.md, content-creator.md, cross-border-e-commerce-specialist.md, data-engineer.md, data-visualization-engineer.md, database-optimizer.md, database-reliability-engineer.md, deal-strategist.md, desktop-app-engineer.md, developer-tooling-engineer.md, devops-automator.md, discovery-coach.md, douyin-strategist.md, drupal-performance-engineer.md, drupal-shopping-cart-engineer.md, email-intelligence-engineer.md, email-marketing-strategist.md, embedded-firmware-engineer.md, feedback-synthesizer.md, feishu-integration-developer.md, filament-optimization-specialist.md, financial-analyst.md, finops-engineer.md, fp-a-analyst.md, frontend-developer.md, gaussdb-expert-engineer.md, git-workflow-master.md, global-podcast-strategist.md, growth-hacker.md, identity-access-engineer.md, image-prompt-engineer.md, incident-response-commander.md, inclusive-visuals-specialist.md, instagram-curator.md, internationalization-engineer.md, investment-researcher.md, iot-fleet-engineer.md, it-service-manager.md, kuaishou-strategist.md, linkedin-content-creator.md, livestream-commerce-coach.md, llm-post-training-engineer.md, minimal-change-engineer.md, mobile-app-builder.md, mobile-release-engineer.md, multi-agent-systems-architect.md, multi-platform-publisher.md, network-engineer.md, offer-lead-gen-strategist.md, orgscript-engineer.md, outbound-strategist.md, payments-billing-engineer.md, persona-walkthrough-specialist.md, pipeline-analyst.md, podcast-strategist.md, pr-communications-manager.md, privacy-engineer.md, private-domain-operator.md, product-manager.md, prompt-engineer.md, proposal-strategist.md, rag-pipeline-engineer.md, rapid-prototyper.md, realtime-collaboration-engineer.md, reddit-community-builder.md, rust-refactoring-specialist.md, sales-coach.md, sales-engineer.md, search-relevance-engineer.md, section-508-accessibility-specialist.md, senior-developer.md, seo-specialist.md, short-video-editing-coach.md, social-media-strategist.md, software-architect.md, solidity-smart-contract-engineer.md, sprint-prioritizer.md, sre-site-reliability-engineer.md, tax-strategist.md, technical-writer.md, tiktok-strategist.md, trend-researcher.md, twitter-engager.md, ui-designer.md, ui-finish-gate-reviewer.md, uswds-developer.md, ux-architect.md, ux-researcher.md, video-optimization-specialist.md, video-streaming-engineer.md, visual-storyteller.md, voice-ai-integration-engineer.md, webassembly-engineer.md, wechat-mini-program-developer.md, wechat-official-account-manager.md, weibo-strategist.md, whimsy-injector.md, wordpress-performance-engineer.md, wordpress-shopping-cart-engineer.md, x-twitter-intelligence-analyst.md, xiaohongshu-specialist.md, zhihu-strategist.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 6 harness(es) in sync",
+      "next_run": 1787770416.6382926,
+      "runs": 152,
+      "failures": 11
     },
     {
       "name": "vault-sync",
@@ -183,12 +183,12 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0510957,
-      "last_run": 1787545408.46018,
-      "last_status": "skipped",
+      "last_run": 1787766816.6541471,
+      "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787769810.1017036,
+      "next_run": 1787788437.9847584,
       "runs": 67,
-      "failures": 9
+      "failures": 15
     }
   ]
 }
