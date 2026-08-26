@@ -185,7 +185,7 @@ channels:
   rankdrop:
     email: daadaallan0@gmail.com
     slug: draallan0
-    active: false
+    active: true
     pipelines: [ranking]
     token_dir: artisan/ranking-shorts-pipeline/config
     # daadaallan0@gmail.com = Profile 12 on this machine.
@@ -197,7 +197,7 @@ channels:
   the_other_guys:
     email: allandaada@gmail.com
     slug: draallan0
-    active: false
+    active: true
     # WAS pipelines: [shorts] with the shorts token_dir until 2026-08-23. It is
     # a ranking channel: the contrast variant. Registered on the wrong lane, its
     # token was minted into artisan/youtube-shorts-pipeline/config where the
