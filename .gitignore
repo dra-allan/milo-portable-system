@@ -49,3 +49,6 @@ artisan/yt-secrets/channels.yaml.bak
 
 # isolated feature worktrees
 .worktrees/
+
+# Runtime agent memory store (machine-local).
+storage/
