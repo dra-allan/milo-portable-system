@@ -29,9 +29,14 @@ def setup_logger(name: str, log_file: Optional[Path] = None) -> logging.Logger:
     if logger.handlers:
         return logger
 
-    # Console handler
+    # Console handler - use utf-8 on Windows to avoid emoji crashes
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
     console_format = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
@@ -41,7 +46,7 @@ def setup_logger(name: str, log_file: Optional[Path] = None) -> logging.Logger:
     # File handler (if specified)
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_file)
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setLevel(logging.INFO)
         file_format = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
