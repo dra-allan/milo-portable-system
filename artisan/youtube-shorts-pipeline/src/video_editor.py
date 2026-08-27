@@ -1241,6 +1241,12 @@ class VideoEditor:
             logger.info("Reframing skipped for reordered clips; using '%s'",
                         config.reframe_fallback)
             return video_path, start_time, config.reframe_fallback, None
+        # Skip reframe for long clips to avoid FFmpeg OOM (filtergraph memory scales with duration)
+        max_reframe_duration = getattr(config, 'max_reframe_duration', 45)
+        if duration > max_reframe_duration:
+            logger.info("Reframing skipped for long clip (%.1fs > %ds); using '%s'",
+                        duration, max_reframe_duration, config.reframe_fallback)
+            return video_path, start_time, config.reframe_fallback, None
 
         master = self._reframe_master(video_path, start_time, duration)
         if master is None:

@@ -252,6 +252,9 @@ class Config:
         # the planner (processor.py) uses max_candidates over max_clips when
         # both are set, so keep this the smaller, intentional cap.
         self.max_candidates = self._int('MAX_CANDIDATES', 12, minimum=1)
+        # Max clip duration (seconds) for BACKGROUND_MODE=reframe. Longer clips
+        # cause FFmpeg filtergraph OOM in the motion engine. 45s is a safe floor.
+        self.max_reframe_duration = self._int('MAX_REFRAME_DURATION', 45, minimum=10)
 
         # --- Upload behaviour --------------------------------------------
         # Default to NOT uploading: an unattended pipeline that publishes to a

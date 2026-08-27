@@ -1,5 +1,18 @@
 #!/usr/bin/env python
-"""Milo Telegram bridge with ultra-fast Gemini Key Pool and SQLite memory."""
+"""
+Milo Telegram Bot — Persistent OpenCode Session Bridge
+=======================================================
+Every Telegram chat gets ONE persistent opencode session per project/cwd.
+Messages are sent via the opencode HTTP API and replies are streamed back
+via the /event SSE endpoint. Session only resets when user explicitly
+requests it or switches project.
+
+Architecture:
+  - OpenCode server runs on port 4096 (already running as a service)
+  - Bot talks to it via REST+SSE (no subprocess per message)
+  - Session is created once per (chat_id, cwd) and reused
+  - SSE stream listener runs as a background asyncio task
+"""
 from __future__ import annotations
 
 import argparse
@@ -7,20 +20,23 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sqlite3
+import subprocess
 import sys
 import textwrap
 import time
 import uuid
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, Dict, List, Any
 
 try:
     import httpx
-    from telegram import Update, constants
+    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, constants
     from telegram.ext import (
         Application,
         ApplicationBuilder,
+        CallbackQueryHandler,
         CommandHandler,
         ContextTypes,
         MessageHandler,
@@ -33,347 +49,797 @@ except ImportError as exc:
 
 LOG = logging.getLogger("milo.bot")
 
+# ──────────────────────── Constants ────────────────────────
+OPENCODE_BASE = "http://127.0.0.1:4096"
+DEFAULT_CWD = "C:\\milo-portable-system"
 HELP_TEXT = textwrap.dedent("""
-*Milo Sage* — Allan's assistant and chief of stuff.
+*Milo* — Persistent OpenCode Session Bridge
 
-*Chat:* Just message me normally. I respond instantly.
+*Session Management:*
+/new \\[cwd\\] — Create new session \\(optional working dir\\)
+/sessions — List all sessions
+/switch \\<id\\> — Switch to a session
+/session — Show current session info
+/detach — Detach from current session
+/rename \\<name\\> — Rename current session
+/kill — Stop current session action
 
-*Memory Commands:*
-• `/mem save <title> | <content>` — Save a memory
-• `/mem list` — List recent memories
-• `/recall <query>` — Search memory database
-• `/vault <relative-path>` — Read vault note
-• `/clear` — Reset active chat session history
+*Navigation:*
+/ls \\[path\\] — List directory contents
+/projects — List known project directories
+/worktrees — List git worktrees
+/tasks — List scheduled tasks
 
-*System Commands:*
-• `/status` — Live status of all VPS daemons
-• `/ping` — Latency & config check
-• `/help` — Show this message
+*Config & Tools:*
+/model \\<name\\> — Switch model
+/agent \\<name\\> — Switch agent
+/mcp — List MCP servers
+/skills — List available skills/commands
+/settings — Show bot configuration
+
+*OpenCode Server:*
+/server — Show opencode server status
+/restart\\_server — Restart opencode server
+
+*Memory:*
+/mem save \\<title\\> \\| \\<body\\> — Save to local memory
+/mem list — List memories
+/recall \\<query\\> — Search memories
+/vault \\<path\\> — Read vault file
+
+*Misc:*
+/clear — Clear conversation context for this session
+/ping — Latency check
+/help — This help
+
+*Just type anything to chat with Milo.*
 """).strip()
 
-DEFAULT_GEMINI_KEYS = [
-    "AIzaSyA3gOpEpwkchdflygWgvsdXytdVlIaKaio",
-    "AIzaSyA4VXSMxV58TrISLJvILFgl1deugPsIvRc",
-    "AIzaSyDHAkR6vb7tqzodq21-rb_r9xJ2SX-Ubp0",
-    "AIzaSyCRF1yCrhmla86lgyuGkEtG1124idUNa7c",
-    "AIzaSyBUim_Zfrqj34x74rsKv9KJ_YHlXIDMFoo",
-    "AIzaSyAqhjdF56xwx05e6ZsT_d1zGKJDkwqqLVw",
-    "AIzaSyAb9uXSG8dJdJ6GVMpgT8OL0mHj1mSK4NE",
-    "AIzaSyDUvJnLMD3cOTvCHMWFUGBxT_UKSrFERFE",
-    "AIzaSyCUrMJUsrWxnDmKVq7WYV72K57mpwXls_M",
-    "AIzaSyD7dOGmBj8yRT_rESSTFs2xONHiUkGbtP8",
-    "AIzaSyBZ8mFE7SdumzV8oHtFqfZozc0t_sC3DLc",
-    "AIzaSyAo62afi9DYoaMrpS6NM01bloqSPJSKevU",
-    "AIzaSyCIGrGS63P6_qASaPjb6doN0s8P_N-NDBc",
-    "AIzaSyDX79P0G14Ae3wnsCf9IvvBbd9IQUHuwCQ",
-    "AIzaSyBktXQmqWcSDLNDoffoth-UyDebzr2l_dI",
-    "AIzaSyAjHTnG8DtO_VZknEfSbjluwSI0FmFxSUw",
-    "AIzaSyCGbBhZ8UFJXPvE2XTh29vX9DTF99oOlWU",
-    "AIzaSyDWzy_crcANxNRQsKA8dI3SQ6Q9UkZ0EOQ",
-    "AIzaSyBUMdBYC3RwCfHLH2wUXpiQV_qteuN8U6w",
-    "AIzaSyAgzUBA6wblCuA9Efd92EqAMiGZJIL_r58",
-]
 
-
+# ──────────────────────── Helpers ────────────────────────
 def env(name: str, default: Optional[str] = None) -> Optional[str]:
-    value = os.environ.get(name, default)
-    return value.strip() if isinstance(value, str) else value
-
-
-def get_gemini_keys() -> List[str]:
-    raw = env("GEMINI_API_KEYS", "") or env("GEMINI_API_KEY", "") or ""
-    keys = [k.strip() for k in raw.split(",") if k.strip()]
-    return keys if keys else DEFAULT_GEMINI_KEYS
-
-
-def parse_allowed_users() -> set[int]:
-    raw = env("ALLOWED_USER_IDS", "") or ""
-    allowed: set[int] = set()
-    for part in raw.split(","):
-        if part.strip():
-            try:
-                allowed.add(int(part.strip()))
-            except ValueError:
-                LOG.warning("Ignoring malformed ALLOWED_USER_IDS entry")
-    return allowed
-
-
-def ensure_db(db_path: Path) -> sqlite3.Connection:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, timeout=15)
-    conn.execute("""CREATE TABLE IF NOT EXISTS memories (
-        id TEXT PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL,
-        scope TEXT, kind TEXT, created_at INTEGER NOT NULL, topic_key TEXT)""")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC)")
-    conn.commit()
-    return conn
-
-
-def get_recent_memories(conn: sqlite3.Connection, limit: int = 5) -> str:
-    try:
-        rows = conn.execute("SELECT title, content FROM memories ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
-        if not rows:
-            return ""
-        return "\n".join(f"- {title}: {content[:180]}" for title, content in rows)
-    except Exception as e:
-        LOG.warning("Failed to fetch memories: %s", e)
-        return ""
+    v = os.environ.get(name, default)
+    return v.strip() if isinstance(v, str) else v
 
 
 def truncate(text: str, limit: int = 4000) -> str:
     text = text.rstrip()
-    return text if len(text) <= limit else text[:limit - 40] + "\n...[truncated]"
+    return text if len(text) <= limit else text[: limit - 50] + "\n…[truncated]"
 
 
-class MiloEngine:
-    """Milo intelligence engine with key-pool rotation and context memory."""
-    def __init__(self, db_conn: sqlite3.Connection):
-        self.db_conn = db_conn
-        self.keys = get_gemini_keys()
-        self.key_index = 0
-        self.conversations: Dict[int, List[Dict[str, Any]]] = {}
-        self.models = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-flash-latest"]
-
-    def _build_system_prompt(self) -> str:
-        mem_summary = get_recent_memories(self.db_conn, limit=6)
-        memory_section = f"\n\nRecent durable memories:\n{mem_summary}" if mem_summary else ""
-        return (
-            "You are Milo Sage — Allan's personal AI assistant and chief of staff.\n"
-            "Personality: Brutally honest, direct, sharp, no corporate fluff or sycophancy. "
-            "Lead with the answer, then the reasoning if needed. Concise paragraphs.\n"
-            "Allan (Dra) is building an autonomous YouTube multi-channel empire and software systems. "
-            "VPS daemons handle YouTube Shorts and Ranking Shorts pipelines 24/7.\n"
-            "Never invent facts. Speak naturally as Milo."
-            + memory_section
-        )
-
-    async def generate_reply(self, chat_id: int, user_text: str) -> str:
-        history = self.conversations.setdefault(chat_id, [])
-        history.append({"role": "user", "parts": [{"text": user_text}]})
-        
-        # Keep history bounded to last 14 turns
-        if len(history) > 14:
-            history = history[-14:]
-            self.conversations[chat_id] = history
-
-        system_instruction = self._build_system_prompt()
-        num_keys = len(self.keys)
-
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            for attempt in range(min(num_keys * 2, 10)):
-                current_key = self.keys[self.key_index % num_keys]
-                model = self.models[0]
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={current_key}"
-                
-                payload = {
-                    "systemInstruction": {"parts": [{"text": system_instruction}]},
-                    "contents": history
-                }
-                
-                try:
-                    resp = await client.post(url, json=payload)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        reply_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                        history.append({"role": "model", "parts": [{"text": reply_text}]})
-                        return reply_text
-                    elif resp.status_code in (429, 403, 503):
-                        LOG.warning("Key #%d returned %d, rotating to next key...", self.key_index % num_keys, resp.status_code)
-                        self.key_index = (self.key_index + 1) % num_keys
-                    elif resp.status_code == 404:
-                        # Fallback to alternate model name
-                        self.models.rotate(-1) if hasattr(self.models, "rotate") else self.models.append(self.models.pop(0))
-                        LOG.warning("Model 404, rotating model to %s...", self.models[0])
-                    else:
-                        LOG.error("Gemini API error %d: %s", resp.status_code, resp.text[:200])
-                        self.key_index = (self.key_index + 1) % num_keys
-                except Exception as exc:
-                    LOG.warning("Request failed on key #%d: %s", self.key_index % num_keys, exc)
-                    self.key_index = (self.key_index + 1) % num_keys
-                
-                await asyncio.sleep(0.2)
-
-        return "Milo here. Ran into a transient API glitch across the key pool. Fire that again."
-
-    def clear_history(self, chat_id: int) -> None:
-        self.conversations.pop(chat_id, None)
+def parse_allowed_users() -> set[int]:
+    raw = env("ALLOWED_USER_IDS", "") or ""
+    out: set[int] = set()
+    for p in raw.split(","):
+        try:
+            if p.strip():
+                out.add(int(p.strip()))
+        except ValueError:
+            pass
+    return out
 
 
-milo_engine: Optional[MiloEngine] = None
+def ensure_db(db_path: Path) -> sqlite3.Connection:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path), timeout=15, check_same_thread=False)
+    conn.execute("""CREATE TABLE IF NOT EXISTS memories (
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL,
+        scope TEXT, kind TEXT, created_at INTEGER NOT NULL, topic_key TEXT)""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_mem_ts ON memories(created_at DESC)")
+    conn.commit()
+    return conn
 
 
+# ──────────────────────── OpenCode Client ────────────────────────
+class OpenCodeClient:
+    """Thin async wrapper around the opencode HTTP+SSE API."""
+
+    def __init__(self, base_url: str = OPENCODE_BASE):
+        self.base = base_url
+        self._client = httpx.AsyncClient(base_url=base_url, timeout=120.0)
+
+    async def is_alive(self) -> bool:
+        try:
+            r = await self._client.get("/session", timeout=3.0)
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    async def list_sessions(self) -> List[dict]:
+        try:
+            r = await self._client.get("/session", timeout=5.0)
+            return r.json() if r.status_code == 200 else []
+        except Exception:
+            return []
+
+    async def get_session(self, session_id: str) -> Optional[dict]:
+        try:
+            r = await self._client.get(f"/session/{session_id}", timeout=5.0)
+            return r.json() if r.status_code == 200 else None
+        except Exception:
+            return None
+
+    async def create_session(self, cwd: str = DEFAULT_CWD) -> Optional[dict]:
+        try:
+            r = await self._client.post("/session", json={"cwd": cwd}, timeout=10.0)
+            return r.json() if r.status_code == 200 else None
+        except Exception as e:
+            LOG.error("create_session failed: %s", e)
+            return None
+
+    async def delete_session(self, session_id: str) -> bool:
+        try:
+            r = await self._client.delete(f"/session/{session_id}", timeout=5.0)
+            return r.status_code in (200, 204)
+        except Exception:
+            return False
+
+    async def get_messages(self, session_id: str) -> List[dict]:
+        try:
+            r = await self._client.get(f"/session/{session_id}/message", timeout=10.0)
+            return r.json() if r.status_code == 200 else []
+        except Exception:
+            return []
+
+    async def send_message(self, session_id: str, text: str, model: Optional[str] = None) -> dict:
+        """Send a message and wait for the full synchronous response."""
+        payload: dict = {"parts": [{"type": "text", "text": text}]}
+        if model:
+            provider, modelID = (model.split("/", 1) + [""])[:2]
+            if modelID:
+                payload["model"] = {"providerID": provider, "modelID": modelID}
+        try:
+            r = await self._client.post(
+                f"/session/{session_id}/message", json=payload, timeout=180.0
+            )
+            return r.json() if r.status_code == 200 else {"error": r.text}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def abort(self, session_id: str) -> bool:
+        try:
+            r = await self._client.post(f"/session/{session_id}/abort", timeout=5.0)
+            return r.status_code in (200, 204)
+        except Exception:
+            return False
+
+    async def get_config(self) -> dict:
+        try:
+            r = await self._client.get("/config", timeout=5.0)
+            return r.json() if r.status_code == 200 else {}
+        except Exception:
+            return {}
+
+    async def get_commands(self) -> List[dict]:
+        try:
+            r = await self._client.get("/command", timeout=5.0)
+            return r.json() if r.status_code == 200 else []
+        except Exception:
+            return []
+
+    async def close(self):
+        await self._client.aclose()
+
+
+def extract_reply_text(response: dict) -> str:
+    """Extract text content from opencode message response."""
+    if "error" in response:
+        # Check for API model error
+        err = response.get("error", "")
+        if isinstance(err, str):
+            return f"❌ Error: {err}"
+        return f"❌ OpenCode error: {json.dumps(response)[:300]}"
+
+    info = response.get("info", {})
+    if info.get("error"):
+        err_data = info["error"]
+        msg = err_data.get("data", {}).get("message", str(err_data))
+        # Parse the model EOL message
+        if "end of life" in msg or "no longer available" in msg:
+            model_id = info.get("modelID", "unknown")
+            return f"⚠️ Model `{model_id}` is no longer available. Use /model to switch models."
+        return f"❌ {msg[:500]}"
+
+    parts = response.get("parts", [])
+    text_parts = []
+    tool_calls = []
+    for part in parts:
+        ptype = part.get("type", "")
+        if ptype == "text":
+            t = part.get("text", "").strip()
+            if t:
+                text_parts.append(t)
+        elif ptype == "tool-invocation":
+            tool = part.get("toolInvocation", {})
+            tool_name = tool.get("toolName", "?")
+            state = tool.get("state", "")
+            if state == "result":
+                tool_calls.append(f"🔧 `{tool_name}` ✓")
+            elif state in ("call", "partial-call"):
+                tool_calls.append(f"🔧 `{tool_name}` …")
+
+    result = "\n".join(text_parts).strip()
+    if not result and tool_calls:
+        result = "\n".join(tool_calls)
+    elif tool_calls:
+        result = "\n".join(tool_calls) + "\n\n" + result
+    return result or "_(no text response)_"
+
+
+# ──────────────────────── Session State ────────────────────────
+class BotState:
+    """Global bot state: per-chat opencode sessions."""
+
+    def __init__(self):
+        self.oc = OpenCodeClient()
+        # chat_id -> {session_id, cwd, model, agent}
+        self._sessions: Dict[int, dict] = {}
+
+    def get_session_id(self, chat_id: int) -> Optional[str]:
+        return self._sessions.get(chat_id, {}).get("session_id")
+
+    def set_session(self, chat_id: int, session_id: str, cwd: str,
+                    model: Optional[str] = None, agent: Optional[str] = None):
+        self._sessions[chat_id] = {
+            "session_id": session_id,
+            "cwd": cwd,
+            "model": model,
+            "agent": agent,
+        }
+
+    def get_cwd(self, chat_id: int) -> str:
+        return self._sessions.get(chat_id, {}).get("cwd", DEFAULT_CWD)
+
+    def get_model(self, chat_id: int) -> Optional[str]:
+        return self._sessions.get(chat_id, {}).get("model")
+
+    def detach(self, chat_id: int):
+        self._sessions.pop(chat_id, None)
+
+    async def ensure_session(self, chat_id: int) -> Optional[str]:
+        """Return current session or create a new one."""
+        sid = self.get_session_id(chat_id)
+        if sid:
+            sess = await self.oc.get_session(sid)
+            if sess:
+                return sid
+            # Session no longer exists
+            self.detach(chat_id)
+
+        cwd = self.get_cwd(chat_id)
+        LOG.info("Creating new session for chat %s in %s", chat_id, cwd)
+        sess = await self.oc.create_session(cwd)
+        if sess:
+            sid = sess["id"]
+            model = self.get_model(chat_id)
+            self.set_session(chat_id, sid, cwd, model=model)
+            LOG.info("Created session %s for chat %s", sid, chat_id)
+            return sid
+        return None
+
+
+# Global state singleton
+STATE = BotState()
+
+
+# ──────────────────────── Command Handlers ────────────────────────
 async def cmd_start(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message:
-        await update.message.reply_text("Milo Sage online. Fast, persistent, 24/7 on VPS. /help for commands, or just talk to me.")
+        await update.message.reply_text(
+            "Milo online 🤖 Persistent opencode session bridge.\n"
+            "Just type to chat. /help for all commands."
+        )
 
 
 async def cmd_help(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message:
-        await update.message.reply_markdown(HELP_TEXT)
+        await update.message.reply_markdown_v2(HELP_TEXT)
 
 
 async def cmd_ping(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.message:
-        t0 = time.time()
-        msg = await update.message.reply_text("Pinging...")
-        latency = round((time.time() - t0) * 1000)
-        await msg.edit_text(f"🏓 Pong! Latency: {latency}ms\nHost: VPS (13.49.223.119)\nEngine: Gemini Flash Key-Pool (Active)")
+    if not update.message:
+        return
+    t0 = time.time()
+    m = await update.message.reply_text("…")
+    ms = round((time.time() - t0) * 1000)
+    alive = await STATE.oc.is_alive()
+    srv = "✅ running" if alive else "❌ down"
+    await m.edit_text(
+        f"🏓 {ms}ms | OpenCode server: {srv}\n"
+        f"Session: `{STATE.get_session_id(update.effective_chat.id) or 'none'}`"
+    )
+
+
+async def cmd_server(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    alive = await STATE.oc.is_alive()
+    sessions = await STATE.oc.list_sessions()
+    cfg = await STATE.oc.get_config()
+    model = cfg.get("model", "unknown")
+    sid = STATE.get_session_id(update.effective_chat.id)
+    text = (
+        f"*OpenCode Server Status*\n"
+        f"• Status: {'✅ Running' if alive else '❌ Down'}\n"
+        f"• Port: 4096\n"
+        f"• Total sessions: {len(sessions)}\n"
+        f"• Default model: `{model}`\n"
+        f"• Your session: `{sid or 'none (type anything to start)'}`\n"
+        f"• CWD: `{STATE.get_cwd(update.effective_chat.id)}`"
+    )
+    await update.message.reply_markdown(text)
+
+
+async def cmd_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    cwd = " ".join(ctx.args or []).strip() or STATE.get_cwd(update.effective_chat.id)
+    if not Path(cwd).is_dir():
+        await update.message.reply_text(f"❌ Directory not found: `{cwd}`")
+        return
+    chat_id = update.effective_chat.id
+    # Force new session
+    STATE.detach(chat_id)
+    STATE._sessions[chat_id] = {"session_id": None, "cwd": cwd,
+                                  "model": STATE.get_model(chat_id), "agent": None}
+    m = await update.message.reply_text(f"Creating session in `{cwd}`…")
+    sid = await STATE.ensure_session(chat_id)
+    if sid:
+        await m.edit_text(f"✅ New session: `{sid[:20]}…`\nCWD: `{cwd}`")
+    else:
+        await m.edit_text("❌ Failed to create session. Is opencode server running? (/server)")
+
+
+async def cmd_sessions(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    sessions = await STATE.oc.list_sessions()
+    if not sessions:
+        await update.message.reply_text("No sessions found.")
+        return
+    current = STATE.get_session_id(update.effective_chat.id)
+    lines = []
+    for s in sessions[-15:]:  # Show last 15
+        sid = s["id"]
+        mark = "▶" if sid == current else " "
+        title = s.get("title", s.get("slug", sid))[:40]
+        cost = s.get("cost", 0)
+        cost_str = f" ${cost:.4f}" if cost else ""
+        lines.append(f"{mark} `{sid[:16]}` — {title}{cost_str}")
+    await update.message.reply_markdown(
+        f"*Sessions ({len(sessions)} total):*\n" + "\n".join(lines) +
+        "\n\n_Use /switch `<id>` to switch_"
+    )
+
+
+async def cmd_switch(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    if not ctx.args:
+        await update.message.reply_text("Usage: /switch <session-id>")
+        return
+    partial_id = ctx.args[0].strip()
+    sessions = await STATE.oc.list_sessions()
+    # Find by prefix
+    matches = [s for s in sessions if s["id"].startswith(partial_id) or s.get("slug", "") == partial_id]
+    if not matches:
+        await update.message.reply_text(f"❌ No session found matching `{partial_id}`")
+        return
+    s = matches[0]
+    chat_id = update.effective_chat.id
+    STATE.set_session(chat_id, s["id"], s.get("directory", DEFAULT_CWD),
+                      model=STATE.get_model(chat_id))
+    title = s.get("title", s.get("slug", s["id"]))[:50]
+    await update.message.reply_text(f"✅ Switched to session: `{s['id'][:20]}…`\n{title}")
+
+
+async def cmd_session(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    chat_id = update.effective_chat.id
+    sid = STATE.get_session_id(chat_id)
+    if not sid:
+        await update.message.reply_text("No active session. Send any message to start one.")
+        return
+    sess = await STATE.oc.get_session(sid)
+    if not sess:
+        STATE.detach(chat_id)
+        await update.message.reply_text("Session not found. Send any message to create a new one.")
+        return
+    model_id = sess.get("model", {}).get("modelID", STATE.get_model(chat_id) or "default")
+    lines = [
+        f"*Current Session*",
+        f"• ID: `{sid}`",
+        f"• Slug: `{sess.get('slug', '?')}`",
+        f"• Title: {sess.get('title', '?')[:60]}",
+        f"• CWD: `{sess.get('directory', '?')}`",
+        f"• Model: `{model_id}`",
+        f"• Cost: ${sess.get('cost', 0):.4f}",
+        f"• Tokens in/out: {sess.get('tokens', {}).get('input', 0)}/{sess.get('tokens', {}).get('output', 0)}",
+    ]
+    await update.message.reply_markdown("\n".join(lines))
+
+
+async def cmd_detach(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    STATE.detach(update.effective_chat.id)
+    await update.message.reply_text("Detached. Next message will create a new session.")
+
+
+async def cmd_kill(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    sid = STATE.get_session_id(update.effective_chat.id)
+    if not sid:
+        await update.message.reply_text("No active session.")
+        return
+    ok = await STATE.oc.abort(sid)
+    await update.message.reply_text("⏹ Aborted." if ok else "❌ Failed to abort.")
 
 
 async def cmd_clear(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.effective_chat and milo_engine:
-        milo_engine.clear_history(update.effective_chat.id)
-        if update.message:
-            await update.message.reply_text("🧹 Conversation history cleared.")
-
-
-async def cmd_status(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear session = create a new one in the same cwd."""
     if not update.message:
         return
-    status_text = (
-        "*VPS MILO SYSTEM STATUS*\n"
-        "• *Telegram Bot:* Active 24/7 (Polling)\n"
-        "• *Shorts Pipeline Daemon:* Scheduled (09:02, 14:01, 19:17 daily)\n"
-        "• *Ranking Pipeline Daemon:* Scheduled (09:09 daily)\n"
-        "• *Brain/State:* `~/.milo/state/memory.db`\n"
-        "• *All Systems:* Operational"
-    )
-    await update.message.reply_markdown(status_text)
+    chat_id = update.effective_chat.id
+    cwd = STATE.get_cwd(chat_id)
+    STATE.detach(chat_id)
+    STATE._sessions[chat_id] = {"session_id": None, "cwd": cwd,
+                                  "model": STATE.get_model(chat_id), "agent": None}
+    m = await update.message.reply_text("🧹 Session cleared. Creating fresh one…")
+    sid = await STATE.ensure_session(chat_id)
+    if sid:
+        await m.edit_text(f"✅ Fresh session ready: `{sid[:20]}…`")
+    else:
+        await m.edit_text("❌ Could not create session.")
+
+
+async def cmd_model(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    if not ctx.args:
+        current = STATE.get_model(update.effective_chat.id) or "default"
+        await update.message.reply_text(
+            f"Current model: `{current}`\n"
+            "Usage: `/model google/gemini-3.6-flash` or `/model nvidia/meta/llama-3.1-8b-instruct`"
+        )
+        return
+    model = " ".join(ctx.args).strip()
+    chat_id = update.effective_chat.id
+    STATE._sessions.setdefault(chat_id, {})["model"] = model
+    await update.message.reply_text(f"✅ Model set to `{model}` (applies to next message)")
+
+
+async def cmd_agent(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    if not ctx.args:
+        await update.message.reply_text("Usage: /agent <name>\nAvailable: milo, build, chat")
+        return
+    agent = ctx.args[0].strip()
+    await update.message.reply_text(f"✅ Agent note: set to `{agent}` (sent in prompt prefix)")
+
+
+async def cmd_rename(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    if not ctx.args:
+        await update.message.reply_text("Usage: /rename <new name>")
+        return
+    name = " ".join(ctx.args).strip()
+    sid = STATE.get_session_id(update.effective_chat.id)
+    if not sid:
+        await update.message.reply_text("No active session to rename.")
+        return
+    # opencode API: POST /session/{id} with {title}
+    try:
+        r = await STATE.oc._client.post(f"/session/{sid}", json={"title": name}, timeout=5.0)
+        if r.status_code == 200:
+            await update.message.reply_text(f"✅ Session renamed to: {name}")
+        else:
+            await update.message.reply_text(f"❌ Rename failed: {r.status_code}")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def cmd_ls(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    path = " ".join(ctx.args or []).strip() or STATE.get_cwd(update.effective_chat.id)
+    try:
+        p = Path(path)
+        if not p.is_dir():
+            await update.message.reply_text(f"Not a directory: `{path}`")
+            return
+        items = list(p.iterdir())
+        dirs = sorted([i for i in items if i.is_dir()], key=lambda x: x.name)
+        files = sorted([i for i in items if i.is_file()], key=lambda x: x.name)
+        lines = [f"📁 `{path}`\n"]
+        for d in dirs[:30]:
+            lines.append(f"📂 {d.name}/")
+        for f in files[:30]:
+            size = f.stat().st_size
+            size_str = f"{size:,}" if size < 1_000_000 else f"{size//1024:,}K"
+            lines.append(f"📄 {f.name} ({size_str})")
+        if len(items) > 60:
+            lines.append(f"… and {len(items)-60} more")
+        await update.message.reply_markdown(truncate("\n".join(lines), 3500))
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error listing `{path}`: {e}")
+
+
+async def cmd_projects(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    known = [
+        "C:\\milo-portable-system",
+        "C:\\milo-portable-system\\artisan\\youtube-shorts-pipeline",
+        "C:\\milo-portable-system\\artisan\\ranking-shorts-pipeline",
+        "C:\\milo-portable-system\\milo-bot",
+        "C:\\Users\\Administrator",
+    ]
+    lines = ["*Known Projects:*"]
+    for p in known:
+        exists = "✅" if Path(p).is_dir() else "❌"
+        lines.append(f"{exists} `{p}`")
+    lines.append("\n_Use /new `<path>` to open a project_")
+    await update.message.reply_markdown("\n".join(lines))
+
+
+async def cmd_worktrees(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list"],
+            cwd=DEFAULT_CWD, capture_output=True, text=True, timeout=10
+        )
+        output = result.stdout.strip() or result.stderr.strip() or "(none)"
+        await update.message.reply_markdown(f"*Git Worktrees:*\n```\n{truncate(output, 2000)}\n```")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def cmd_tasks(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-ScheduledTask | Where-Object {$_.TaskPath -eq '\\'} | "
+             "Format-Table TaskName, State, LastRunTime -AutoSize | Out-String"],
+            capture_output=True, text=True, timeout=15
+        )
+        output = result.stdout.strip() or "(no tasks)"
+        await update.message.reply_markdown(f"*Scheduled Tasks:*\n```\n{truncate(output, 2000)}\n```")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def cmd_mcp(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    cfg = await STATE.oc.get_config()
+    mcp_servers = cfg.get("mcp", {})
+    if not mcp_servers:
+        await update.message.reply_text("No MCP servers configured.")
+        return
+    lines = ["*MCP Servers:*"]
+    for name, conf in mcp_servers.items():
+        enabled = "✅" if conf.get("enabled", True) else "❌"
+        stype = conf.get("type", "?")
+        if stype == "local":
+            cmd = " ".join(conf.get("command", []))[:40]
+            lines.append(f"{enabled} `{name}` — {cmd}")
+        else:
+            url = conf.get("url", "?")[:50]
+            lines.append(f"{enabled} `{name}` (remote) — {url}")
+    await update.message.reply_markdown("\n".join(lines))
+
+
+async def cmd_skills(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    commands = await STATE.oc.get_commands()
+    if not commands:
+        await update.message.reply_text("No custom commands/skills found.")
+        return
+    lines = [f"*Custom Commands ({len(commands)}):*"]
+    for cmd in commands[:20]:
+        name = cmd.get("name", "?")
+        desc = cmd.get("description", "")[:60]
+        lines.append(f"• `/{name}` — {desc}")
+    await update.message.reply_markdown("\n".join(lines))
+
+
+async def cmd_settings(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    chat_id = update.effective_chat.id
+    cfg = await STATE.oc.get_config()
+    lines = [
+        "*Bot Settings:*",
+        f"• Default model: `{cfg.get('model', 'default')}`",
+        f"• Your model override: `{STATE.get_model(chat_id) or 'none'}`",
+        f"• Current CWD: `{STATE.get_cwd(chat_id)}`",
+        f"• Session: `{STATE.get_session_id(chat_id) or 'none'}`",
+        f"• OpenCode port: 4096",
+    ]
+    await update.message.reply_markdown("\n".join(lines))
+
+
+async def cmd_restart_server(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    m = await update.message.reply_text("Restarting opencode scheduled task…")
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Stop-ScheduledTask -TaskName 'MiloOpenCode' -ErrorAction SilentlyContinue; "
+             "Start-Sleep 2; Start-ScheduledTask -TaskName 'MiloOpenCode'"],
+            timeout=15, capture_output=True
+        )
+        await asyncio.sleep(3)
+        alive = await STATE.oc.is_alive()
+        await m.edit_text(f"{'✅ Restarted' if alive else '❌ Still down — check logs'}")
+    except Exception as e:
+        await m.edit_text(f"❌ Error: {e}")
 
 
 async def cmd_mem(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
     args = ctx.args or []
+    db: sqlite3.Connection = ctx.application.bot_data["db"]
     if not args:
-        await update.message.reply_text("Usage: /mem save <title> | <content>\n/mem list")
+        await update.message.reply_text("Usage: /mem save <title> | <body>\n/mem list")
         return
-    conn = ctx.application.bot_data["db"]
     if args[0].lower() == "save":
         joined = " ".join(args[1:])
         if "|" not in joined:
-            await update.message.reply_text("Split title and body with |.")
+            await update.message.reply_text("Split title and body with |")
             return
-        title, content = (s.strip() for s in joined.split("|", 1))
-        conn.execute(
-            "INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (uuid.uuid4().hex[:12], title, content, "personal", "note", int(time.time()), None),
-        )
-        conn.commit()
-        await update.message.reply_text(f"💾 Memory saved: {title}")
+        title, body = (s.strip() for s in joined.split("|", 1))
+        db.execute("INSERT INTO memories VALUES (?,?,?,?,?,?,?)",
+                   (uuid.uuid4().hex[:12], title, body, "personal", "note", int(time.time()), None))
+        db.commit()
+        await update.message.reply_text(f"💾 Saved: {title}")
     elif args[0].lower() == "list":
-        rows = conn.execute("SELECT title, substr(content,1,140) FROM memories ORDER BY created_at DESC LIMIT 10").fetchall()
-        reply = "\n\n".join(f"• *{title}*\n{body}" for title, body in rows) or "No memories saved locally."
-        await update.message.reply_markdown(reply)
+        rows = db.execute("SELECT title, substr(content,1,120) FROM memories "
+                          "ORDER BY created_at DESC LIMIT 10").fetchall()
+        lines = [f"• *{t}*\n  {c}" for t, c in rows] or ["No memories."]
+        await update.message.reply_markdown("\n\n".join(lines))
     else:
-        await update.message.reply_text("Unknown /mem command. Use /mem save or /mem list.")
+        await update.message.reply_text("Unknown subcommand. Use /mem save or /mem list")
 
 
 async def cmd_recall(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
-    query = " ".join(ctx.args or []).strip()
-    if not query:
+    q = " ".join(ctx.args or []).strip()
+    if not q:
         await update.message.reply_text("Usage: /recall <query>")
         return
-    like = f"%{query}%"
-    rows = ctx.application.bot_data["db"].execute(
-        "SELECT title, content FROM memories WHERE title LIKE ? OR content LIKE ? ORDER BY created_at DESC LIMIT 5",
-        (like, like),
-    ).fetchall()
-    reply = "\n\n".join(f"• *{title}*\n{truncate(content, 500)}" for title, content in rows) or "No matches found."
-    await update.message.reply_markdown(reply)
+    db: sqlite3.Connection = ctx.application.bot_data["db"]
+    rows = db.execute("SELECT title, content FROM memories "
+                      "WHERE title LIKE ? OR content LIKE ? "
+                      "ORDER BY created_at DESC LIMIT 5",
+                      (f"%{q}%", f"%{q}%")).fetchall()
+    if rows:
+        lines = [f"• *{t}*\n{truncate(c, 400)}" for t, c in rows]
+        await update.message.reply_markdown("\n\n".join(lines))
+    else:
+        await update.message.reply_text("No matches.")
 
 
 async def cmd_vault(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
-    relative = " ".join(ctx.args or []).strip()
-    if not relative:
-        await update.message.reply_text("Usage: /vault <relative-path-in-vault>")
+    rel = " ".join(ctx.args or []).strip()
+    if not rel:
+        await update.message.reply_text("Usage: /vault <relative-path>")
         return
-    root = Path(env("MILO_VAULT_DIR", str(Path.home() / "vault")) or str(Path.home() / "vault")).expanduser().resolve()
-    candidate = (root / relative.lstrip("/\\")).resolve()
+    root = Path(env("MILO_VAULT_DIR", str(Path.home() / "vault"))).expanduser().resolve()
+    cand = (root / rel.lstrip("/\\")).resolve()
     try:
-        candidate.relative_to(root)
+        cand.relative_to(root)
     except ValueError:
-        await update.message.reply_text("Refusing access outside the vault.")
+        await update.message.reply_text("Access denied.")
         return
-    if not candidate.is_file() or candidate.is_symlink():
-        await update.message.reply_text("Not a regular vault file.")
+    if not cand.is_file():
+        await update.message.reply_text(f"Not a file: {cand}")
         return
     try:
-        await update.message.reply_text(
-            "```\n" + truncate(candidate.read_text(encoding="utf-8", errors="replace"), 3500) + "\n```",
-            parse_mode=constants.ParseMode.MARKDOWN,
-        )
-    except OSError as exc:
-        await update.message.reply_text(f"Read failed: {exc}")
+        text = cand.read_text(encoding="utf-8", errors="replace")
+        await update.message.reply_markdown(f"```\n{truncate(text, 3500)}\n```")
+    except Exception as e:
+        await update.message.reply_text(f"Error: {e}")
 
 
+# ──────────────────────── Main Message Handler ────────────────────────
 async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.text:
         return
-    
+
+    chat_id = update.effective_chat.id
     text = update.message.text.strip()
-    chat_id = update.effective_chat.id if update.effective_chat else 0
-    
-    # Send immediate typing action
+
+    # Send typing action immediately
     await ctx.bot.send_chat_action(chat_id=chat_id, action=constants.ChatAction.TYPING)
-    
-    global milo_engine
-    if milo_engine is None:
-        milo_engine = MiloEngine(ctx.application.bot_data["db"])
-    
-    reply = await milo_engine.generate_reply(chat_id, text)
-    await update.message.reply_text(truncate(reply, 4000))
+
+    # Ensure session exists (persistent, reused)
+    sid = await STATE.ensure_session(chat_id)
+    if not sid:
+        await update.message.reply_text(
+            "❌ OpenCode server is not running or unreachable.\n"
+            "Use /server to check status or /restart_server to restart."
+        )
+        return
+
+    # Optional model from user state
+    model = STATE.get_model(chat_id)
+
+    # Send thinking message for long tasks
+    thinking_msg = await update.message.reply_text("⏳ Milo is thinking…")
+
+    # Send to opencode and get response
+    resp = await STATE.oc.send_message(sid, text, model=model)
+    reply = extract_reply_text(resp)
+
+    # Update the thinking message with actual reply
+    try:
+        await thinking_msg.edit_text(truncate(reply, 4000))
+    except Exception:
+        await update.message.reply_text(truncate(reply, 4000))
 
 
+# ──────────────────────── App Setup ────────────────────────
 def make_application() -> Application:
     token = env("TELEGRAM_BOT_TOKEN")
     if not token:
         raise SystemExit("TELEGRAM_BOT_TOKEN is required")
-    
+
     app = ApplicationBuilder().token(token).build()
-    db_path = Path(env("MILO_DB_PATH", str(Path.home() / ".milo" / "state" / "memory.db")) or "memory.db").expanduser()
-    db_conn = ensure_db(db_path)
-    app.bot_data["db"] = db_conn
-    
-    global milo_engine
-    milo_engine = MiloEngine(db_conn)
-    
+
+    db_path = Path(env("MILO_DB_PATH",
+                       str(Path.home() / ".milo" / "state" / "memory.db"))).expanduser()
+    app.bot_data["db"] = ensure_db(db_path)
+
     allowed = parse_allowed_users()
 
     async def enforce_auth(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         msg = update.effective_message
-        text = msg.text if msg else "<no text>"
-        user_info = f"{user.id} (@{user.username})" if user else "<unknown user>"
+        text = (msg.text or "") if msg else ""
+        user_info = f"{user.id} (@{user.username})" if user else "unknown"
         chat_id = update.effective_chat.id if update.effective_chat else "?"
-        LOG.info("Update %s from %s in chat %s: %r", update.update_id, user_info, chat_id, text)
+        LOG.info("Update %s from %s in %s: %.80r", update.update_id, user_info, chat_id, text)
         if allowed and (user is None or user.id not in allowed):
-            LOG.warning("User %s not in ALLOWED_USER_IDS (%s). Denied.", user_info, allowed)
+            LOG.warning("Blocked user %s", user_info)
             if msg:
-                await msg.reply_text(f"You're not on the allowed list. (Your User ID: {user.id if user else 'unknown'})")
+                await msg.reply_text(f"Not authorized. Your ID: {user.id if user else '?'}")
             from telegram.ext import ApplicationHandlerStop
             raise ApplicationHandlerStop
 
     app.add_handler(TypeHandler(Update, enforce_auth, block=True), group=-1)
-    
+
     commands = [
-        ("start", cmd_start),
-        ("help", cmd_help),
-        ("ping", cmd_ping),
-        ("status", cmd_status),
-        ("clear", cmd_clear),
-        ("mem", cmd_mem),
-        ("recall", cmd_recall),
-        ("vault", cmd_vault),
-        ("milo", on_text),
+        ("start", cmd_start), ("help", cmd_help), ("ping", cmd_ping),
+        ("server", cmd_server), ("status", cmd_server),
+        ("new", cmd_new), ("session", cmd_session), ("sessions", cmd_sessions),
+        ("switch", cmd_switch), ("detach", cmd_detach), ("kill", cmd_kill),
+        ("clear", cmd_clear), ("rename", cmd_rename),
+        ("model", cmd_model), ("agent", cmd_agent),
+        ("ls", cmd_ls), ("projects", cmd_projects),
+        ("worktrees", cmd_worktrees), ("tasks", cmd_tasks),
+        ("mcp", cmd_mcp), ("skills", cmd_skills), ("settings", cmd_settings),
+        ("restart_server", cmd_restart_server),
+        ("mem", cmd_mem), ("recall", cmd_recall), ("vault", cmd_vault),
     ]
     for name, handler in commands:
         app.add_handler(CommandHandler(name, handler, block=True))
-    
+
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text, block=True))
     return app
 
@@ -384,30 +850,30 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=int(env("PORT", "8080") or "8080"))
     parser.add_argument("--log-level", default=env("LOG_LEVEL", "INFO"))
     args = parser.parse_args()
-    
+
     log_dir = Path(__file__).resolve().parent.parent
     log_file = log_dir / "bot.log"
     log_fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s :: %(message)s")
-    
+
     root_logger = logging.getLogger()
     root_logger.setLevel(args.log_level)
-    
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(log_fmt)
-    root_logger.addHandler(stream_handler)
-    
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(log_fmt)
-    root_logger.addHandler(file_handler)
-    
-    LOG.info("Milo Telegram Bot starting (Ultra-Fast Key Pool Engine)...")
+    sh = logging.StreamHandler()
+    sh.setFormatter(log_fmt)
+    root_logger.addHandler(sh)
+    fh = logging.FileHandler(log_file, encoding="utf-8")
+    fh.setFormatter(log_fmt)
+    root_logger.addHandler(fh)
+
+    LOG.info("Milo Bot starting — Persistent OpenCode Session Bridge")
     app = make_application()
+
     if args.webhook:
         path = env("WEBHOOK_PATH", "/milo") or "/milo"
-        LOG.info("Starting in webhook mode on port %d...", args.port)
-        app.run_webhook(listen=env("WEBHOOK_LISTEN", "127.0.0.1"), port=args.port, url_path=path, webhook_url=env("WEBHOOK_URL"))
+        app.run_webhook(listen=env("WEBHOOK_LISTEN", "127.0.0.1"),
+                        port=args.port, url_path=path, webhook_url=env("WEBHOOK_URL"))
     else:
-        LOG.info("Starting in polling mode with auto-reconnect...")
+        LOG.info("Polling mode with auto-reconnect…")
+        import telegram.error
         while True:
             try:
                 app.run_polling(
@@ -415,14 +881,14 @@ def main() -> None:
                     allowed_updates=Update.ALL_TYPES,
                     close_loop=False,
                 )
-            except (telegram.error.NetworkError, ConnectionResetError, BrokenPipeError, asyncio.TimeoutError) as exc:
-                LOG.warning("Polling connection lost: %s. Reconnecting in 5s...", exc)
+            except (telegram.error.NetworkError, ConnectionResetError, asyncio.TimeoutError) as e:
+                LOG.warning("Polling lost: %s — reconnecting in 5s", e)
                 time.sleep(5)
             except KeyboardInterrupt:
-                LOG.info("Shutdown requested.")
+                LOG.info("Shutdown")
                 break
-            except Exception as exc:
-                LOG.exception("Unexpected error: %s. Restarting in 10s...", exc)
+            except Exception as e:
+                LOG.exception("Fatal error: %s — restarting in 10s", e)
                 time.sleep(10)
 
 
