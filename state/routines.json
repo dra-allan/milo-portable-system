@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787782770.668673,
+  "updated_at": 1787788728.8586106,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787782711.1634376,
+      "last_run": 1787786611.0568497,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     269\n  notes        8\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1787786338.7068386,
-      "runs": 734,
+      "next_run": 1787790249.136485,
+      "runs": 735,
       "failures": 47
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787782738.8070767,
+      "last_run": 1787786649.3388658,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787786349.3891432,
-      "runs": 728,
+      "next_run": 1787790259.561434,
+      "runs": 729,
       "failures": 116
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787782749.4061627,
+      "last_run": 1787786659.6281738,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~6811 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787786370.6075342,
-      "runs": 156,
+      "next_run": 1787790282.712662,
+      "runs": 157,
       "failures": 11
     },
     {
@@ -183,11 +183,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0510957,
-      "last_run": 1787766816.6541471,
+      "last_run": 1787788714.0173063,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787788437.9847584,
-      "runs": 67,
+      "next_run": 1787810328.7958217,
+      "runs": 68,
       "failures": 15
     }
   ]
