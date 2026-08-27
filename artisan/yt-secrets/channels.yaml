@@ -193,6 +193,7 @@ channels:
     variant: normal
     content: Top-N ranked countdowns (the normal ranking variant)
     channel_id: 'UCL3jT63WNf3e9vjzGB9wPww'
+    client_from: flick_shorts
 
   the_other_guys:
     email: allandaada@gmail.com
@@ -210,6 +211,7 @@ channels:
     variant: contrast
     content: "OTHERS VS THIS GUY contrast clips (the contrast ranking variant)"
     channel_id: 'UCYSxmqdfuLz0kcEP31ohAig'
+    client_from: NXS
 
   # ---------------------------------------------------------------------
   # POV lane.
