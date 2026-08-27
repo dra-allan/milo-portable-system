@@ -179,8 +179,8 @@ class Config:
         # Padding around each section so a later timing nudge needs no
         # re-download, and so keyframe drift lands inside slack we own.
         self.section_padding = self._float('SECTION_PADDING', 8.0, minimum=0.0)
-        # Source resolution ceiling. A vertical Short is 1080x1920, and smart
-        # framing crops *into* the source -- a 1080p landscape frame cropped to
+        # Source resolution ceiling. A vertical Short is 1080x1920 (or 2160x3840 for 4K),
+        # and smart framing crops *into* the source -- a 1080p landscape frame cropped to
         # a 9:16 tile is only ~608px wide, which then has to be upscaled. So
         # allowing 1440p+ genuinely helps when the source offers it, and costs
         # nothing when it does not (the format selector just falls through).
@@ -188,7 +188,8 @@ class Config:
         # bytes fetched and the pixels every filter has to touch. A 9:16 tile
         # cropped from 1080p is 608px wide and upscaled to 1080 -- fine after
         # lanczos, and roughly half the download and decode cost.
-        self.download_height = self._int('DOWNLOAD_HEIGHT', 1080, minimum=240)
+        # Default 2160 to enable 4K source downloads when available.
+        self.download_height = self._int('DOWNLOAD_HEIGHT', 2160, minimum=240)
         # Section fetches are network-bound, not CPU-bound: they overlap almost
         # perfectly. 4 is well under YouTube's per-client rate limiting.
         self.download_concurrency = self._int('DOWNLOAD_CONCURRENCY', 4, minimum=1)
@@ -212,6 +213,22 @@ class Config:
         self.render_workers = self._int(
             'RENDER_WORKERS', max(1, min(3, (os.cpu_count() or 2) // 2)), minimum=1
         )
+
+        # --- Output resolution ---------------------------------------------
+        # Shorts are vertical: 1080x1920 (1080p) or 2160x3840 (4K).
+        # 1080p is the YouTube Shorts standard; 4K gives more detail but
+        # costs ~4x the pixels to encode. Set via VIDEO_WIDTH/VIDEO_HEIGHT
+        # env vars or defaults below.
+        self.output_width = self._int('VIDEO_WIDTH', 1080, minimum=540)
+        self.output_height = self._int('VIDEO_HEIGHT', 1920, minimum=960)
+        # Enforce 9:16 aspect ratio for Shorts
+        if abs(self.output_width * 16 - self.output_height * 9) > 2:
+            logger.warning(
+                "VIDEO_WIDTH/VIDEO_HEIGHT (%dx%d) not 9:16; forcing 1080x1920",
+                self.output_width, self.output_height
+            )
+            self.output_width = 1080
+            self.output_height = 1920
         # The blurred-backdrop fill was the single most expensive filter in
         # the chain (full-res gblur every frame). 'cheap' downscales before
         # blurring for a visually identical result at a fraction of the cost.

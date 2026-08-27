@@ -44,7 +44,13 @@ class RankingConfig:
         self.data_dir = self._path('DATA_DIR', 'data'); self.temp_dir = self._path('TEMP_DIR', 'temp'); self.output_dir = self._path('OUTPUT_DIR', 'output')
         self.clips_dir = ensure_dir(self.data_dir / 'clips'); self.vo_dir = ensure_dir(self.data_dir / 'vo'); self.log_dir = ensure_dir(self.data_dir / 'logs')
         self.sfx_dir = self._asset_path('SFX_DIR', 'assets/sfx'); self.music_dir = self._asset_path('MUSIC_DIR', 'assets/music'); self.db_path = self.data_dir / 'ranking.db'
-        self.width = _i('VIDEO_WIDTH', 1080); self.height = _i('VIDEO_HEIGHT', 1920); self.fps = _i('VIDEO_FPS', 30); self.crf = _i('VIDEO_CRF', 18)
+        # Output resolution: 1080x1920 (1080p) or 2160x3840 (4K vertical).
+        # Enforce 9:16 aspect ratio for Shorts.
+        raw_w = _i('VIDEO_WIDTH', 1080); raw_h = _i('VIDEO_HEIGHT', 1920)
+        if abs(raw_w * 16 - raw_h * 9) > 2:
+            logger.warning('VIDEO_WIDTH/VIDEO_HEIGHT (%dx%d) not 9:16; forcing 1080x1920', raw_w, raw_h)
+            raw_w, raw_h = 1080, 1920
+        self.width = raw_w; self.height = raw_h; self.fps = _i('VIDEO_FPS', 30); self.crf = _i('VIDEO_CRF', 18)
         self.preset = os.getenv('VIDEO_PRESET', 'veryfast'); self.encoder = os.getenv('VIDEO_ENCODER', 'auto').lower(); self.font = os.getenv('OVERLAY_FONT', '').strip()
         self.fast_mode = _b('RANKING_FAST_MODE', True); self.render_workers = max(1, _i('RANKING_RENDER_WORKERS', 2)); self.reject_budget = max(1, _i('RANKING_REJECT_BUDGET', 2))
         # Stage-1 reframe: subject-tracked 9:16 crop via the vendored
@@ -67,7 +73,7 @@ class RankingConfig:
         self.contrast_subject = (os.getenv('CONTRAST_SUBJECT', 'GUY') or 'GUY').upper()
         self.upload_max_per_day = _i('UPLOAD_MAX_PER_DAY', 6); self.upload_max_per_run = _i('UPLOAD_MAX_PER_RUN', 6); self.upload_max_per_channel = _i('UPLOAD_MAX_PER_CHANNEL', self.upload_max_per_day); self.queue_target_total = _i('QUEUE_TARGET_TOTAL', 12)
         self.sweep_fresh_share = _i('SWEEP_FRESH_SHARE', 3); self.sweep_backlog_share = _i('SWEEP_BACKLOG_SHARE', 3); self.schedule_run_times = [t.strip() for t in os.getenv('RUN_TIMES', '0 9 * * *').split(',') if t.strip()]; self.schedule_jitter_minutes = _i('SCHEDULE_JITTER_MINUTES', 0)
-        self.download_height = _i('RANKING_DOWNLOAD_HEIGHT', 720); self.download_max_bytes = _i('RANKING_MAX_DOWNLOAD_MB', 250) * 1024 * 1024; self.download_concurrency = _i('RANKING_DOWNLOAD_CONCURRENCY', 4); self.max_source_duration = _i('RANKING_MAX_SOURCE_SECONDS', 900); self.render_timeout = _i('RANKING_RENDER_TIMEOUT', 900)
+        self.download_height = _i('RANKING_DOWNLOAD_HEIGHT', 2160); self.download_max_bytes = _i('RANKING_MAX_DOWNLOAD_MB', 250) * 1024 * 1024; self.download_concurrency = _i('RANKING_DOWNLOAD_CONCURRENCY', 4); self.max_source_duration = _i('RANKING_MAX_SOURCE_SECONDS', 900); self.render_timeout = _i('RANKING_RENDER_TIMEOUT', 900)
         raw = self._load_yaml(); self.defaults = raw.get('defaults') or {}; self.sfx_map = raw.get('sfx_map') or {}; self.topics = raw.get('topics') or {}
         self.defaults.setdefault('max_download_height', self.download_height); self.defaults.setdefault('max_download_bytes', self.download_max_bytes); self.defaults.setdefault('max_source_duration', self.max_source_duration); self.defaults.setdefault('download_concurrency', self.download_concurrency); self.defaults.setdefault('render_workers', self.render_workers)
         # Env wins over YAML; YAML wins over the hardcoded default.

@@ -56,8 +56,9 @@ except ImportError:  # pragma: no cover - direct script execution
 
 logger = setup_logger(__name__)
 
-SHORT_WIDTH = 1080
-SHORT_HEIGHT = 1920
+# Output dimensions from config (default 1080x1920, can be 2160x3840 for 4K)
+SHORT_WIDTH = getattr(config, 'output_width', 1080)
+SHORT_HEIGHT = getattr(config, 'output_height', 1920)
 
 # Subject-tracked 9:16 pre-render for BACKGROUND_MODE=reframe, shared with the
 # ranking pipeline. Lives in its own package so both pipelines can use it; the
