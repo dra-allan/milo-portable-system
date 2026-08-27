@@ -296,8 +296,35 @@ class BotState:
     def detach(self, chat_id: int):
         self._sessions.pop(chat_id, None)
 
+    async def ensure_server_running(self) -> bool:
+        """If opencode is down, automatically start the MiloOpenCode scheduled task and wait for it."""
+        if await self.oc.is_alive():
+            return True
+        LOG.warning("OpenCode server is down. Attempting auto-start via Task Scheduler...")
+        try:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "Start-ScheduledTask -TaskName 'MiloOpenCode' -ErrorAction SilentlyContinue"],
+                timeout=10, capture_output=True
+            )
+        except Exception as e:
+            LOG.error("Failed to trigger MiloOpenCode task: %s", e)
+
+        # Wait up to 12 seconds for port 4096 to become ready
+        for _ in range(12):
+            await asyncio.sleep(1)
+            if await self.oc.is_alive():
+                LOG.info("OpenCode server auto-started successfully!")
+                return True
+        return False
+
     async def ensure_session(self, chat_id: int) -> Optional[str]:
-        """Return current session or create a new one."""
+        """Return current session or create a new one, auto-starting server if needed."""
+        if not await self.oc.is_alive():
+            ready = await self.ensure_server_running()
+            if not ready:
+                return None
+
         sid = self.get_session_id(chat_id)
         if sid:
             sess = await self.oc.get_session(sid)
@@ -354,13 +381,21 @@ async def cmd_server(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
     alive = await STATE.oc.is_alive()
-    sessions = await STATE.oc.list_sessions()
-    cfg = await STATE.oc.get_config()
+    if not alive:
+        m = await update.message.reply_text("⏳ OpenCode server is down, attempting auto-start…")
+        alive = await STATE.ensure_server_running()
+        try:
+            await m.delete()
+        except Exception:
+            pass
+
+    sessions = await STATE.oc.list_sessions() if alive else []
+    cfg = await STATE.oc.get_config() if alive else {}
     model = cfg.get("model", "unknown")
     sid = STATE.get_session_id(update.effective_chat.id)
     text = (
         f"*OpenCode Server Status*\n"
-        f"• Status: {'✅ Running' if alive else '❌ Down'}\n"
+        f"• Status: {'✅ Running' if alive else '❌ Down (use /restart_server)'}\n"
         f"• Port: 4096\n"
         f"• Total sessions: {len(sessions)}\n"
         f"• Default model: `{model}`\n"
@@ -672,17 +707,28 @@ async def cmd_settings(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_restart_server(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
-    m = await update.message.reply_text("Restarting opencode scheduled task…")
+    m = await update.message.reply_text("🔄 Restarting OpenCode server…")
     try:
         subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "Stop-ScheduledTask -TaskName 'MiloOpenCode' -ErrorAction SilentlyContinue; "
+             "Stop-Process -Name opencode, node -Force -ErrorAction SilentlyContinue; "
              "Start-Sleep 2; Start-ScheduledTask -TaskName 'MiloOpenCode'"],
-            timeout=15, capture_output=True
+            timeout=20, capture_output=True
         )
-        await asyncio.sleep(3)
+        for _ in range(12):
+            await asyncio.sleep(1)
+            if await STATE.oc.is_alive():
+                break
         alive = await STATE.oc.is_alive()
-        await m.edit_text(f"{'✅ Restarted' if alive else '❌ Still down — check logs'}")
+        cfg = await STATE.oc.get_config() if alive else {}
+        model = cfg.get("model", "unknown")
+        await m.edit_text(
+            f"{'✅ OpenCode server running' if alive else '❌ Still down — check opencode_server.log'}\n"
+            f"• Port: 4096\n"
+            f"• Model: `{model}`\n"
+            f"• Scheduled Task: `MiloOpenCode` (SYSTEM)"
+        )
     except Exception as e:
         await m.edit_text(f"❌ Error: {e}")
 
