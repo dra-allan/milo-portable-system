@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787810627.8596847,
+  "updated_at": 1787815237.1975253,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787810012.6738565,
+      "last_run": 1787813914.3174524,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     269\n  notes        8\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1787813742.8802962,
-      "runs": 741,
+      "next_run": 1787817540.771023,
+      "runs": 742,
       "failures": 47
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787810143.152187,
+      "last_run": 1787813940.9409535,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787813750.231647,
-      "runs": 735,
+      "next_run": 1787817548.7470722,
+      "runs": 736,
       "failures": 116
     },
     {
@@ -131,11 +131,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0582633,
-      "last_run": 1787803422.489767,
+      "last_run": 1787815107.5576878,
       "last_status": "ok",
-      "last_output": "**Morning briefing — 27 Aug 2026**\n\n### What's live & working\n- **YouTube Shorts engine** on both machines. PC lanes retired (all 8 channels open), reframe background mode live. VPS daemons fixed 08-19 (dual triggers, single-instance). Driver routine at 09:40 reports via Telegram.\n- **Campaign clipper** built, channel strategy locked (5 channels only). Autopilot spec written, 7 tasks — not built yet.\n- **POV pipeline** (ExplaiNation) — WW1 done, Whisper fallback wired.\n- **Money Matrix** — 7 agents built, never run end-to-end.\n- **Flow image gen** — vendored, works unattended (NARWHAL, 0 credits).\n- **Milo on AWS VPS** — brain live, `MiloRoutines` every 5 min, backups pushing to `backup/brain`.\n\n### Top 3 fires to put out today\n| # | Issue | Why it matters |\n|---|-------|----------------|\n| 1 | **flick_shorts OAuth client DELETED** (Google Cloud) | 401 `deleted_client` — only wealth_mindset's client survives. Need new client + re-auth before that channel posts again. |\n| 2 | **Clipster eligibility wall** | All 47 Roobet subs marked **Ineligible** — min 1000 followers required, all channels under. Submission flow works; gate is subs. Check Azura (1%) / Betr (13%) for no-follower campaigns, or grow followers. |\n| 3 | **Telegram morning briefs failing** | Channel verified at migration, but briefs don't land. NSSM gone; runtime is `miloctl` routines. Wire login so briefs actually arrive. |\n\n### Decisions waiting on you\n- **Two-week trial ends today (08-26 deadline passed)** — flick_shorts, wealth_mindset, NXS, ExplaiNation, capital_mindset. No pickup → turn off / pivot. capital_mindset keeps feeding.\n- **4 rogue Chop UG uploads** (wealth clips on Chop via wrong token) — clips still live. Delete or keep?\n- **Website flip** — stalled since 08-08, 23 sites built, 19 emails sent. Resume (100+ prospects, 12 demos/wk) or park?\n\n### Quick wins if time\n- Run **mm_pipeline** once (7 agents, never executed end-to-end).\n- **chop_ug title cleanup** — ~15 Luganda-gibberish titles need audit/rename.\n- **FarmDig validation** — Supabase + Vercel deployed, backend done. Blockers: 90K UGX registration (has TIN), $15 domain, Pesapal prod approval.\n\n---\n\n**Do this first:** flick_shorts OAuth client recreate + re-auth (unblocks that channel immediately). Telegram briefing fix (restores your daily pulse). Then Clipster campaign audit (find campaigns that actually pay at current sub counts).\n\nWant me to start on any of these?",
-      "next_run": 1787814000.0,
-      "runs": 20,
+      "last_output": "**Morning Briefing — 27 Aug 2026**\n\n### What's live & working\n- **YouTube Shorts engine** on both machines. PC lanes retired (all 8 channels open), reframe background mode live. VPS daemons fixed 08-19 (dual triggers, single-instance). Driver routine at 09:40 reports via Telegram.\n- **Campaign clipper** built, channel strategy locked (5 channels only). Autopilot spec written, 7 tasks — not built yet.\n- **POV pipeline** (ExplaiNation) — WW1 done, Whisper fallback wired.\n- **Money Matrix** — 7 agents built, never run end-to-end.\n- **Flow image gen** — vendored, works unattended (NARWHAL, 0 credits).\n- **Milo on AWS VPS** — brain live, `MiloRoutines` every 5 min, backups pushing to `backup/brain`.\n\n### Top 3 fires to put out today\n| # | Issue | Why it matters |\n|---|-------|----------------|\n| 1 | **flick_shorts OAuth client DELETED** (Google Cloud) | 401 `deleted_client` — only wealth_mindset's client survives. Need new client + re-auth before that channel posts again. |\n| 2 | **Clipster eligibility wall** | All 47 Roobet subs marked **Ineligible** — min 1000 followers required, all channels under. Submission flow works; gate is follower count. |\n| 3 | **Money Matrix end-to-end run** | 7 agents built, zero full pipeline test. Need one clean run before it's \"live.\" |\n\n### Quick hits\n- **Capital_mindset** cap spent until local midnight (evening UTC posts counted against today). PC silence on NXS/flick/wealth/etc is **by design** — those are VPS lanes.\n- **Chop_ug** content-starved: discovery finds no new sources (95GmlvwSM1w processed, queried 0 channels). Needs source-channel list refresh.\n- **the_other_guys** token `invalid_grant` again (2nd death since 08-23) — reauth batch needed.\n- **MiloRoutines** on VPS still **disabled** pending your call after the repo stomp recovery.\n\n### Do this first\n1. Create new OAuth client for flick_shorts in Google Cloud → re-auth on PC.\n2. Run Money Matrix full pipeline once (dry-run if you want).\n3. Decide on MiloRoutines re-enable.",
+      "next_run": 1787900400.0,
+      "runs": 21,
       "failures": 4
     },
     {
@@ -157,11 +157,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787810150.267429,
+      "last_run": 1787813948.778764,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~7124 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787813763.8377576,
-      "runs": 163,
+      "next_run": 1787817570.1299891,
+      "runs": 164,
       "failures": 11
     },
     {
