@@ -51,7 +51,7 @@ LOG = logging.getLogger("milo.bot")
 
 # ──────────────────────── Constants ────────────────────────
 OPENCODE_BASE = "http://127.0.0.1:4096"
-DEFAULT_CWD = "C:\\milo-portable-system"
+DEFAULT_CWD = "C:\\Users\\Administrator"
 HELP_TEXT = textwrap.dedent("""
 *Milo* — Persistent OpenCode Session Bridge
 

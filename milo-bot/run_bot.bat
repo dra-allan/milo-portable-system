@@ -7,7 +7,7 @@ set TELEGRAM_CHAT_ID=8101147332
 set ALLOWED_USER_IDS=8101147332
 set OPENCODE_BIN=C:\Users\Administrator\AppData\Roaming\npm\opencode.cmd
 set MILO_AGENT=milo
-set OPENCODE_WORKDIR=C:\milo-portable-system
+set OPENCODE_WORKDIR=C:\Users\Administrator
 set LOG_LEVEL=INFO
 
 REM Ensure SYSTEM can find node, npm, opencode, and git
