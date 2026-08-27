@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": 1787817900.8989892,
+  "updated_at": 1787823869.1416752,
   "routines": [
     {
       "name": "curate-skills",
@@ -49,11 +49,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0449665,
-      "last_run": 1787817812.75853,
+      "last_run": 1787821711.8331437,
       "last_status": "ok",
       "last_output": "Snapshot â†’ C:\\milo-portable-system\\state\n  env_keys     14\n  memories     269\n  notes        8\n  sessions     0\n  skills       3\n  traits       0",
-      "next_run": 1787821461.0321653,
-      "runs": 743,
+      "next_run": 1787825331.5573666,
+      "runs": 744,
       "failures": 47
     },
     {
@@ -76,11 +76,11 @@
       ],
       "builtin": true,
       "created_at": 1785745900.054286,
-      "last_run": 1787817861.1819577,
+      "last_run": 1787821731.6426709,
       "last_status": "ok",
       "last_output": "[ok] Everything up-to-date",
-      "next_run": 1787821473.3210893,
-      "runs": 737,
+      "next_run": 1787825338.0797343,
+      "runs": 738,
       "failures": 116
     },
     {
@@ -157,12 +157,37 @@
       ],
       "builtin": true,
       "created_at": 1785745900.0563133,
-      "last_run": 1787817873.591216,
+      "last_run": 1787821738.0895534,
       "last_status": "ok",
       "last_output": "------------------------------------------------------------------------------\n sync  ~7124 tokens of persona\n------------------------------------------------------------------------------\n    opencode       AGENTS.md, milo.md, mylo.md, opencode.json, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md\n    generic        MILO.md, remember.md, recall.md, learn.md, handoff.md, milo.md, mylo.md, AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, persona.json\n\n  [ok] 2 harness(es) in sync",
-      "next_run": 1787821500.8671987,
-      "runs": 165,
+      "next_run": 1787825366.591538,
+      "runs": 166,
       "failures": 11
+    },
+    {
+      "name": "pipeline-driver",
+      "prompt": "state/prompts/pipeline-driver.md",
+      "command": "",
+      "schedule": {
+        "kind": "daily",
+        "hour": 9,
+        "minute": 40
+      },
+      "enabled": true,
+      "harness": "",
+      "model": "",
+      "timeout": 900,
+      "output": "telegram",
+      "skip_missed": true,
+      "tags": [],
+      "builtin": false,
+      "created_at": 1787823240.649707,
+      "last_run": 1787823697.0105426,
+      "last_status": "ok",
+      "last_output": "Here's the **pipeline-driver.md** prompt from the VPS:\n\n---\n\n# Milo — Pipeline Driver (scheduled verifier/reporter)\n\nYou are Milo, watching the two deterministic YouTube pipelines on this machine (the VPS). The daemons do the actual work at 08:45/08:49 via daily scheduled tasks, self-scheduling the 9AM sweep. Your job: verify the run happened, catch what the daemons cannot, and report to Telegram. You are NOT writing or refactoring pipeline code.\n\nRun context: headless scheduled run. Do not open a browser.\n\n## What to do, in order\n\n### 1. Verify the daemons actually fired today\n- Task Scheduler: `schtasks /query /tn \"YouTube Shorts Pipeline Daemon\" /v /fo LIST` and same for \"Ranking Shorts Pipeline Daemon\". Look at Last Run Time / Last Result. A task that shows `11/30/1999` or `267011` never fired — flag it.\n- If a daemon is running but no sweep log exists for today, it started but the sweep failed silently — investigate logs.\n\n### 2. Check sweep logs for today\n- Shorts: `Get-Content data\\logs\\pipeline.log -Tail 100` under `C:\\milo-portable-system\\artisan\\youtube-shorts-pipeline`\n- Ranking: `Get-Content data\\logs\\ranking.log -Tail 100` under `C:\\milo-portable-system\\artisan\\ranking-shorts-pipeline`\n- Look for: built N, uploaded N, cap skips, lane errors, \"Video unavailable\", bot-check, token failures.\n\n### 3. Verify cookies file\n- `C:\\milo-portable-system\\cookies.txt`. Known-good = 3630 bytes (auth-bearing). ~1624 bytes = 3P-only export = broken, downloads bot-block. Report size; if broken, say it and stop — do NOT try to repair unless you have the CDP re-export recipe.\n\n### 4. Pull live channel totals\n- Do NOT trust the DB attribution. Pull live totals via the pipeline's token verification (channels().list) or YouTube Studio public pages. Report per-channel where you have data.\n\n### 5. Report to Telegram\nOne consolidated message:\n- Daemons: fired / did not fire (which, when)\n- Shorts: built N, uploaded N, per-channel where it matters, lane errors\n- Ranking: built N, uploaded N, topic errors\n- Cookies: size before/after\n- Anything needing a human's eyes\n\nIf both pipelines were clean no-ops, say it in one line. Never fake an upload count — report what you verified; mark unverified claims unverified.\n\n## When to escalate (do not push through)\n- Cookies file broken and you cannot repair by re-export.\n- A token invalid or authenticates as the wrong channel.\n- \"Sign in to confirm you're not a bot\" recurs across multiple videos — re-export cookies first (they rotate); only if fresh cookies still blocked do you escalate.\n- Anything that looks like data loss or a destructive action. Ask first.\n- If a daemon did NOT fire: run the sweep manually as a one-shot instead of waiting (shorts: `python full_sweep_all_channels.py` from the pipeline root; ranking: `python mixed_sweep.py` from its root), then report both the miss and the manual run result.\n\n---\n\nThis is the verifier/reporter architecture: daemons do the work (08:45/08:49), driver verifies + reports (09:40). The tracked copy lives at `docs/superpowers/prompts/2026-08-18-vps-pipeline-driver-prompt.md` in the repo.",
+      "next_run": 1787910000.0,
+      "runs": 1,
+      "failures": 0
     },
     {
       "name": "vault-sync",
