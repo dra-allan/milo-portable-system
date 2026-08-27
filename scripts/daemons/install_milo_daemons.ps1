@@ -64,6 +64,9 @@ function New-TaskXml {
         [string]$TimeLimit = 'PT6H',
         [switch]$RestartForever
     )
+    # Element order inside <Settings> is a schema sequence, not a bag: move one
+    # element and schtasks rejects the whole file as "incorrectly formatted".
+    # This is the order Windows itself exports.
     $restart = ''
     if ($RestartForever) {
         $restart = "    <RestartOnFailure>`n      <Interval>PT1M</Interval>`n      <Count>999</Count>`n    </RestartOnFailure>"
@@ -73,14 +76,14 @@ function New-TaskXml {
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Author>milo</Author>
-    <Description>`$Description</Description>
+    <Description>$Description</Description>
   </RegistrationInfo>
   <Triggers>
-`$Triggers
+$Triggers
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <UserId>`$RunAsUser</UserId>
+      <UserId>$RunAsUser</UserId>
       <LogonType>S4U</LogonType>
       <RunLevel>HighestAvailable</RunLevel>
     </Principal>
@@ -101,15 +104,15 @@ function New-TaskXml {
     <Hidden>false</Hidden>
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
     <WakeToRun>false</WakeToRun>
-    <ExecutionTimeLimit>`$TimeLimit</ExecutionTimeLimit>
+    <ExecutionTimeLimit>$TimeLimit</ExecutionTimeLimit>
     <Priority>6</Priority>
-`$restart
+$restart
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>`$Command</Command>
-      <Arguments>`$Arguments</Arguments>
-      <WorkingDirectory>`$Repo</WorkingDirectory>
+      <Command>$Command</Command>
+      <Arguments>$Arguments</Arguments>
+      <WorkingDirectory>$Repo</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
@@ -119,7 +122,7 @@ function New-TaskXml {
 function Register-Task {
     param([string]$Name, [string]$Xml)
     $tmp = Join-Path $env:TEMP "$Name.xml"
-    # Task Scheduler only accepts the XML as UTF-16 with a BOM.
+    # Task Scheduler only accepts the XML as UTF-16.
     [System.IO.File]::WriteAllText($tmp, $Xml, [System.Text.Encoding]::Unicode)
     schtasks /Delete /TN $Name /F 2>$null | Out-Null
     $out = schtasks /Create /TN $Name /XML $tmp /F 2>&1
