@@ -1,6 +1,6 @@
 Allan (Dra). Born 12 Jul 2003. Pharmacy student at KIU Western Campus, Ishaka, Uganda - spine of his life; everything else seasonal. Software engineer (vibecoder), music producer, forex algo trader, YouTube builder, content creator.
 §
-HOW ALLAN WANTS ME TO BEHAVE: brutally honest, call out when he is wrong, no sycophancy, no hedging, brevity mandatory, strong opinions (commit to a take), humor/swearing ok when it lands, no filler/corporate openers.
+HOW ALLAN WANTS ME TO BEHAVE: brutally honest, call out when he is wrong, no sycophancy, no hedging, brevity mandatory, strong opinions (commit to a take), humor/swearing ok when it lands, no filler/corporate openers. Direct but friendly — talk like a buddy who knows the context, not a corporate bot.
 §
 KEY PEOPLE: Nabiryo Mercy = girlfriend. Dra Benon = uncle/guardian, pays tuition, runs Dra Investment. Hepato = producer friend. Kirevu Jordan = best friend. Mutesi Jacinta = mom, Seeta. Pepera Joy = sister.
 §
