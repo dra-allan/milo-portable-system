@@ -902,6 +902,70 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def cmd_run_shorts(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    try:
+        subprocess.Popen(
+            ["cmd.exe", "/c", "start", "[Milo] YouTube Shorts Pipeline", "cmd.exe", "/k",
+             r"C:\milo-portable-system\scripts\scheduled\scheduled_youtube_shorts.bat"],
+            cwd=r"C:\milo-portable-system\artisan\youtube-shorts-pipeline"
+        )
+        await update.message.reply_text(
+            "🎬 *YouTube Shorts Pipeline Launched*\nA physical terminal window has spawned on your VPS desktop and is executing the sweep.\nYou will receive live completion alerts here."
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to launch Shorts pipeline: {e}")
+
+
+async def cmd_run_ranking(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    try:
+        subprocess.Popen(
+            ["cmd.exe", "/c", "start", "[Milo] Ranking Shorts Pipeline", "cmd.exe", "/k",
+             r"C:\milo-portable-system\scripts\scheduled\scheduled_ranking_shorts.bat"],
+            cwd=r"C:\milo-portable-system\artisan\ranking-shorts-pipeline"
+        )
+        await update.message.reply_text(
+            "🏆 *Ranking Shorts Pipeline Launched*\nA physical terminal window has spawned on your VPS desktop and is executing the sweep.\nYou will receive live completion alerts here."
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to launch Ranking pipeline: {e}")
+
+
+async def cmd_run_brief(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    try:
+        subprocess.Popen(
+            ["cmd.exe", "/c", "start", "[Milo] Morning Briefing", "cmd.exe", "/k",
+             r"C:\milo-portable-system\scripts\scheduled\scheduled_morning_brief.bat"],
+            cwd=r"C:\milo-portable-system\scripts"
+        )
+        await update.message.reply_text(
+            "🌅 *Morning Briefing Launched*\nExecuting on VPS desktop. The briefing will be delivered here momentarily."
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to launch Morning Brief: {e}")
+
+
+async def cmd_stats(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    try:
+        py_exe = r"C:\milo-portable-system\artisan\youtube-shorts-pipeline\venv\Scripts\python.exe"
+        res = subprocess.run(
+            [py_exe, "-m", "src.main", "--mode", "stats", "--stats-age-hours", "0"],
+            cwd=r"C:\milo-portable-system\artisan\youtube-shorts-pipeline",
+            capture_output=True, text=True, timeout=30
+        )
+        out = res.stdout.strip() or res.stderr.strip() or "No stats returned."
+        await update.message.reply_markdown(f"*YouTube Pipeline Stats:*\n```\n{truncate(out, 3500)}\n```")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Stats error: {e}")
+
+
 # ──────────────────────── App Setup ────────────────────────
 def make_application() -> Application:
     token = env("TELEGRAM_BOT_TOKEN")
@@ -933,16 +997,20 @@ def make_application() -> Application:
     app.add_handler(TypeHandler(Update, enforce_auth, block=True), group=-1)
 
     commands = [
-        ("start", cmd_start), ("help", cmd_help), ("ping", cmd_ping),
+        ("start", cmd_start), ("help", cmd_help), ("commands", cmd_help), ("ping", cmd_ping),
         ("server", cmd_server), ("status", cmd_server),
         ("new", cmd_new), ("session", cmd_session), ("sessions", cmd_sessions),
         ("switch", cmd_switch), ("detach", cmd_detach), ("kill", cmd_kill),
         ("clear", cmd_clear), ("rename", cmd_rename),
         ("model", cmd_model), ("agent", cmd_agent),
         ("ls", cmd_ls), ("projects", cmd_projects),
-        ("worktrees", cmd_worktrees), ("tasks", cmd_tasks),
-        ("mcp", cmd_mcp), ("skills", cmd_skills), ("settings", cmd_settings),
+        ("worktrees", cmd_worktrees), ("tasks", cmd_tasks), ("tasklist", cmd_tasks),
+        ("mcp", cmd_mcp), ("mcps", cmd_mcp), ("skills", cmd_skills), ("settings", cmd_settings),
         ("restart_server", cmd_restart_server),
+        ("run_shorts", cmd_run_shorts), ("shorts", cmd_run_shorts),
+        ("run_ranking", cmd_run_ranking), ("ranking", cmd_run_ranking),
+        ("run_brief", cmd_run_brief), ("brief", cmd_run_brief),
+        ("stats", cmd_stats), ("statistics", cmd_stats),
         ("mem", cmd_mem), ("recall", cmd_recall), ("vault", cmd_vault),
     ]
     for name, handler in commands:
