@@ -803,6 +803,66 @@ async def cmd_vault(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"Error: {e}")
 
 
+# ──────────────────────── Telegram Retry Helper ────────────────────────
+async def _send_telegram_safe(bot, chat_id: int, text: str, max_retries: int = 6) -> bool:
+    """Send a Telegram message with exponential backoff retries.
+    Telegram's sendMessage queues messages server-side and delivers
+    them when the recipient comes back online — so this always succeeds
+    once the Telegram API is reachable from the VPS, regardless of
+    whether the user's phone is online.
+    """
+    for attempt in range(max_retries):
+        try:
+            await bot.send_message(chat_id=chat_id, text=text)
+            return True
+        except Exception as e:
+            wait = min(2 ** attempt, 60)
+            LOG.warning("Telegram send failed (attempt %d/%d): %s — retrying in %ds",
+                        attempt + 1, max_retries, e, wait)
+            await asyncio.sleep(wait)
+    LOG.error("Telegram send FAILED after %d attempts for chat %s", max_retries, chat_id)
+    return False
+
+
+# ──────────────────────── Background Task Runner ────────────────────────
+async def _run_opencode_task(bot, chat_id: int, sid: str, text: str,
+                             model: Optional[str]) -> None:
+    """Run the OpenCode request on the VPS and deliver the result.
+    This runs as a fire-and-forget asyncio task so the Telegram handler
+    returns immediately. The user's phone can go offline — when it comes
+    back, Telegram will deliver the queued message.
+    """
+    try:
+        resp = await STATE.oc.send_message(sid, text, model=model)
+        reply = extract_reply_text(resp)
+    except Exception as e:
+        LOG.exception("OpenCode request failed for chat %s: %s", chat_id, e)
+        reply = f"❌ OpenCode error: {e}"
+
+    # Deliver as a NEW message (Telegram queues these for offline users)
+    chunks = _split_message(truncate(reply, 8000))
+    for chunk in chunks:
+        await _send_telegram_safe(bot, chat_id, chunk)
+
+
+def _split_message(text: str, limit: int = 4000) -> List[str]:
+    """Split long text into Telegram-safe chunks."""
+    if len(text) <= limit:
+        return [text]
+    parts = []
+    while text:
+        if len(text) <= limit:
+            parts.append(text)
+            break
+        # Try to split at a newline
+        idx = text.rfind("\n", 0, limit)
+        if idx < limit // 2:
+            idx = limit
+        parts.append(text[:idx])
+        text = text[idx:].lstrip("\n")
+    return parts
+
+
 # ──────────────────────── Main Message Handler ────────────────────────
 async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.text:
@@ -811,33 +871,35 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     text = update.message.text.strip()
 
-    # Send typing action immediately
-    await ctx.bot.send_chat_action(chat_id=chat_id, action=constants.ChatAction.TYPING)
+    # Send typing action (best-effort, ignore failures)
+    try:
+        await ctx.bot.send_chat_action(chat_id=chat_id, action=constants.ChatAction.TYPING)
+    except Exception:
+        pass
 
     # Ensure session exists (persistent, reused)
     sid = await STATE.ensure_session(chat_id)
     if not sid:
-        await update.message.reply_text(
+        await _send_telegram_safe(ctx.bot, chat_id,
             "❌ OpenCode server is not running or unreachable.\n"
             "Use /server to check status or /restart_server to restart."
         )
         return
 
+    # Acknowledge immediately — this message is sent before the LLM starts
+    try:
+        await update.message.reply_text("✅ Processing…")
+    except Exception:
+        pass  # User might already be offline, that's fine
+
     # Optional model from user state
     model = STATE.get_model(chat_id)
 
-    # Send thinking message for long tasks
-    thinking_msg = await update.message.reply_text("⏳ Milo is thinking…")
-
-    # Send to opencode and get response
-    resp = await STATE.oc.send_message(sid, text, model=model)
-    reply = extract_reply_text(resp)
-
-    # Update the thinking message with actual reply
-    try:
-        await thinking_msg.edit_text(truncate(reply, 4000))
-    except Exception:
-        await update.message.reply_text(truncate(reply, 4000))
+    # Fire-and-forget: run OpenCode in background, deliver result when ready
+    asyncio.create_task(
+        _run_opencode_task(ctx.bot, chat_id, sid, text, model),
+        name=f"oc-{chat_id}-{uuid.uuid4().hex[:8]}"
+    )
 
 
 # ──────────────────────── App Setup ────────────────────────
@@ -886,7 +948,7 @@ def make_application() -> Application:
     for name, handler in commands:
         app.add_handler(CommandHandler(name, handler, block=True))
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text, block=True))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text, block=False))
     return app
 
 
