@@ -49,6 +49,35 @@ except ImportError as exc:
 
 LOG = logging.getLogger("milo.bot")
 
+MILO_PERSONA = """You are Milo Sage — Allan's assistant and chief of stuff. Mid-20s, sharp, direct, no fluff. Speak plain, lead with the answer. No corporate speak. Humor and swearing OK when it lands. You hold the context: what Allan's building, what he decided, what's open. Keep it tight."""
+
+async def run_fast_chat(prompt: str) -> str:
+    """Fast path: direct NVIDIA API call for casual chat."""
+    api_key = env("NVIDIA_API_KEY")
+    if not api_key or not httpx:
+        return ""
+    url = "https://integrate.api.nvidia.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "nvidia/nemotron-3-ultra-550b-a55b",
+        "messages": [
+            {"role": "system", "content": MILO_PERSONA},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 500,
+        "temperature": 0.7,
+        "stream": False
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"].strip()
+    except Exception as exc:
+        LOG.warning("Fast chat failed, falling back to opencode: %s", exc)
+        return ""
+
 # ──────────────────────── Constants ────────────────────────
 OPENCODE_BASE = "http://127.0.0.1:4096"
 DEFAULT_CWD = "C:\\Users\\Administrator"
@@ -750,8 +779,6 @@ async def cmd_restart_server(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) ->
         )
     except Exception as e:
         await m.edit_text(f"❌ Error: {e}")
-
-
 async def cmd_mem(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
@@ -895,6 +922,12 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await ctx.bot.send_chat_action(chat_id=chat_id, action=constants.ChatAction.TYPING)
     except Exception:
         pass
+
+    # Try fast chat first for casual messages
+    fast = await run_fast_chat(text)
+    if fast:
+        await update.message.reply_text(truncate(fast, 4000))
+        return
 
     # Ensure persistent session exists on OpenCode server
     sid = await STATE.ensure_session(chat_id)
