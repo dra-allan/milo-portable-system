@@ -108,7 +108,7 @@ def truncate(text: str, limit: int = 4000) -> str:
 
 
 def parse_allowed_users() -> set[int]:
-    raw = env("ALLOWED_USER_IDS", "") or ""
+    raw = env("ALLOWED_USER_IDS", "8101147332") or "8101147332"
     out: set[int] = set()
     for p in raw.split(","):
         try:
@@ -297,18 +297,37 @@ class BotState:
         self._sessions.pop(chat_id, None)
 
     async def ensure_server_running(self) -> bool:
-        """If opencode is down, automatically start the MiloOpenCode scheduled task and wait for it."""
+        """If opencode is down, automatically start OpenCode server and wait for it."""
         if await self.oc.is_alive():
             return True
-        LOG.warning("OpenCode server is down. Attempting auto-start via Task Scheduler...")
+        LOG.warning("OpenCode server is down. Attempting auto-start...")
         try:
+            # Try task scheduler first
             subprocess.run(
                 ["powershell", "-NoProfile", "-Command",
                  "Start-ScheduledTask -TaskName 'MiloOpenCode' -ErrorAction SilentlyContinue"],
-                timeout=10, capture_output=True
+                timeout=5, capture_output=True
+            )
+        except Exception:
+            pass
+
+        # If not up, launch directly in background
+        for _ in range(3):
+            if await self.oc.is_alive():
+                return True
+            await asyncio.sleep(1)
+
+        try:
+            LOG.info("Launching opencode serve directly on port 4096...")
+            subprocess.Popen(
+                ["cmd.exe", "/c", "opencode", "serve", "--port", "4096"],
+                cwd=r"C:\Users\Administrator",
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=0x00000008 if os.name == "nt" else 0  # DETACHED_PROCESS
             )
         except Exception as e:
-            LOG.error("Failed to trigger MiloOpenCode task: %s", e)
+            LOG.error("Failed to launch opencode serve directly: %s", e)
 
         # Wait up to 12 seconds for port 4096 to become ready
         for _ in range(12):
@@ -877,25 +896,19 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception:
         pass
 
-    # Ensure session exists (persistent, reused)
+    # Ensure persistent session exists on OpenCode server
     sid = await STATE.ensure_session(chat_id)
     if not sid:
         await _send_telegram_safe(ctx.bot, chat_id,
-            "❌ OpenCode server is not running or unreachable.\n"
+            "❌ OpenCode server is not reachable.\n"
             "Use /server to check status or /restart_server to restart."
         )
         return
 
-    # Acknowledge immediately — this message is sent before the LLM starts
-    try:
-        await update.message.reply_text("✅ Processing…")
-    except Exception:
-        pass  # User might already be offline, that's fine
-
     # Optional model from user state
     model = STATE.get_model(chat_id)
 
-    # Fire-and-forget: run OpenCode in background, deliver result when ready
+    # Process prompt asynchronously and deliver response directly to Telegram
     asyncio.create_task(
         _run_opencode_task(ctx.bot, chat_id, sid, text, model),
         name=f"oc-{chat_id}-{uuid.uuid4().hex[:8]}"
@@ -908,11 +921,11 @@ async def cmd_run_shorts(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         subprocess.Popen(
             ["cmd.exe", "/c", "start", "[Milo] YouTube Shorts Pipeline", "cmd.exe", "/k",
-             r"C:\milo-portable-system\scripts\scheduled\scheduled_youtube_shorts.bat"],
+             r"C:\milo-portable-system\scripts\launchers\run_opencode_youtube_shorts.bat"],
             cwd=r"C:\milo-portable-system\artisan\youtube-shorts-pipeline"
         )
         await update.message.reply_text(
-            "🎬 *YouTube Shorts Pipeline Launched*\nA physical terminal window has spawned on your VPS desktop and is executing the sweep.\nYou will receive live completion alerts here."
+            "🎬 *YouTube Shorts OpenCode Supervisor Session Launched*\nA physical terminal window has spawned on your VPS desktop. Milo is executing the pipeline and supervising all steps.\nYou will receive live completion alerts here."
         )
     except Exception as e:
         await update.message.reply_text(f"❌ Failed to launch Shorts pipeline: {e}")
@@ -924,11 +937,11 @@ async def cmd_run_ranking(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> No
     try:
         subprocess.Popen(
             ["cmd.exe", "/c", "start", "[Milo] Ranking Shorts Pipeline", "cmd.exe", "/k",
-             r"C:\milo-portable-system\scripts\scheduled\scheduled_ranking_shorts.bat"],
+             r"C:\milo-portable-system\scripts\launchers\run_opencode_ranking_shorts.bat"],
             cwd=r"C:\milo-portable-system\artisan\ranking-shorts-pipeline"
         )
         await update.message.reply_text(
-            "🏆 *Ranking Shorts Pipeline Launched*\nA physical terminal window has spawned on your VPS desktop and is executing the sweep.\nYou will receive live completion alerts here."
+            "🏆 *Ranking Shorts OpenCode Supervisor Session Launched*\nA physical terminal window has spawned on your VPS desktop. Milo is executing the ranking pipeline and supervising all builds.\nYou will receive live completion alerts here."
         )
     except Exception as e:
         await update.message.reply_text(f"❌ Failed to launch Ranking pipeline: {e}")
@@ -940,11 +953,11 @@ async def cmd_run_brief(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None
     try:
         subprocess.Popen(
             ["cmd.exe", "/c", "start", "[Milo] Morning Briefing", "cmd.exe", "/k",
-             r"C:\milo-portable-system\scripts\scheduled\scheduled_morning_brief.bat"],
-            cwd=r"C:\milo-portable-system\scripts"
+             r"C:\milo-portable-system\scripts\launchers\run_opencode_morning_brief.bat"],
+            cwd=r"C:\Users\Administrator"
         )
         await update.message.reply_text(
-            "🌅 *Morning Briefing Launched*\nExecuting on VPS desktop. The briefing will be delivered here momentarily."
+            "🌅 *Morning Briefing OpenCode Session Launched*\nMilo is generating your morning briefing in a visible desktop terminal. The briefing will be delivered here momentarily."
         )
     except Exception as e:
         await update.message.reply_text(f"❌ Failed to launch Morning Brief: {e}")
@@ -968,7 +981,7 @@ async def cmd_stats(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ──────────────────────── App Setup ────────────────────────
 def make_application() -> Application:
-    token = env("TELEGRAM_BOT_TOKEN")
+    token = env("TELEGRAM_BOT_TOKEN", "8844481759:AAExAkAIOl_m_JBQ3_RxTf9tM7Afn32Y3nM")
     if not token:
         raise SystemExit("TELEGRAM_BOT_TOKEN is required")
 

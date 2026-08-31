@@ -1,21 +1,33 @@
 @echo off
-TITLE [Milo] Ranking Shorts Pipeline - OpenCode Agent Session
+TITLE [Milo] Ranking Shorts Pipeline — OpenCode Agent Session
 COLOR 0E
+setlocal EnableExtensions EnableDelayedExpansion
+
+set USERPROFILE=C:\Users\Administrator
+set HOME=C:\Users\Administrator
+set APPDATA=C:\Users\Administrator\AppData\Roaming
+set LOCALAPPDATA=C:\Users\Administrator\AppData\Local
+set PATH=C:\Users\Administrator\AppData\Roaming\npm;C:\Program Files\nodejs;C:\Users\Administrator\AppData\Local\Programs\Python\Python312;C:\Program Files\Git\cmd;C:\Windows\System32;C:\Windows;%PATH%
+
 echo ============================================================================
-echo   [MILO] OPENCODE AGENT — RANKING SHORTS PIPELINE RUNNER
+echo   [MILO] OPENCODE AGENT — RANKING SHORTS PIPELINE SUPERVISOR
 echo   Time: %DATE% %TIME%
 echo ============================================================================
 echo.
-echo [1/2] Spawning OpenCode agent session to run and supervise Ranking Shorts pipeline...
+echo [1/2] Notifying Telegram that supervisor session is starting...
+C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe C:\milo-portable-system\scripts\telegram_send.py "🏆 Milo: Spawning visible OpenCode agent session on VPS desktop to run Ranking Shorts pipeline..."
+
+echo.
+echo [2/2] Spawning OpenCode agent session (Milo) to execute and supervise ranking pipeline...
 echo.
 
 cd /d "C:\milo-portable-system\artisan\ranking-shorts-pipeline"
 
-opencode run --agent milo --dir "C:\milo-portable-system\artisan\ranking-shorts-pipeline" "You are Milo. Run the Ranking Shorts pipeline in C:\milo-portable-system\artisan\ranking-shorts-pipeline by running C:\milo-portable-system\artisan\ranking-shorts-pipeline\run_ranking_pipeline.bat (or python -m src.main --mode auto --videos 3 --variant mixed). Supervise the entire build, monitor vetting and rendering, solve and fix any errors if they occur, and when complete, send a clear summary report to Allan on Telegram using python C:\milo-portable-system\scripts\telegram_send.py."
+cmd.exe /c "C:\Users\Administrator\AppData\Roaming\npm\opencode.cmd" run --agent milo --dir "C:\milo-portable-system\artisan\ranking-shorts-pipeline" "You are Milo. Run the Ranking Shorts pipeline in C:\milo-portable-system\artisan\ranking-shorts-pipeline. First execute: venv\Scripts\python.exe -m src.main --mode auto --videos 3 --variant mixed. Monitor the vetting, rendering, and uploading stages. If any error occurs during sourcing, image generation, audio synthesis, or ffmpeg assembly, diagnose and resolve the issue. When complete, send a clear summary report of the built and uploaded ranking shorts to Allan on Telegram by running: C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe C:\milo-portable-system\scripts\telegram_send.py \"<your report>\"."
 
 echo.
 echo ============================================================================
-echo   [2/2] OpenCode Agent session completed.
+echo   [DONE] OpenCode Agent session completed.
 echo   Window will remain open on desktop for inspection.
 echo ============================================================================
 pause
