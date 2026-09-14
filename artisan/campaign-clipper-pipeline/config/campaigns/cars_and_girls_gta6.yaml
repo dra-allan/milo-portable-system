@@ -1,0 +1,74 @@
+# Cars and Girls [GTA 6 CLIPS & EDITS] - Clipster Campaign
+# Music clipping campaign: GTA 6 extended look clips with "Cars and Girls - Prefab Sprout" sound
+
+campaign:
+  id: cars_and_girls_gta6
+  name: Cars and Girls [GTA 6 CLIPS & EDITS]
+  url: https://clipster.gg/discover?openedCampaignId=fc84adfb-2c00-4d4d-bfb4-9b75a61326bd
+  type: clipping
+  niche: music
+  enabled: true
+  rate_per_1m: 1000
+  budget_total: 2160
+
+sources:
+  content_folders: []
+  local_folders:
+    - C:/milo-portable-system/artisan/campaign-clipper-pipeline/data/sources/cars_and_girls_gta6
+  manual_only: true
+  manual_reason: "Drop GTA 6 extended look source videos here for clipping"
+  brief_url: https://clipster.gg/discover?openedCampaignId=fc84adfb-2c00-4d4d-bfb4-9b75a61326bd
+  discord_url: ''
+
+assets:
+  logo_folders: []
+  logo_required: false
+  logo_mode: never
+  logo_position: top-right
+  logo_scale: 0.14
+
+render:
+  min_duration: 10
+  max_duration: 60
+  platforms: [youtube]
+  shorts_only: true
+  language: en
+  own_text_required: true
+  gameplay_visible: false
+  music: provided
+  keep_source_audio: false
+  must_appear_in_video: []
+
+caption:
+  required_keywords: ['#carsandgirls', '#gta6', '#gta6clips', '#prefabsprout']
+  required_mentions: []
+  must_mention: [Roobet]
+  max_length: 400
+
+account_gates:
+  audience: []
+  min_engagement_pct: 0.4
+  min_views_for_earnings: 2000
+  eligible_accounts: [nxs-f5s]
+  max_linked_accounts: 0
+
+policy:
+  keep_live_days: 0
+  prohibitions:
+    - POST LOW QUALITY / SPAM / TRASH
+    - NO LEAKED FOOTAGE / LEAKED BUILD
+  banned_topics: []
+
+conflicts: []
+unparsed: []
+manual_steps:
+  - "Add provided sound 'Cars and Girls - Prefab Sprout' and tag it in the post"
+  - "Comment song name + like own comment: Cars and Girls - Prefab Sprout"
+  - "English only - the song must be in focus"
+  - "Only GTA 6 clips/edits of the latest extended look"
+  - "10s minimum / 60s maximum clip length"
+  - "Post strictly on NXS (nxs-f5s)"
+
+conflicts: []
+unparsed: []
+manual_steps: []

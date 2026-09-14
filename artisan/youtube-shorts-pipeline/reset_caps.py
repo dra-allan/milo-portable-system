@@ -1,10 +1,10 @@
 """List and lift the daily upload caps so the pipeline can post again.
 
 The per-source (UPLOAD_MAX_PER_SOURCE) and per-channel (UPLOAD_MAX_PER_CHANNEL)
-caps are enforced by counting ``uploaded_at`` timestamps in the last 24h window
+caps are enforced by counting ``uploaded_at`` timestamps since local midnight
 in processed_videos.db. A full sweep can run and still post nothing when those
 counters are full. This tool shows the caps + current usage, then lets you lift
-them by clearing the 24h counters.
+them by clearing the today counters.
 
 Already-published shorts keep their youtube_short_id, so they are never
 re-uploaded (the uploader only picks rows where youtube_short_id IS NULL).
@@ -46,7 +46,7 @@ def list_caps() -> PipelineDatabase:
     print()
 
     print('-' * 64)
-    print('  USED IN LAST 24h (the counters that block posting)')
+    print('  USED TODAY (since local midnight - the counters that block posting)')
     print('-' * 64)
     with db._connect() as conn:
         ch_rows = conn.execute(
@@ -54,7 +54,7 @@ def list_caps() -> PipelineDatabase:
                FROM generated_shorts
                WHERE youtube_short_id IS NOT NULL
                  AND uploaded_at IS NOT NULL
-                 AND uploaded_at >= datetime('now', '-24 hours')
+                 AND datetime(uploaded_at, 'localtime') >= datetime('now', 'localtime', 'start of day')
                GROUP BY upload_channel ORDER BY used DESC"""
         ).fetchall()
         src_rows = conn.execute(
@@ -62,7 +62,7 @@ def list_caps() -> PipelineDatabase:
                FROM generated_shorts
                WHERE youtube_short_id IS NOT NULL
                  AND uploaded_at IS NOT NULL
-                 AND uploaded_at >= datetime('now', '-24 hours')
+                 AND datetime(uploaded_at, 'localtime') >= datetime('now', 'localtime', 'start of day')
                GROUP BY source_video_id ORDER BY used DESC"""
         ).fetchall()
         pending = conn.execute(
@@ -77,7 +77,7 @@ def list_caps() -> PipelineDatabase:
             print(f"  channel {r['upload_channel'] or '?'!r}: "
                   f"{r['used']}/{cap} used")
     else:
-        print('  channel usage: none in last 24h')
+        print('  channel usage: none today')
     if src_rows:
         for r in src_rows[:12]:
             cap = config.upload_max_per_source
@@ -86,7 +86,7 @@ def list_caps() -> PipelineDatabase:
         if len(src_rows) > 12:
             print(f"  ... and {len(src_rows) - 12} more source(s)")
     else:
-        print('  source usage: none in last 24h')
+        print('  source usage: none today')
     print(f"  pending clips ready to post: {pending}")
     print(f"  database: {db.db_path}")
     return db
@@ -105,7 +105,7 @@ def lift_caps(db: PipelineDatabase) -> None:
             "UPDATE generated_shorts SET uploaded_at = NULL "
             "WHERE uploaded_at IS NOT NULL")
     print(f"  cleared uploaded_at on {cur.rowcount} row(s)")
-    print('  caps lifted: per-source and per-channel 24h counters are now 0.')
+    print('  caps lifted: per-source and per-channel daily counters are now 0.')
     print('  Re-run the sweep (or option 4 upload) and it will post.')
 
 

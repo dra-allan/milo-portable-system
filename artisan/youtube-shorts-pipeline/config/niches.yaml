@@ -6,6 +6,7 @@
 flick_shorts:
   # Frozen 2026-08-24 fleet audit: channel dead or suppressed;
   # zero discovery + zero uploads until Allan revives it.
+  # 2026-09-06: CONFIRMED DEAD - 0 subs, 267 videos, 142 views. Archive.
   active: false
   # Upload target(s): the channel(s) this niche's Shorts get published to.
   # Each key must match an authenticated token (config/youtube_token_<name>.json).
@@ -179,6 +180,7 @@ capital_mindset:
 wealth_mindset:
   # Frozen 2026-08-24 fleet audit: channel dead or suppressed;
   # zero discovery + zero uploads until Allan revives it.
+  # 2026-09-06: CONFIRMED DEAD - 0 subs, 173 videos, 104 views. Archive.
   active: false
   # Independent wealth/money niche with its own supply, uploads only to wealth_mindset channel.
   # Sources mirror capital_mindset but with independent per-source budgets.
@@ -1729,12 +1731,9 @@ chop_ug:
 # Source choice here is a speed decision as much as a quality one.
 # ---------------------------------------------------------------------------
 gta_hype:
-  # Frozen 2026-08-24 fleet audit: channel dead or suppressed;
-  # zero discovery + zero uploads until Allan revives it.
-  active: false
-  # Requires: python -m src.uploader auth --channel NXS
-  # Until that token exists, sweeps skip this niche entirely. Nothing this
-  # block does can publish on its own.
+  # 2026-09-06: RE-ENABLED - NXS channel now active (Cars & Girls campaign clips posted).
+  # Uploads to NXS channel.
+  active: true
   upload_channels:
     - NXS
   channel: NXS
@@ -1851,6 +1850,7 @@ gta_hype:
 forex_god_fx:
   # Frozen 2026-08-24 fleet audit: channel dead or suppressed;
   # zero discovery + zero uploads until Allan revives it.
+  # 2026-09-06: CONFIRMED DEAD - 0 subs, 5 videos, 18 views. Archive.
   active: false
   upload_channels:
     - god_did_fx

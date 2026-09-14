@@ -1,0 +1,265 @@
+campaign:
+  id: general_campaign_rules
+  name: General Campaign Rules
+  url: https://www.clipster.gg/general-campaign-rules
+  type: clipping
+  niche: gaming
+  upload_channel: ''
+  enabled: true
+  rate_per_1m: 0.0
+  budget_total: 0.0
+  cap_per_post: 0.0
+  cap_per_profile: 0.0
+sources:
+  content_folders: []
+  local_folders: []
+  manual_only: true
+  manual_reason: no content folder link found in the requirements
+  brief_url: ''
+  discord_url: https://discord.gg/jANSrfvg2x
+assets:
+  logo_folders:
+  - https://app.notion.com/p/Clipster-Logo-Guidelines-bec4a057b8c98243853a81f28fadbafc
+  logo_required: true
+  logo_mode: always
+  logo_position: top-right
+  logo_scale: 0.14
+  logo_margin: 0.04
+  logo_opacity: 1.0
+render:
+  min_duration: 8.0
+  max_duration: 60.0
+  platforms:
+  - x
+  - youtube
+  shorts_only: true
+  language: en
+  own_text_required: false
+  gameplay_visible: false
+  music: none
+  keep_source_audio: true
+  must_appear_in_video: []
+caption:
+  required_keywords: []
+  required_mentions: []
+  required_hashtags: []
+  must_mention: []
+  template: ''
+  max_length: 400
+account_gates:
+  audience: []
+  min_engagement_pct: 3.0
+  min_views_for_earnings: 0
+  eligible_accounts: []
+  max_linked_accounts: 0
+policy:
+  keep_live_days: 0
+  prohibitions:
+  - 'Quality: Low-effort or spammy content will be rejected. Every submission should aim to be high-quality
+    and have the potential to go viral.'
+  - 'Spam caption: Captions and hashtags must be strictly related to your post and niche.'
+  - 'Basic guidelines: Nothing sexually seductive. No IRL Funny Videos/Reality Shows/Cricket. No Manga
+    (Black/White). No very brutal scenes. No H-comic (hentai). No SEA/RU/IN language posts (T3 countries).
+    No SEA mobile games / Mobile Legends etc. No comic spam.'
+  banned_topics:
+  - irl funny videos
+  - reality shows
+  - cricket
+  - combination of a second campaign
+  - stretching
+  - distorting
+  - recoloring
+  - filters
+  - or effects that reduce legibility
+  native_feel: false
+  no_competitor_attacks: false
+raw_requirements: 'Using viewbots or fake views
+
+  Running advertisements to boost your posts
+
+  Sharing your content in engagement groups
+
+  Retweeting or quote-tweeting your own post on X (Twitter)
+
+  Shoutouts or reposts from unrelated third-party accounts
+
+  Posts MUST stay up for a minimum of 30 Days after campaign end! Taking down posts before this time frame
+  may result in ban.
+
+  Quality: Low-effort or spammy content will be rejected. Every submission should aim to be high-quality
+  and have the potential to go viral.
+
+  Originality: Do not submit duplicate content. Each post must be unique and created specifically for
+  the campaign.
+
+  Niches: Content aimed at a predominantly south asian audience will be rejected. This includes but is
+  not limited to Cricket, mobile games and apps, bollywood content etc. Also any content related to NSFW
+  may lead to a suspension.
+
+  Visibility: All post stats (likes, comments, etc.) must be publicly visible. Hidden stats will disqualify
+  your submission.
+
+  Engagement: Campaigns have unique engagement tresholds. 0.2% platform wide and up to 3% for higher CPM
+  campaigns.
+
+  Spam caption: Captions and hashtags must be strictly related to your post and niche.
+
+  Basic guidelines: Nothing sexually seductive. No IRL Funny Videos/Reality Shows/Cricket. No Manga (Black/White).
+  No very brutal scenes. No H-comic (hentai). No SEA/RU/IN language posts (T3 countries). No SEA mobile
+  games / Mobile Legends etc. No comic spam.
+
+  Audio must be the main focus and played at 75% minimum, must play throughout the whole video, can have
+  a little intro
+
+  No combination of a second campaign (logo etc.)
+
+  3% engagement requirement
+
+  Video posts must be over 10 seconds long
+
+  Use the provided template file ("LOGO_PRE_PLACED", 1080×1920) — the logo comes pre-placed in the approved
+  position. Do not move, resize, or reposition it.
+
+  Logos are provided as GIFs with transparent backgrounds. Do not alter the GIF file — no stretching,
+  distorting, recoloring, filters, or effects that reduce legibility.
+
+  The logo must be clearly visible at all times and must not be covered more than 50% by platform UI (captions,
+  usernames, buttons) or other graphics.
+
+  Animated GIF logos must play from start to finish without interruption and must loop. The logo must
+  stay fully visible for the entire required duration (typically 7–25+ seconds, varies by asset).
+
+  Placing the logo with more than 25% overlap on the safezone''s red "no-go" zone will most likely get
+  rejected.
+
+  Legal
+
+  Privacy Policy
+
+  Creator Terms of Use
+
+  Brand Terms of Use
+
+  General Website Terms
+
+  Do Not Sell
+
+  Company
+
+  Contact Us
+
+  Support
+
+  Careers
+
+  Resources
+
+  General Campaign Rules
+
+  Skool Community
+
+  Legal
+
+  Privacy Policy
+
+  Creator Terms of Use
+
+  Brand Terms of Use
+
+  General Website Terms
+
+  Do Not Sell
+
+  Company
+
+  Contact Us
+
+  Support
+
+  Careers
+
+  Resources
+
+  General Campaign Rules
+
+  Skool Community
+
+  [Clipster Music](https://discord.gg/N9cBzEevGX)
+
+  [Clipster Logo Guidelines](https://app.notion.com/p/Clipster-Logo-Guidelines-bec4a057b8c98243853a81f28fadbafc)
+
+  [Support](https://discord.gg/jANSrfvg2x)
+
+  [Skool Community](https://www.skool.com/clipping-gods-8721)
+
+  [YouTube API Services](https://www.youtube.com/t/terms)
+
+  [Google Privacy Policy](https://policies.google.com/privacy)
+
+  [Support](https://discord.gg/jANSrfvg2x)
+
+  [Skool Community](https://www.skool.com/clipping-gods-8721)
+
+  [YouTube API Services](https://www.youtube.com/t/terms)
+
+  [Google Privacy Policy](https://policies.google.com/privacy)'
+conflicts: []
+unparsed:
+- Using viewbots or fake views
+- Running advertisements to boost your posts
+- Sharing your content in engagement groups
+- Shoutouts or reposts from unrelated third-party accounts
+- Posts MUST stay up for a minimum of 30 Days after campaign end! Taking down posts before this time frame
+  may result in ban.
+- 'Originality: Do not submit duplicate content. Each post must be unique and created specifically for
+  the campaign.'
+- 'Niches: Content aimed at a predominantly south asian audience will be rejected. This includes but is
+  not limited to Cricket, mobile games and apps, bollywood content etc. Also any content related to NSFW
+  may lead to a suspension.'
+- 'Visibility: All post stats (likes, comments, etc.) must be publicly visible. Hidden stats will disqualify
+  your submission.'
+- 'Engagement: Campaigns have unique engagement tresholds. 0.2% platform wide and up to 3% for higher
+  CPM campaigns.'
+- Audio must be the main focus and played at 75% minimum, must play throughout the whole video, can have
+  a little intro
+- Video posts must be over 10 seconds long
+- Use the provided template file ("LOGO_PRE_PLACED", 1080×1920) — the logo comes pre-placed in the approved
+  position. Do not move, resize, or reposition it.
+- The logo must be clearly visible at all times and must not be covered more than 50% by platform UI (captions,
+  usernames, buttons) or other graphics.
+- Animated GIF logos must play from start to finish without interruption and must loop. The logo must
+  stay fully visible for the entire required duration (typically 7–25+ seconds, varies by asset).
+- Placing the logo with more than 25% overlap on the safezone's red "no-go" zone will most likely get
+  rejected.
+- Legal
+- Privacy Policy
+- Creator Terms of Use
+- Brand Terms of Use
+- General Website Terms
+- Do Not Sell
+- Company
+- Contact Us
+- Support
+- Careers
+- Resources
+- General Campaign Rules
+- Skool Community
+- Legal
+- Privacy Policy
+- Creator Terms of Use
+- Brand Terms of Use
+- General Website Terms
+- Do Not Sell
+- Company
+- Contact Us
+- Support
+- Careers
+- Resources
+- General Campaign Rules
+- Skool Community
+- '[Skool Community](https://www.skool.com/clipping-gods-8721)'
+- '[Google Privacy Policy](https://policies.google.com/privacy)'
+- '[Skool Community](https://www.skool.com/clipping-gods-8721)'
+- '[Google Privacy Policy](https://policies.google.com/privacy)'
+manual_steps:
+- 'Drop source files manually: no content folder link found in the requirements'

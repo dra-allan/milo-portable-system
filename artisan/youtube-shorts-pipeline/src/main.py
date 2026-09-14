@@ -1225,15 +1225,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument('target', nargs='?', default=None,
                         help='YouTube URL or 11-character video ID')
-    parser.add_argument('--mode', choices=['once', 'schedule', 'test', 'library', 'stats', 'discover', 'upload-existing', 'migrate-shorts'],
+    parser.add_argument('--mode', choices=['once', 'schedule', 'test', 'library', 'stats', 'discover', 'upload-existing', 'migrate-shorts', 'sweep'],
                         default='once',
-                        help="'library' lists videos already downloaded and can "
-                             "process them without touching the network; "
-                             "'stats' fetches YouTube metrics for uploaded shorts; "
-                             "'discover' dry-runs scheduled discovery for bound "
-                             "niches (no downloads); "
-                             "'upload-existing' uploads rendered-but-unpublished shorts; "
-                             "'migrate-shorts' restructures legacy shorts layout (see also --dry-run)")
+                        help=(
+                            "'once' processes one video (default); "
+                            "'schedule' runs the automated daily sweeps; "
+                            "'sweep' runs one scheduled sweep now and exits; "
+                            "'test' verifies dependencies; 'library' lists downloaded videos; "
+                            "'stats' fetches YouTube metrics; 'discover' dry-runs discovery; "
+                            "'upload-existing' uploads rendered-but-unpublished shorts; "
+                            "'migrate-shorts' restructures legacy layout"
+                        ))
     parser.add_argument('--niche', default=None,
                         help='Niche name from config/niches.yaml (default: auto-detect)')
     parser.add_argument('--videos', type=int, default=1,
@@ -1329,6 +1331,9 @@ def _main_impl(argv: Optional[List[str]] = None) -> int:
 
     if args.mode == 'schedule':
         return _run_schedule(pipeline, args)
+
+    if args.mode == 'sweep':
+        return _run_sweep(pipeline, args)
 
     if args.mode == 'library':
         video_id = extract_video_id(args.target) if args.target else None
@@ -2115,6 +2120,12 @@ def _run_scheduled_sweep(pipeline: 'ShortsPipeline', args) -> None:
             max_v = niche_cfg.get('max_videos', 0) or getattr(config, 'schedule_max_videos', 3)
             started = pipeline.run_niche(niche, max_videos=max_v)
             total_started += started
+
+
+def _run_sweep(pipeline: 'ShortsPipeline', args) -> int:
+    """Run one scheduled sweep and exit."""
+    _run_scheduled_sweep(pipeline, args)
+    return 0
 
 
 def _run_schedule(pipeline: 'ShortsPipeline', args) -> int:

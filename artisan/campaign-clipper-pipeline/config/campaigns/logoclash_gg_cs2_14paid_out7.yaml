@@ -1,0 +1,63 @@
+campaign:
+  id: logoclash_gg_cs2_14paid_out7
+  name: LogoClash.gg [CS2] 14Paid out7%/
+  url: https://clipster.gg/discover?openedCampaignId=7d5f3100-fb2f-40a5-ae5f-96649c95825b
+  type: clipping
+  niche: ''
+  upload_channel: ''
+  enabled: true
+  rate_per_1m: 0.0
+  budget_total: 0.0
+  cap_per_post: 0.0
+  cap_per_profile: 0.0
+sources:
+  content_folders: []
+  local_folders: []
+  manual_only: true
+  manual_reason: no content folder link found in the requirements
+  brief_url: ''
+  discord_url: ''
+assets:
+  logo_folders: []
+  logo_required: false
+  logo_mode: always
+  logo_position: top-right
+  logo_scale: 0.14
+  logo_margin: 0.04
+  logo_opacity: 1.0
+render:
+  min_duration: 8.0
+  max_duration: 60.0
+  platforms:
+  - youtube
+  shorts_only: true
+  language: en
+  own_text_required: false
+  gameplay_visible: false
+  music: none
+  keep_source_audio: true
+  must_appear_in_video: []
+caption:
+  required_keywords: []
+  required_mentions: []
+  required_hashtags: []
+  must_mention: []
+  template: ''
+  max_length: 400
+account_gates:
+  audience: []
+  min_engagement_pct: 0.0
+  min_views_for_earnings: 0
+  eligible_accounts: []
+  max_linked_accounts: 0
+policy:
+  keep_live_days: 0
+  prohibitions: []
+  banned_topics: []
+  native_feel: false
+  no_competitor_attacks: false
+raw_requirements: ''
+conflicts: []
+unparsed: []
+manual_steps:
+- 'Drop source files manually: no content folder link found in the requirements'
